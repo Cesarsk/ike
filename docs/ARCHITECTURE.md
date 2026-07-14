@@ -151,6 +151,21 @@ pipeline (filter, colors, selection) but served from the app's own context
 list instead of a Provider, and `enter` switches org instead of opening a
 detail view.
 
+## Security model
+
+Reviewed 2026-07-14 (manual audit + govulncheck); full threat model in
+[SECURITY.md](../SECURITY.md). The load-bearing controls, and where they
+live:
+
+| Control | Where |
+|---|---|
+| Site allowlist — creds only ever go to `api.<known site>` | `config.Sites` + `config.Load` validation; the :ctx dropdown reads the same list |
+| No secrets in the config file (strict YAML, env/keychain only) | `config.Load` (`KnownFields`), `config.KeyringStore` |
+| Atomic config writes, 0600/0700 modes | `config.Save`, log setup in `main.go` |
+| No secret ever logged | logging sites in `internal/ui` record auth *kind* / context *name* only |
+| https-only browser opens; no shell interpolation | `App.openURL`, `exec.Command` arg arrays throughout |
+| Toolchain + dependency hygiene | `toolchain` pin in go.mod, govulncheck CI job, Dependabot |
+
 ## Package layout
 
 | Path | Responsibility |

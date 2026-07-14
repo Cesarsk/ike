@@ -14,6 +14,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/Cesarsk/ddez/internal/config"
 	"github.com/Cesarsk/ddez/internal/data"
 )
 
@@ -653,16 +654,16 @@ func (a *App) showPage(page string) {
 
 // ---- context add / delete ---------------------------------------------------
 
-// ddSites are the fixed Datadog site endpoints, offered as a dropdown so
-// nobody can typo a site or paste the "app." browser host by mistake.
-var ddSites = []struct{ Site, Label string }{
-	{"datadoghq.com", "datadoghq.com   (US1)"},
-	{"datadoghq.eu", "datadoghq.eu    (EU)"},
-	{"us3.datadoghq.com", "us3.datadoghq.com (US3)"},
-	{"us5.datadoghq.com", "us5.datadoghq.com (US5)"},
-	{"ap1.datadoghq.com", "ap1.datadoghq.com (AP1)"},
-	{"ap2.datadoghq.com", "ap2.datadoghq.com (AP2)"},
-	{"ddog-gov.com", "ddog-gov.com    (US1-FED)"},
+// siteRegions annotates config.Sites (the single source of truth — it is a
+// security allowlist there) with human-readable regions for the dropdown.
+var siteRegions = map[string]string{
+	"datadoghq.com":     "US1",
+	"datadoghq.eu":      "EU",
+	"us3.datadoghq.com": "US3",
+	"us5.datadoghq.com": "US5",
+	"ap1.datadoghq.com": "AP1",
+	"ap2.datadoghq.com": "AP2",
+	"ddog-gov.com":      "US1-FED",
 }
 
 // openCtxForm shows the add-context form (:ctx → a). Secret fields are
@@ -675,9 +676,9 @@ func (a *App) openCtxForm() {
 	}
 	a.pushNav()
 	a.formErr.SetText("")
-	labels := make([]string, len(ddSites))
-	for i, s := range ddSites {
-		labels[i] = s.Label
+	labels := make([]string, len(config.Sites))
+	for i, s := range config.Sites {
+		labels[i] = fmt.Sprintf("%-17s (%s)", s, siteRegions[s])
 	}
 	a.ctxForm.Clear(true)
 	a.ctxForm.
@@ -723,10 +724,10 @@ A bearer token (OAuth2 access token or PAT), e.g. from Datadog's pup CLI or your
 func (a *App) saveCtxForm() {
 	name := strings.TrimSpace(a.ctxForm.GetFormItem(0).(*tview.InputField).GetText())
 	siteIdx, _ := a.ctxForm.GetFormItem(1).(*tview.DropDown).GetCurrentOption()
-	if siteIdx < 0 || siteIdx >= len(ddSites) {
+	if siteIdx < 0 || siteIdx >= len(config.Sites) {
 		siteIdx = 0
 	}
-	site := ddSites[siteIdx].Site
+	site := config.Sites[siteIdx]
 	apiKey := a.ctxForm.GetFormItem(2).(*tview.InputField).GetText()
 	appKey := a.ctxForm.GetFormItem(3).(*tview.InputField).GetText()
 	token := a.ctxForm.GetFormItem(4).(*tview.InputField).GetText()
@@ -1152,6 +1153,14 @@ func (a *App) openSelected() {
 func (a *App) openURL(url string) {
 	if url == "" {
 		a.flash("nothing to open", true)
+		return
+	}
+	// URLs are built from API response data; refuse anything that is not
+	// plain https so a hostile payload can't reach `open` with a file://,
+	// javascript: or custom-scheme URL.
+	if !strings.HasPrefix(url, "https://") {
+		slog.Warn("refused to open non-https URL", "url", url)
+		a.flash("✗ refusing to open non-https URL", true)
 		return
 	}
 	if err := openBrowser(url); err != nil {

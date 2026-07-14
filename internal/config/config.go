@@ -18,6 +18,31 @@ import (
 
 const DefaultSite = "datadoghq.com"
 
+// Sites is the fixed list of Datadog regional endpoints. It is a security
+// control, not a convenience: credentials are sent as headers to
+// api.<site>, so an unrecognized site in a (possibly tampered or
+// socially-engineered) config file would exfiltrate keys. Load refuses
+// anything not on this list.
+var Sites = []string{
+	"datadoghq.com",
+	"datadoghq.eu",
+	"us3.datadoghq.com",
+	"us5.datadoghq.com",
+	"ap1.datadoghq.com",
+	"ap2.datadoghq.com",
+	"ddog-gov.com",
+}
+
+// ValidSite reports whether s is a known Datadog endpoint.
+func ValidSite(s string) bool {
+	for _, v := range Sites {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
 // Context is one Datadog organization. Credentials come from either the
 // named environment variables or, for contexts added in the TUI, the OS
 // keychain (macOS Keychain / Linux Secret Service) — never from this file.
@@ -86,6 +111,9 @@ func Load(path string) (*Config, error) {
 			ctx.Site = DefaultSite
 			c.Contexts[name] = ctx
 		}
+		if !ValidSite(ctx.Site) {
+			return nil, fmt.Errorf("%s: context %q has unknown site %q — refusing to send credentials to an unrecognized host (valid sites: %v)", path, name, ctx.Site, Sites)
+		}
 		keyPair := ctx.APIKeyEnv != "" && ctx.AppKeyEnv != ""
 		if !ctx.Keychain && !keyPair && ctx.TokenEnv == "" {
 			return nil, fmt.Errorf("%s: context %q needs credentials: api-key-env + app-key-env, token-env, or keychain: true", path, name)
@@ -99,7 +127,9 @@ func Load(path string) (*Config, error) {
 
 func implicit() *Config {
 	site := os.Getenv("DD_SITE")
-	if site == "" {
+	// The same allowlist applies to DD_SITE — an attacker-influenced env
+	// var must not redirect credentials either.
+	if site == "" || !ValidSite(site) {
 		site = DefaultSite
 	}
 	return &Config{
@@ -129,8 +159,9 @@ func (c Context) ResolveToken() (string, error) {
 }
 
 // Save writes the config back to disk (0600 — it holds no secrets, but org
-// names and sites are nobody else's business either). Note: comments in a
-// hand-written file are not preserved.
+// names and sites are nobody else's business either). The write is atomic
+// (temp file + rename) so a crash can never leave a corrupt config.
+// Note: comments in a hand-written file are not preserved.
 func (c *Config) Save(path string) error {
 	if path == "" {
 		return fmt.Errorf("no config path")
@@ -142,7 +173,11 @@ func (c *Config) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o600)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Names returns the context names, sorted.

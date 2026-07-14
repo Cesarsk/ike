@@ -117,6 +117,35 @@ contexts:
 	}
 }
 
+func TestUnknownSiteRejected(t *testing.T) {
+	p := write(t, `
+current-context: dev
+contexts:
+  dev:
+    site: evil.example.com
+    api-key-env: A
+    app-key-env: B
+`)
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("unknown site must be rejected — credentials would be sent to it")
+	}
+	if !strings.Contains(err.Error(), "refusing to send credentials") {
+		t.Errorf("error should explain the exfiltration risk, got: %v", err)
+	}
+}
+
+func TestImplicitIgnoresInvalidDDSite(t *testing.T) {
+	t.Setenv("DD_SITE", "evil.example.com")
+	c, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Contexts["default"].Site; got != DefaultSite {
+		t.Errorf("invalid DD_SITE must fall back to %s, got %q", DefaultSite, got)
+	}
+}
+
 func TestKeychainContextNeedsNoEnvNames(t *testing.T) {
 	p := write(t, `
 current-context: prod

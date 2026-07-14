@@ -57,7 +57,12 @@ without the maintainer's go-ahead. Use the vocabulary defined in
 10. **Context switches are hard boundaries.** Anything org-scoped (cache,
     budget, nav history, queries) must be torn down in `switchContext` —
     never let one org's data render under another org's header.
-11. **No employer- or person-identifying content anywhere in the repo.**
+11. **`config.Sites` is a security allowlist, not a convenience list.**
+    Credentials are sent as headers to `api.<site>`, so every site a
+    context can use must come from that one list (Load validates, the :ctx
+    dropdown renders it). Never add a free-text site path. Browser opens
+    are https-only (`App.openURL`).
+12. **No employer- or person-identifying content anywhere in the repo.**
     Demo data, examples, screenshots and docs use only generic names
     (example.com, alice, prod-1, payments-api). This is a personal OSS
     project with no affiliation to anyone's employer — keep it that way in
