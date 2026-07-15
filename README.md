@@ -107,13 +107,17 @@ contexts:
 |-----|--------|
 | `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:dashboards` (or `mon`, `inc`, `s`, `l`, `d`) |
 | `:ctx` | list org contexts; `enter` switches, `a` adds (keys/token → OS keychain), `e` edits the config in `$EDITOR`, `ctrl-d` deletes |
-| `/` | filter rows; in **Logs** this is a Datadog search query sent to the API |
-| `enter` | detail view — fetches the **full object** on demand where the list is only a summary (monitors, dashboards, incidents) |
+| `/` | filter rows; in **Logs** this is a Datadog search query sent to the API, with **autocomplete** for facet keys, operators, and values seen in the current results (`tab`/`enter` accepts, then keep typing; a second `enter` submits) |
+| `enter` | detail view — fetches the **full object** on demand where the list is only a summary (monitors, incidents). On a **dashboard**, renders its widgets with block-character sparklines + latest values (`ctrl-r` refreshes) |
 | `esc` | go back to the previous view (k9s-style navigation history); clears the active filter |
 | `l` | on a monitor: **drill down to its logs** — jumps to the Logs view pre-filtered with the monitor's log query (log monitors) or its `service:`/`env:` tags; `esc` returns |
+| `r` | on an incident: **change its state** (active/stable/resolved) — the only write ike performs, always behind a confirmation |
+| `s` / `S` | cycle the sort column / reverse the direction (any table view) |
+| `t` | on SLOs: cycle the **Type** filter (metric / monitor / time_slice / all) |
 | `o` | open selected item in the Datadog web UI (works in detail view too) |
 | `ctrl-r` | force refresh (bypasses cache — spends API budget) |
 | `1`–`4`, `0` | monitors quick filter: alert / warn / no data / ok / all |
+| `1`–`5` | in **Logs**: time window — 15m / 1h / 4h / 1d / 7d (shown in the title) |
 | `j`/`k`, `↑`/`↓` | move selection / scroll detail |
 | `?` | help (from any view) |
 | `q` | back in detail/help; quit from a table view (`ctrl-c`, `:q`, `:quit`, `:exit` always quit) |

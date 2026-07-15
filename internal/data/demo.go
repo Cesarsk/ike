@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 	"strings"
@@ -14,10 +15,11 @@ import (
 // can be exercised (and demoed) without Datadog credentials. States jitter
 // a little on every refresh to make auto-refresh visible.
 type Demo struct {
-	site string
-	mu   sync.Mutex
-	rnd  *rand.Rand
-	mons []demoMonitor
+	site  string
+	mu    sync.Mutex
+	rnd   *rand.Rand
+	mons  []demoMonitor
+	incSt map[string]string // incident id → state, mutated by SetIncidentState
 }
 
 type demoMonitor struct {
@@ -75,7 +77,7 @@ func (d *Demo) Budget() []string {
 	}
 }
 
-func (d *Demo) Fetch(_ context.Context, key, query string) ([]Row, error) {
+func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	switch key {
@@ -86,11 +88,47 @@ func (d *Demo) Fetch(_ context.Context, key, query string) ([]Row, error) {
 	case "slos":
 		return d.slos(), nil
 	case "logs":
-		return d.logs(query), nil
+		return d.logs(query, timeRange), nil
 	case "dashboards":
 		return d.dashboards(), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
+}
+
+// Dashboard synthesizes a renderable dashboard with sparkline data so the
+// widget view is demoable and e2e-testable offline.
+func (d *Demo) Dashboard(_ context.Context, id string) (*DashboardView, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	widgets := []struct {
+		title, typ, query string
+		base, amp         float64
+		data              bool
+	}{
+		{"Request rate", "timeseries", "sum:kong.requests{*}.as_rate()", 1200, 300, true},
+		{"5xx rate", "timeseries", "sum:kong.http.5xx{*}.as_rate()", 12, 20, true},
+		{"p99 latency (ms)", "query_value", "p99:trace.http.request.duration{*}", 640, 120, true},
+		{"CPU %", "timeseries", "avg:system.cpu.user{*}", 55, 30, true},
+		{"Pod restarts", "toplist", "sum:kubernetes.containers.restarts{*}", 3, 4, true},
+		{"Deploy notes", "note", "", 0, 0, false},
+	}
+	view := &DashboardView{Title: "SRE Overview (" + id + ")"}
+	for _, w := range widgets {
+		wd := Widget{Title: w.title, Type: w.typ, Query: w.query}
+		if w.data {
+			pts := make([]float64, 30)
+			for i := range pts {
+				pts[i] = w.base + w.amp*math.Sin(float64(i)/4) + float64(d.rnd.Intn(int(w.amp)+1))
+			}
+			wd.Spark = pts
+			wd.Last = pts[len(pts)-1]
+			wd.HasData = true
+		} else {
+			wd.Note = "note widget — no metric to chart"
+		}
+		view.Widgets = append(view.Widgets, wd)
+	}
+	return view, nil
 }
 
 // FetchDetail mirrors the live behavior (monitors, dashboards and incidents
@@ -160,6 +198,10 @@ func (d *Demo) incidents() []Row {
 	}
 	rows := make([]Row, 0, len(incs))
 	for _, in := range incs {
+		state := in.state
+		if s, ok := d.incSt[in.id]; ok {
+			state = s // reflect an in-session SetIncidentState change
+		}
 		created := time.Now().Add(-in.age)
 		impact := ""
 		if in.impact {
@@ -167,15 +209,27 @@ func (d *Demo) incidents() []Row {
 		}
 		rows = append(rows, Row{
 			ID:    in.id,
-			Cells: []string{in.id, in.sev, in.state, in.title, impact, created.Format("2006-01-02 15:04")},
+			Cells: []string{in.id, in.sev, state, in.title, impact, created.Format("2006-01-02 15:04")},
 			Raw: map[string]any{
-				"public_id": in.id, "severity": in.sev, "state": in.state,
+				"public_id": in.id, "severity": in.sev, "state": state,
 				"title": in.title, "customer_impacted": in.impact, "created": created.Format(time.RFC3339),
 			},
 			URL: WebBase(d.site) + "/incidents/" + strings.TrimPrefix(in.id, "IR-"),
 		})
 	}
 	return rows
+}
+
+// SetIncidentState records a state change in demo mode so the incidents view
+// reflects it, mirroring the live write path.
+func (d *Demo) SetIncidentState(_ context.Context, id, state string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.incSt == nil {
+		d.incSt = map[string]string{}
+	}
+	d.incSt[id] = state
+	return nil
 }
 
 func (d *Demo) slos() []Row {
@@ -201,7 +255,13 @@ func (d *Demo) slos() []Row {
 	return rows
 }
 
-func (d *Demo) logs(query string) []Row {
+func (d *Demo) logs(query, timeRange string) []Row {
+	// Spread demo timestamps across the requested window so changing the
+	// time range is visible offline (best-effort parse of "now-<n><unit>").
+	windowSec := 900
+	if secs, ok := rangeSeconds(timeRange); ok {
+		windowSec = secs
+	}
 	services := []struct{ svc, host string }{
 		{"kong-proxy", "ip-10-1-2-11"},
 		{"payments-api", "ip-10-1-4-23"},
@@ -257,10 +317,14 @@ func (d *Demo) logs(query string) []Row {
 		if skip {
 			continue
 		}
-		ts := time.Now().Add(-time.Duration(d.rnd.Intn(900)) * time.Second)
+		ts := time.Now().Add(-time.Duration(d.rnd.Intn(windowSec)) * time.Second)
+		stamp := ts.Format("15:04:05")
+		if windowSec > 24*3600 {
+			stamp = ts.Format("01-02 15:04") // multi-day window: show the date
+		}
 		rows = append(rows, Row{
 			ID:    fmt.Sprintf("log-%d", i),
-			Cells: []string{ts.Format("15:04:05"), m.status, s.svc, s.host, m.msg},
+			Cells: []string{stamp, m.status, s.svc, s.host, m.msg},
 			Raw: map[string]any{
 				"timestamp": ts.Format(time.RFC3339), "status": m.status,
 				"service": s.svc, "host": s.host, "message": m.msg,

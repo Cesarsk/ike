@@ -1,7 +1,7 @@
 # AGENTS.md — working on ike
 
 ike is a k9s-style terminal UI for Datadog (the name is a dog's name — "keep an
-eye on your Datadog"): Go + tview/tcell, read-only against the Datadog API,
+eye on your Datadog"): Go + tview/tcell, read-mostly against the Datadog API,
 organized around per-org "contexts".
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagrams, component map)
 and [docs/DESIGN.md](docs/DESIGN.md) (decisions, roadmap) before changing
@@ -30,9 +30,10 @@ without the maintainer's go-ahead. Use the vocabulary defined in
    (`api-key-env`, `token-env`) or in the OS keychain. Strict YAML parsing
    (`KnownFields`) must keep rejecting inline `api-key:` fields. Never log a
    credential value; log auth *kind* only.
-2. **The API surface is read-only.** Any future write operation (mute,
-   downtime) goes behind an explicit confirm modal and is a deliberate,
-   discussed exception.
+2. **The API surface is read-mostly.** The one write is incident state
+   change (`SetIncidentState`), always behind a confirm modal. Every future
+   write (mute, downtime) goes behind the same explicit confirmation — a
+   write must never happen on a single unconfirmed keypress.
 3. **Layering:** `ui` never imports YAML, keyring, or the Datadog client —
    it sees `data.Provider` and the injected `Options` callbacks. `data`
    knows nothing about tview. `main.go` is the only place that wires them.

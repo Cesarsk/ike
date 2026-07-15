@@ -32,14 +32,46 @@ type Resource struct {
 	DefaultQuery string
 }
 
+// Widget is one panel of a rendered dashboard: its title, type, primary
+// metric query, and a fetched sparkline where the query resolved to data.
+type Widget struct {
+	Title   string
+	Type    string
+	Query   string
+	Spark   []float64
+	Last    float64
+	HasData bool
+	Note    string // why there's no sparkline (unsupported widget / query type)
+}
+
+// DashboardView is a dashboard rendered for the terminal: metadata plus a
+// flat, in-order list of its widgets (group widgets are flattened).
+type DashboardView struct {
+	Title     string
+	Widgets   []Widget
+	Truncated bool // more metric widgets existed than the fetch budget allowed
+}
+
+// IncidentStates are the states an incident can be moved to via 'r'.
+var IncidentStates = []string{"active", "stable", "resolved"}
+
 // Provider serves rows for resources — live API or built-in demo data.
 type Provider interface {
-	Fetch(ctx context.Context, key, query string) ([]Row, error)
+	// Fetch lists rows for a resource. timeRange is a Datadog "from" value
+	// (e.g. "now-1h") used only by Logs; other resources ignore it.
+	Fetch(ctx context.Context, key, query, timeRange string) ([]Row, error)
 	// FetchDetail returns the full object behind a row: list endpoints
 	// return summaries (a dashboard listing has no widgets, for example),
 	// so the detail view upgrades on demand. Returning (nil, nil) means
 	// the list row is already the complete object.
 	FetchDetail(ctx context.Context, key, id string) (any, error)
+	// Dashboard renders a dashboard's widgets for the TUI, fetching metric
+	// sparklines on demand (bounded — the timeseries API is rate-limited).
+	Dashboard(ctx context.Context, id string) (*DashboardView, error)
+	// SetIncidentState changes an incident's state (e.g. active → resolved).
+	// This is the only write operation in the tool; the UI gates it behind a
+	// confirmation modal.
+	SetIncidentState(ctx context.Context, id, state string) error
 	// Budget reports the last-seen API rate-limit state, one line per
 	// endpoint family (from X-RateLimit-* response headers).
 	Budget() []string

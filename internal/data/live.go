@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -35,6 +36,7 @@ func newLive(site, webBase string) *Live {
 	cfg := datadog.NewConfiguration()
 	cfg.SetUnstableOperationEnabled("v2.ListIncidents", true)
 	cfg.SetUnstableOperationEnabled("v2.GetIncident", true)
+	cfg.SetUnstableOperationEnabled("v2.UpdateIncident", true)
 	if webBase == "" {
 		webBase = WebBase(site)
 	}
@@ -112,7 +114,7 @@ func (l *Live) Budget() []string {
 	return out
 }
 
-func (l *Live) Fetch(ctx context.Context, key, query string) ([]Row, error) {
+func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, error) {
 	ctx = l.authCtx(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -124,7 +126,7 @@ func (l *Live) Fetch(ctx context.Context, key, query string) ([]Row, error) {
 	case "slos":
 		return l.slos(ctx)
 	case "logs":
-		return l.logs(ctx, query)
+		return l.logs(ctx, query, timeRange)
 	case "dashboards":
 		return l.dashboards(ctx)
 	}
@@ -169,6 +171,183 @@ func (l *Live) FetchDetail(ctx context.Context, key, id string) (any, error) {
 		return in, nil
 	}
 	return nil, nil // the list row is already the full object
+}
+
+// SetIncidentState moves an incident to a new state (active/stable/resolved)
+// by patching its state field. The only write operation ike performs.
+func (l *Live) SetIncidentState(ctx context.Context, id, state string) error {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	sv := datadogV2.NewIncidentFieldAttributesSingleValue()
+	sv.SetValue(state)
+	attrs := datadogV2.NewIncidentUpdateAttributes()
+	attrs.SetFields(map[string]datadogV2.IncidentFieldAttributes{
+		"state": datadogV2.IncidentFieldAttributesSingleValueAsIncidentFieldAttributes(sv),
+	})
+	data := datadogV2.NewIncidentUpdateData(id, datadogV2.INCIDENTTYPE_INCIDENTS)
+	data.SetAttributes(*attrs)
+	body := datadogV2.NewIncidentUpdateRequest(*data)
+
+	_, resp, err := datadogV2.NewIncidentsApi(l.client).UpdateIncident(ctx, id, *body)
+	l.track(resp)
+	if err != nil {
+		return apiErr("set incident state", err)
+	}
+	slog.Info("incident state changed", "id", id, "state", state)
+	return nil
+}
+
+// MaxDashWidgets bounds how many metric sparklines one dashboard render will
+// fetch. The timeseries query API is the tightest budget we spend, so a
+// 40-widget dashboard cannot fan out to 40 requests on a single open.
+const MaxDashWidgets = 12
+
+// Dashboard renders a dashboard: fetch its definition, flatten the widget
+// tree, and fetch a sparkline for each metric widget (bounded). Widgets we
+// can't chart (log streams, notes, formula-only queries) still appear, with
+// a note instead of a sparkline.
+func (l *Live) Dashboard(ctx context.Context, id string) (*DashboardView, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	d, resp, err := datadogV1.NewDashboardsApi(l.client).GetDashboard(ctx, id)
+	l.track(resp)
+	if err != nil {
+		return nil, apiErr("dashboard render", err)
+	}
+	// Walk the definition generically: the widget-definition union has ~25
+	// variants and nests (group widgets contain widgets); JSON traversal is
+	// far more robust than the typed union for pulling title/type/query.
+	raw, _ := json.Marshal(d)
+	var m map[string]any
+	_ = json.Unmarshal(raw, &m)
+
+	view := &DashboardView{Title: d.GetTitle()}
+	var widgets []Widget
+	collectWidgets(m["widgets"], &widgets)
+
+	metricAPI := datadogV1.NewMetricsApi(l.client)
+	from := time.Now().Add(-time.Hour).Unix()
+	to := time.Now().Unix()
+	fetched := 0
+	for i := range widgets {
+		w := &widgets[i]
+		if w.Query == "" {
+			w.Note = "no single metric query (formula/log/note widget)"
+			continue
+		}
+		if fetched >= MaxDashWidgets {
+			w.Note = "sparkline budget reached — open in Datadog (o)"
+			view.Truncated = true
+			continue
+		}
+		fetched++
+		mq, mresp, err := metricAPI.QueryMetrics(ctx, from, to, w.Query)
+		l.track(mresp)
+		if err != nil {
+			w.Note = "query failed"
+			slog.Debug("widget query failed", "title", w.Title, "err", err)
+			continue
+		}
+		if pts := firstSeriesPoints(mq); len(pts) > 0 {
+			w.Spark = pts
+			w.Last = pts[len(pts)-1]
+			w.HasData = true
+		} else {
+			w.Note = "no data in last 1h"
+		}
+	}
+	view.Widgets = widgets
+	if view.Truncated {
+		slog.Warn("dashboard sparklines truncated", "dashboard", id, "cap", MaxDashWidgets)
+	}
+	return view, nil
+}
+
+// collectWidgets flattens the (possibly nested) widget tree in definition
+// order, pulling title, type and a single metric query from each.
+func collectWidgets(node any, out *[]Widget) {
+	list, ok := node.([]any)
+	if !ok {
+		return
+	}
+	for _, item := range list {
+		wobj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		def, _ := wobj["definition"].(map[string]any)
+		if def == nil {
+			continue
+		}
+		// Group widget: recurse into its children, don't emit a row for it.
+		if nested, ok := def["widgets"]; ok {
+			collectWidgets(nested, out)
+			continue
+		}
+		title, _ := def["title"].(string)
+		typ, _ := def["type"].(string)
+		if title == "" {
+			title = "(untitled)"
+		}
+		*out = append(*out, Widget{Title: title, Type: typ, Query: widgetQuery(def)})
+	}
+}
+
+// widgetQuery extracts a single runnable metric query from a widget
+// definition, best-effort. Classic widgets carry requests[].q; formula
+// widgets carry requests[].queries[] — we take the first metrics query.
+// Multi-query formula widgets return "" (not runnable as one query).
+func widgetQuery(def map[string]any) string {
+	reqs := def["requests"]
+	// query_value widgets sometimes have requests as an object, not a list.
+	var reqList []any
+	switch r := reqs.(type) {
+	case []any:
+		reqList = r
+	case map[string]any:
+		reqList = []any{r}
+	default:
+		return ""
+	}
+	for _, ri := range reqList {
+		req, ok := ri.(map[string]any)
+		if !ok {
+			continue
+		}
+		if q, ok := req["q"].(string); ok && q != "" {
+			return q
+		}
+		if qs, ok := req["queries"].([]any); ok && len(qs) == 1 {
+			if q0, ok := qs[0].(map[string]any); ok {
+				if ds, _ := q0["data_source"].(string); ds == "metrics" {
+					if q, ok := q0["query"].(string); ok && q != "" {
+						return q
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// firstSeriesPoints extracts the value series from the first returned metric
+// series, dropping null points.
+func firstSeriesPoints(mq datadogV1.MetricsQueryResponse) []float64 {
+	series := mq.GetSeries()
+	if len(series) == 0 {
+		return nil
+	}
+	var pts []float64
+	for _, pair := range series[0].GetPointlist() {
+		if len(pair) == 2 && pair[1] != nil {
+			pts = append(pts, *pair[1])
+		}
+	}
+	return pts
 }
 
 // Pagination caps: bounded so one view refresh can never spend more than a
@@ -330,15 +509,18 @@ func (l *Live) slos(ctx context.Context) ([]Row, error) {
 	return rows, nil
 }
 
-func (l *Live) logs(ctx context.Context, query string) ([]Row, error) {
+func (l *Live) logs(ctx context.Context, query, timeRange string) ([]Row, error) {
 	if strings.TrimSpace(query) == "" {
 		query = "*"
+	}
+	if timeRange == "" {
+		timeRange = "now-15m"
 	}
 	api := datadogV2.NewLogsApi(l.client)
 	body := datadogV2.LogsListRequest{
 		Filter: &datadogV2.LogsQueryFilter{
 			Query: datadog.PtrString(query),
-			From:  datadog.PtrString("now-15m"),
+			From:  datadog.PtrString(timeRange),
 			To:    datadog.PtrString("now"),
 		},
 		Sort: datadogV2.LOGSSORT_TIMESTAMP_DESCENDING.Ptr(),

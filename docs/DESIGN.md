@@ -56,8 +56,10 @@ Decisions:
 - **`Provider` interface with a demo implementation** — the TUI is fully
   exercisable and testable without credentials, and the smoke test drives the
   real app end-to-end on a simulation screen in CI.
-- **Read-only POC.** The only "write" is opening the browser. First write op
-  candidate: mute/downtime a monitor behind a confirm modal.
+- **Read-mostly.** The one write operation is changing an incident's state
+  (`r`), always behind a confirmation modal. Everything else is read or a
+  browser deep-link. Any future write (monitor mute/downtime) follows the
+  same confirm-gated rule.
 - **Auth = named contexts with env-indirected secrets** (see
   [ARCHITECTURE.md](ARCHITECTURE.md)). The config file names *which env
   vars* hold each org's keys; plaintext keys in the file are rejected at
@@ -82,22 +84,39 @@ Decisions:
 | resource-specific hotkeys | monitors: `0`–`4` state quick filters |
 | live watch | TTL cache + explicit `ctrl-r` (deliberate — see above) |
 
+## Query autocomplete (Logs `/`)
+
+Zero-API by design. The completion offers common facet **keys**
+(`service:`, `host:`, `status:`, `env:`, `@http.status_code`, …), search
+**operators** (`AND`/`OR`/`NOT`), and facet **values harvested from the log
+rows already loaded** (e.g. after `service:` it suggests the services in the
+current result set). It never calls the facet API — so it costs nothing
+against the tight logs budget, at the price of only knowing values already
+seen in the current window. It completes the last whitespace-delimited token
+and preserves the rest; a completion identical to what's typed is suppressed
+so `enter` submits rather than re-accepting. Richer org-wide facet
+completion (facet API, rate-limited) is a possible later opt-in mode.
+
 ## Roadmap
 
-1. Incident → linked monitors/logs drill-down (monitor → logs shipped as `l`).
-2. Monitor mute/unmute via Downtimes API behind a confirm modal.
-3. Hardened incidents field mapping (union types; verify against live org).
-4. Sparkline metric previews in the detail view (braille rendering).
-5. Live tail emulation for logs: bounded polling loop with visible budget
+1. `c` = set/replace credentials on an existing context — needed for token
+   rotation (access tokens expire ~1h) and keychain-service-rename recovery;
+   today the only path is delete + re-add.
+2. Incident → linked monitors/logs drill-down (monitor → logs shipped as `l`).
+3. Monitor mute/unmute via Downtimes API behind a confirm modal.
+4. Hardened incidents field mapping (union types; verify against live org).
+5. Sparkline metric previews in the detail view (braille rendering).
+6. Live tail emulation for logs: bounded polling loop with visible budget
    spend (there is no public streaming API).
-6. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
-7. Per-resource TTL overrides and skins in the config file.
+7. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
+8. Per-resource TTL overrides and skins in the config file.
 
 Done: ~~multi-org contexts + config file~~ (`:ctx`, env-indirected secrets),
 ~~esc navigation stack~~, ~~in-app context add/delete with OS-keychain
 storage~~ (`:ctx` → `a` / `ctrl-d`), ~~monitor → logs drill-down~~ (`l`),
 ~~pagination~~ (bounded, truncation logged), ~~on-demand full-object detail
-fetch~~, ~~org web subdomains~~.
+fetch~~, ~~org web subdomains~~, ~~in-terminal dashboard rendering~~
+(widget sparklines).
 
 ## Project policy (decided 2026-07-14)
 
@@ -122,9 +141,25 @@ fetch~~, ~~org web subdomains~~.
   regular contributor appears.
 - **Vocabulary**: [CONTEXT.md](../CONTEXT.md) is the canonical glossary.
 
+## Dashboard rendering
+
+`enter` on a dashboard renders its widgets in the terminal: each widget's
+title, type, primary metric query, and a block-character sparkline + latest
+value over the last hour. Widget queries are extracted by walking the
+dashboard JSON generically (the widget-definition union has ~25 nesting
+variants; JSON traversal is far more robust than the typed union). Only
+single-metric widgets get a sparkline — formula/log/note widgets show a note.
+Metric fetches are **bounded** (`data.MaxDashWidgets`, currently 12) and
+uncached: the timeseries query API is the tightest budget we spend, so a
+40-widget dashboard can't fan out to 40 requests on one open. No
+auto-refresh; `ctrl-r` is the explicit re-fetch. This is a trend-at-a-glance
+substitute for the graphical dashboard, not fidelity — `o` still opens the
+real thing.
+
 ## Non-goals
 
-- Dashboard/graph rendering fidelity — deep-link to the browser instead.
+- Pixel-faithful graph rendering — sparklines convey trend; deep-link (`o`)
+  to the browser for the real dashboard.
 - Wrapping all 33 Datadog products. Incident-response surface only; breadth
   is what pup is for.
 - Config mutation (monitor definitions, dashboards JSON) in early versions.

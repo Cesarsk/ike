@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -35,10 +36,32 @@ func (c *Cached) FetchDetail(ctx context.Context, key, id string) (any, error) {
 	return c.p.FetchDetail(ctx, key, id)
 }
 
+// Dashboard is an explicit render/refresh action, deliberately uncached —
+// each open or ctrl-r spends metric-query budget knowingly.
+func (c *Cached) Dashboard(ctx context.Context, id string) (*DashboardView, error) {
+	return c.p.Dashboard(ctx, id)
+}
+
+// SetIncidentState writes through and drops the incidents cache so the next
+// fetch reflects the change.
+func (c *Cached) SetIncidentState(ctx context.Context, id, state string) error {
+	if err := c.p.SetIncidentState(ctx, id, state); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	for k := range c.entries {
+		if strings.HasPrefix(k, "incidents|") {
+			delete(c.entries, k)
+		}
+	}
+	c.mu.Unlock()
+	return nil
+}
+
 // Fetch returns rows for a resource, from cache when fresh.
 // It reports the fetch time and whether the result came from cache.
-func (c *Cached) Fetch(ctx context.Context, res Resource, query string, force bool) ([]Row, time.Time, bool, error) {
-	key := res.Key + "|" + query
+func (c *Cached) Fetch(ctx context.Context, res Resource, query, timeRange string, force bool) ([]Row, time.Time, bool, error) {
+	key := res.Key + "|" + query + "|" + timeRange
 
 	c.mu.Lock()
 	e, ok := c.entries[key]
@@ -48,7 +71,7 @@ func (c *Cached) Fetch(ctx context.Context, res Resource, query string, force bo
 		return e.rows, e.at, true, nil
 	}
 
-	rows, err := c.p.Fetch(ctx, res.Key, query)
+	rows, err := c.p.Fetch(ctx, res.Key, query, timeRange)
 	if err != nil {
 		// Serve stale data alongside the error if we have any.
 		if ok {

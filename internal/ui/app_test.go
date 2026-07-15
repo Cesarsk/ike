@@ -35,10 +35,39 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "Incidents(all)")
 	waitFor(t, sim, "IR-142")
 
+	// Incident action: r opens a confirm modal (the only write path); pick
+	// a target state and the change is applied + reflected on reload.
+	typeRunes(sim, "r")
+	waitFor(t, sim, "currently active")
+	press(sim, tcell.KeyRight) // Cancel → "→ stable"
+	press(sim, tcell.KeyRight) // → "→ resolved"
+	press(sim, tcell.KeyEnter)
+	// IR-142 starts "active"; this row only appears once the change applied
+	// and the incidents view reloaded.
+	waitFor(t, sim, "IR-142 SEV-1 resolved")
+
 	typeCmd(sim, ":slos")
+	waitFor(t, sim, "SLOs(all)")
+	// SLO type filter (t cycles metric → monitor → time_slice → all) and
+	// sorting (s cycles column, S reverses); title reflects both.
+	typeRunes(sim, "t")
+	waitFor(t, sim, "SLOs(type:metric)")
+	typeRunes(sim, "s")
+	waitFor(t, sim, "↕NAME▲")
+	typeRunes(sim, "S")
+	waitFor(t, sim, "↕NAME▼")
+	press(sim, tcell.KeyEscape) // clears filter+sort side-effects for a clean state
 	waitFor(t, sim, "SLOs(all)")
 
 	typeCmd(sim, ":dashboards")
+	waitFor(t, sim, "Dashboards(all)")
+
+	// Dashboard render: enter draws widgets with sparklines, not raw JSON;
+	// esc pops back to the dashboards table.
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "widgets · sparklines")
+	waitFor(t, sim, "Request rate")
+	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Dashboards(all)")
 
 	// Logs: '/' is a server-side query.
@@ -47,14 +76,20 @@ func TestAppSmoke(t *testing.T) {
 	typeRunes(sim, "/")
 	typeRunes(sim, "status:error")
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "Logs(status:error)")
+	waitFor(t, sim, "Logs(status:error · 15m)")
+
+	// Time-range control: digit keys switch the Logs window (title reflects it).
+	typeRunes(sim, "2")
+	waitFor(t, sim, "Logs(status:error · 1h)")
+	typeRunes(sim, "1")
+	waitFor(t, sim, "Logs(status:error · 15m)")
 
 	// Back to monitors, then esc must pop the navigation stack back to the
 	// previous page (logs, with its query intact) — k9s-style history.
 	typeCmd(sim, ":monitors")
 	waitFor(t, sim, "Monitors(all)")
 	press(sim, tcell.KeyEscape)
-	waitFor(t, sim, "Logs(status:error)")
+	waitFor(t, sim, "Logs(status:error · 15m)")
 
 	// Quick filter + client-side filter on monitors.
 	typeCmd(sim, ":monitors")
@@ -69,7 +104,7 @@ func TestAppSmoke(t *testing.T) {
 	// Drill-down: 'l' on the Kong monitor jumps to Logs pre-filtered with
 	// its service tag; esc pops back to the filtered monitors view.
 	typeRunes(sim, "l")
-	waitFor(t, sim, "Logs(service:kong-proxy)")
+	waitFor(t, sim, "Logs(service:kong-proxy · 15m)")
 	waitFor(t, sim, "kong-proxy") // rows for that service are on screen
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Monitors(/kong)")

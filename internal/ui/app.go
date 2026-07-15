@@ -7,7 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -84,36 +87,48 @@ type App struct {
 	status  *tview.TextView
 	footer  *tview.Pages
 	detail  *tview.TextView
+	dash    *tview.TextView
 	ctxForm *tview.Form
 	formErr *tview.TextView
 	confirm *tview.Modal
 
-	res         data.Resource
-	rows        []data.Row
-	filtered    []int
-	filter      string            // '/' text filter: substring across all cells
-	stateFilter string            // 0-4 quick filter: exact match on the STATE column
-	queries     map[string]string // per-resource server-side query (logs)
-	fetchedAt   time.Time
-	loading     bool
-	promptM     promptMode
-	page        string // current content page: "table", "help", "detail"
-	detailRow   data.Row
-	stack       []navEntry // navigation history, k9s-style: esc pops
-	pendingSel  int        // row to re-select once restored rows arrive
-	flashTimer  *time.Timer
+	res      data.Resource
+	rows     []data.Row
+	filtered []int
+	filter   string // '/' text filter: substring across all cells
+	// colFilter is the exact-match quick filter (monitors state via 0-4,
+	// SLO type via 't'): matches one column exactly. colFilterCol == -1 off.
+	colFilterCol int
+	colFilterVal string
+	// sortCol == -1 means the resource's natural order; otherwise sort the
+	// filtered rows by that column, direction sortAsc.
+	sortCol    int
+	sortAsc    bool
+	queries    map[string]string // per-resource server-side query (logs)
+	logRangeIx int               // index into logRanges for the Logs time window
+	fetchedAt  time.Time
+	loading    bool
+	promptM    promptMode
+	page       string // current content page: "table", "help", "detail"
+	detailRow  data.Row
+	stack      []navEntry // navigation history, k9s-style: esc pops
+	pendingSel int        // row to re-select once restored rows arrive
+	flashTimer *time.Timer
 }
 
 // navEntry is one step of navigation history. Like k9s's page stack, every
 // view change (":resource", enter on a row, "?") pushes the current state,
 // and esc pops back to it — resource, filter and selection included.
 type navEntry struct {
-	page        string
-	res         data.Resource
-	filter      string
-	stateFilter string
-	detailRow   data.Row
-	selRow      int
+	page         string
+	res          data.Resource
+	filter       string
+	colFilterCol int
+	colFilterVal string
+	sortCol      int
+	sortAsc      bool
+	detailRow    data.Row
+	selRow       int
 }
 
 func New(o Options) (*App, error) {
@@ -178,31 +193,38 @@ func (a *App) build() {
 		}
 	})
 	a.prompt.SetAutocompleteFunc(func(current string) []string {
-		if a.promptM != promptCmd || current == "" {
-			return nil
-		}
-		var out []string
-		for _, r := range data.Resources() {
-			if strings.HasPrefix(r.Key, strings.ToLower(current)) {
-				out = append(out, r.Key)
+		switch {
+		case a.promptM == promptCmd && current != "":
+			var out []string
+			for _, r := range data.Resources() {
+				if strings.HasPrefix(r.Key, strings.ToLower(current)) {
+					out = append(out, r.Key)
+				}
 			}
+			return out
+		case a.promptM == promptFilter && a.res.Key == "logs":
+			return a.logQueryCompletions(current)
 		}
-		return out
+		return nil
 	})
-	// Enter on an autocomplete entry executes the command immediately —
-	// without this the dropdown swallows the first Enter and ':incidents⏎'
-	// leaves the user stuck in the prompt.
+	// Command mode: Enter on an entry executes immediately (without this the
+	// dropdown swallows the first Enter). Logs query mode: Enter/Tab accepts
+	// the completion into the field but does NOT submit — the user keeps
+	// composing the query and submits with a second Enter (DoneFunc).
 	a.prompt.SetAutocompletedFunc(func(text string, _ int, source int) bool {
 		if source == tview.AutocompletedNavigate {
 			return false
 		}
 		a.prompt.SetText(text)
-		if source == tview.AutocompletedEnter || source == tview.AutocompletedClick {
-			a.closePrompt()
-			a.execCommand(text)
+		if a.promptM == promptCmd {
+			if source == tview.AutocompletedEnter || source == tview.AutocompletedClick {
+				a.closePrompt()
+				a.execCommand(text)
+			}
 			return true
 		}
-		return false
+		// logs query mode: accept the token, keep composing
+		return source == tview.AutocompletedEnter || source == tview.AutocompletedTab || source == tview.AutocompletedClick
 	})
 
 	a.status = tview.NewTextView().SetDynamicColors(true)
@@ -214,6 +236,11 @@ func (a *App) build() {
 	a.detail.SetBorder(true)
 	a.detail.SetBorderColor(tcell.ColorDodgerBlue)
 	a.detail.SetTitleColor(tcell.ColorOrange)
+
+	a.dash = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.dash.SetBorder(true)
+	a.dash.SetBorderColor(tcell.ColorDodgerBlue)
+	a.dash.SetTitleColor(tcell.ColorOrange)
 
 	a.ctxForm = tview.NewForm()
 	a.ctxForm.SetBorder(true)
@@ -246,6 +273,7 @@ func (a *App) build() {
 	a.content = tview.NewPages().
 		AddPage("table", a.table, true, true).
 		AddPage("detail", a.detail, true, false).
+		AddPage("dashboard", a.dash, true, false).
 		AddPage("help", a.buildHelp(), true, false).
 		AddPage("ctxform", ctxFormFlex, true, false).
 		AddPage("confirm", a.confirm, true, false)
@@ -270,6 +298,11 @@ func (a *App) setHints() {
 			"[aqua]<esc>[white]back  [aqua]<o>[white]open in Datadog  [aqua]<?>[white]help",
 			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<q>[white]back",
 		}
+	case "dashboard":
+		lines = []string{
+			"[aqua]<esc>[white]back  [aqua]<ctrl-r>[white]refresh sparklines  [aqua]<o>[white]open in Datadog",
+			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help  [aqua]<q>[white]back",
+		}
 	case "help":
 		lines = []string{
 			"[aqua]<esc>[white]back  [aqua]<q>[white]back",
@@ -288,9 +321,17 @@ func (a *App) setHints() {
 		}
 		switch a.res.Key {
 		case "monitors":
-			lines = append(lines, "[gray]<l>drill to logs   quick filters: <1>alert <2>warn <3>nodata <4>ok <0>all")
+			lines = append(lines, "[gray]<l>logs  <s>sort <S>reverse   quick: <1>alert <2>warn <3>nodata <4>ok <0>all")
+		case "slos":
+			lines = append(lines, "[gray]<t>cycle type filter  <s>sort <S>reverse")
+		case "incidents":
+			lines = append(lines, "[gray]<r>change state  <s>sort <S>reverse")
+		case "logs":
+			lines = append(lines, "[gray]</>query (tab=complete)  window: <1>15m <2>1h <3>4h <4>1d <5>7d  <s>sort")
 		case ctxResource.Key:
 			lines = append(lines, "[gray]<enter>switch org  <a>add  <e>edit config  <ctrl-d>delete")
+		default:
+			lines = append(lines, "[gray]<s>sort <S>reverse")
 		}
 	}
 	a.hintTV.SetText(strings.Join(lines, "\n"))
@@ -312,17 +353,24 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]/<text>[white]       filter rows; in Logs this is a Datadog search query sent to the API
    [aqua]↑/↓ j/k[white]       move selection
    [aqua]enter[white]         open detail view — fetches the full object on demand where the
-                 list is only a summary (monitors, dashboards, incidents)
+                 list is only a summary (monitors, incidents). On a dashboard,
+                 renders its widgets with sparklines (ctrl-r refreshes)
    [aqua]esc[white]           go back to the previous view (navigation history, like k9s);
                  clears the active filter on the way out
+
+ [orange]SORT & FILTER
+   [aqua]s[white]             cycle the sort column; [aqua]S[white] reverses direction
+   [aqua]0-4[white]           (monitors) quick filter by state: all/alert/warn/nodata/ok
+   [aqua]t[white]             (SLOs) cycle the Type filter: metric / monitor / time_slice / all
 
  [orange]ACTIONS
    [aqua]l[white]             (on a monitor) drill down to its logs: jumps to the Logs view
                  with the monitor's log query, or its service:/env: tags.
                  esc returns to the monitors view
+   [aqua]r[white]             (on an incident) change its state (active/stable/resolved) —
+                 the only write ike performs, always behind a confirmation
    [aqua]o[white]             open the selected item in the Datadog web UI (also works in detail view)
    [aqua]ctrl-r[white]        force refresh (bypasses cache — spends API budget)
-   [aqua]0-4[white]           monitors quick filter: all/alert/warn/nodata/ok
 
  [orange]OTHER
    [aqua]?[white]             this help (from any view)
@@ -371,6 +419,29 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == 'l' && a.res.Key == "monitors":
 			a.drillToLogs(a.detailRow)
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	case "dashboard":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			a.loadDashboard(a.detailRow, true)
+			return nil
+		case ev.Rune() == 'o':
+			a.openURL(a.detailRow.URL)
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -435,6 +506,37 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.quickFilter(ev.Rune())
 			return nil
 		}
+		if a.res.Key == "logs" {
+			a.setLogRange(ev.Rune())
+			return nil
+		}
+	case '5':
+		if a.res.Key == "logs" {
+			a.setLogRange(ev.Rune())
+			return nil
+		}
+	case 't':
+		if a.res.Key == "slos" {
+			a.cycleSLOType()
+			return nil
+		}
+	case 's':
+		if a.res.Key != ctxResource.Key {
+			a.cycleSort()
+			return nil
+		}
+	case 'S':
+		if a.res.Key != ctxResource.Key {
+			a.toggleSortDir()
+			return nil
+		}
+	case 'r':
+		if a.res.Key == "incidents" {
+			if row, ok := a.selectedRow(); ok {
+				a.confirmIncidentAction(row)
+			}
+			return nil
+		}
 	}
 	if ev.Key() == tcell.KeyCtrlD && a.res.Key == ctxResource.Key {
 		a.confirmDeleteContext()
@@ -443,34 +545,160 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	return ev
 }
 
-// quickFilter matches the STATE column exactly — a monitor named
+// quickFilter matches the STATE column (0) exactly — a monitor named
 // "… Warning Threshold Reached" must NOT match the Warn quick filter.
 func (a *App) quickFilter(r rune) {
+	val := ""
 	switch r {
 	case '1':
-		a.stateFilter = "Alert"
+		val = "Alert"
 	case '2':
-		a.stateFilter = "Warn"
+		val = "Warn"
 	case '3':
-		a.stateFilter = "No Data"
+		val = "No Data"
 	case '4':
-		a.stateFilter = "OK"
-	default:
-		a.stateFilter = ""
+		val = "OK"
+	}
+	a.setColFilter(0, val)
+}
+
+// logRanges are the selectable Logs time windows (digit keys 1-5 in Logs).
+var logRanges = []struct {
+	key   rune
+	label string
+	from  string
+}{
+	{'1', "15m", "now-15m"},
+	{'2', "1h", "now-1h"},
+	{'3', "4h", "now-4h"},
+	{'4', "1d", "now-1d"},
+	{'5', "7d", "now-7d"},
+}
+
+// timeRange is the Datadog "from" for the current view — only Logs uses one.
+func (a *App) timeRange() string {
+	if a.res.Key != "logs" {
+		return ""
+	}
+	return logRanges[a.logRangeIx].from
+}
+
+// setLogRange picks a Logs time window by its digit key and refetches
+// (the window is part of the cache key, so this always hits the API).
+func (a *App) setLogRange(r rune) {
+	for i, lr := range logRanges {
+		if lr.key == r {
+			if a.logRangeIx == i {
+				return
+			}
+			a.logRangeIx = i
+			a.flash("logs window: "+lr.label, false)
+			a.load(true)
+			return
+		}
+	}
+}
+
+// setColFilter sets (or clears, val=="") the exact-match column quick filter.
+func (a *App) setColFilter(col int, val string) {
+	if val == "" {
+		a.colFilterCol, a.colFilterVal = -1, ""
+	} else {
+		a.colFilterCol, a.colFilterVal = col, val
 	}
 	a.applyFilter()
 }
 
+// cycleSLOType cycles the SLO Type-column filter through the types present.
+func (a *App) cycleSLOType() {
+	order := []string{"metric", "monitor", "time_slice"}
+	// only offer types that actually appear
+	present := map[string]bool{}
+	for _, r := range a.rows {
+		if len(r.Cells) > 1 {
+			present[strings.ToLower(r.Cells[1])] = true
+		}
+	}
+	var avail []string
+	for _, t := range order {
+		if present[t] {
+			avail = append(avail, t)
+		}
+	}
+	if len(avail) == 0 {
+		a.flash("no SLO types to filter", true)
+		return
+	}
+	// advance from the current selection, wrapping back to "all"
+	cur := strings.ToLower(a.colFilterVal)
+	next := avail[0]
+	for i, t := range avail {
+		if t == cur {
+			if i+1 >= len(avail) {
+				next = "" // wrap to all
+			} else {
+				next = avail[i+1]
+			}
+			break
+		}
+	}
+	a.setColFilter(1, next)
+}
+
+// cycleSort advances the sort column across the current resource's columns,
+// wrapping from the last column back to natural order.
+func (a *App) cycleSort() {
+	n := len(a.res.Columns)
+	if n == 0 {
+		return
+	}
+	if a.sortCol < 0 {
+		a.sortCol, a.sortAsc = 0, true
+	} else if a.sortCol >= n-1 {
+		a.sortCol = -1 // back to natural order
+	} else {
+		a.sortCol++
+	}
+	a.applyFilter()
+	if a.sortCol >= 0 {
+		a.flash(fmt.Sprintf("sort: %s %s", a.res.Columns[a.sortCol], arrow(a.sortAsc)), false)
+	} else {
+		a.flash("sort: default", false)
+	}
+}
+
+func (a *App) toggleSortDir() {
+	if a.sortCol < 0 {
+		a.sortCol, a.sortAsc = 0, true
+	} else {
+		a.sortAsc = !a.sortAsc
+	}
+	a.applyFilter()
+	a.flash(fmt.Sprintf("sort: %s %s", a.res.Columns[a.sortCol], arrow(a.sortAsc)), false)
+}
+
+func arrow(asc bool) string {
+	if asc {
+		return "▲"
+	}
+	return "▼"
+}
+
 func (a *App) openPrompt(m promptMode) {
 	a.promptM = m
+	prefill := ""
 	if m == promptCmd {
 		a.prompt.SetLabel(" 🐶 > ")
 	} else if a.res.ServerQuery {
 		a.prompt.SetLabel(" query> ")
+		prefill = a.queries[a.res.Key] // edit the current query, don't retype
+		if prefill == "*" {
+			prefill = ""
+		}
 	} else {
 		a.prompt.SetLabel(" /")
 	}
-	a.prompt.SetText("")
+	a.prompt.SetText(prefill)
 	a.footer.SwitchToPage("prompt")
 	a.SetFocus(a.prompt)
 }
@@ -567,8 +795,7 @@ func (a *App) showContexts() {
 		a.pushNav()
 	}
 	a.res = ctxResource
-	a.filter = ""
-	a.stateFilter = ""
+	a.resetView()
 	a.rows = nil
 	a.filtered = nil
 	a.pendingSel = 1
@@ -623,13 +850,23 @@ func (a *App) switchContext(name string) {
 func (a *App) pushNav() {
 	sel, _ := a.table.GetSelection()
 	a.stack = append(a.stack, navEntry{
-		page:        a.page,
-		res:         a.res,
-		filter:      a.filter,
-		stateFilter: a.stateFilter,
-		detailRow:   a.detailRow,
-		selRow:      sel,
+		page:         a.page,
+		res:          a.res,
+		filter:       a.filter,
+		colFilterCol: a.colFilterCol,
+		colFilterVal: a.colFilterVal,
+		sortCol:      a.sortCol,
+		sortAsc:      a.sortAsc,
+		detailRow:    a.detailRow,
+		selRow:       sel,
 	})
+}
+
+// resetView clears filters and sort — used when switching resource/context.
+func (a *App) resetView() {
+	a.filter = ""
+	a.colFilterCol, a.colFilterVal = -1, ""
+	a.sortCol, a.sortAsc = -1, true
 }
 
 // showHelp opens the help page; esc pops back to wherever the user came from.
@@ -645,10 +882,13 @@ func (a *App) showHelp() {
 // filter, then pop the navigation stack to the previous view. At the root
 // with no filter, esc is a no-op.
 func (a *App) back() {
-	if a.page == "table" && (a.filter != "" || a.stateFilter != "") {
+	// k9s esc semantics: an active filter is cleared first; only a second
+	// esc (nothing left to clear) pops the navigation stack.
+	if a.page == "table" && (a.filter != "" || a.colFilterVal != "") {
 		a.filter = ""
-		a.stateFilter = ""
+		a.colFilterCol, a.colFilterVal = -1, ""
 		a.applyFilter()
+		return
 	}
 	if len(a.stack) == 0 {
 		return
@@ -662,12 +902,17 @@ func (a *App) back() {
 func (a *App) restore(e navEntry) {
 	a.res = e.res
 	a.filter = e.filter
-	a.stateFilter = e.stateFilter
+	a.colFilterCol, a.colFilterVal = e.colFilterCol, e.colFilterVal
+	a.sortCol, a.sortAsc = e.sortCol, e.sortAsc
 	a.detailRow = e.detailRow
 	switch e.page {
 	case "detail":
 		a.renderDetail(e.detailRow)
 		a.showPage("detail")
+	case "dashboard":
+		// The dashboard pane still holds its rendered text — just re-show
+		// it (don't re-fetch and re-spend metric budget on a back-nav).
+		a.showPage("dashboard")
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -684,6 +929,8 @@ func (a *App) showPage(page string) {
 	switch page {
 	case "detail":
 		a.SetFocus(a.detail) // focus so ↑/↓ scroll the JSON
+	case "dashboard":
+		a.SetFocus(a.dash)
 	case "ctxform":
 		a.SetFocus(a.ctxForm)
 	default:
@@ -910,6 +1157,64 @@ func (a *App) closeConfirm() {
 	a.setHints()
 }
 
+// confirmIncidentAction offers to move the selected incident to another
+// state. This is ike's only write path, so it is always behind this modal.
+func (a *App) confirmIncidentAction(r data.Row) {
+	cur := ""
+	if len(r.Cells) > 2 {
+		cur = strings.ToLower(r.Cells[2])
+	}
+	var targets []string
+	for _, s := range data.IncidentStates {
+		if s != cur {
+			targets = append(targets, s)
+		}
+	}
+	buttons := append([]string{"Cancel"}, targetLabels(targets)...)
+	a.confirm.
+		SetText(fmt.Sprintf("Change %s (currently %s) to:\nThis writes to Datadog.", r.ID, cur)).
+		ClearButtons().
+		AddButtons(buttons).
+		SetDoneFunc(func(_ int, label string) {
+			a.closeConfirm()
+			state := strings.TrimPrefix(label, "→ ")
+			if label == "Cancel" || state == "" {
+				return
+			}
+			a.applyIncidentState(r, state)
+		})
+	a.page = "confirm"
+	a.content.ShowPage("confirm")
+	a.SetFocus(a.confirm)
+	a.setHints()
+}
+
+func targetLabels(states []string) []string {
+	out := make([]string, len(states))
+	for i, s := range states {
+		out[i] = "→ " + s
+	}
+	return out
+}
+
+func (a *App) applyIncidentState(r data.Row, state string) {
+	a.flash("setting "+r.ID+" → "+state+" …", false)
+	go func() {
+		err := a.provider.SetIncidentState(context.Background(), r.ID, state)
+		a.QueueUpdateDraw(func() {
+			if err != nil {
+				slog.Error("incident state change failed", "id", r.ID, "state", state, "err", err)
+				a.flash("✗ "+err.Error(), true)
+				return
+			}
+			a.flash(r.ID+" → "+state, false)
+			if a.res.Key == "incidents" && a.page == "table" {
+				a.load(true) // cache was dropped; re-fetch to show the new state
+			}
+		})
+	}()
+}
+
 // ---- data flow -------------------------------------------------------------
 
 func (a *App) switchResource(res data.Resource) {
@@ -920,8 +1225,7 @@ func (a *App) switchResource(res data.Resource) {
 		a.pushNav() // k9s-style: goto pushes, esc pops back here
 	}
 	a.res = res
-	a.filter = ""
-	a.stateFilter = ""
+	a.resetView()
 	if res.ServerQuery && a.queries[res.Key] == "" {
 		a.queries[res.Key] = res.DefaultQuery
 	}
@@ -946,10 +1250,11 @@ func (a *App) load(force bool) {
 	}
 	a.loading = true
 	res, q := a.res, a.queries[a.res.Key]
+	tr := a.timeRange()
 	go func() {
 		start := time.Now()
-		rows, at, cached, err := a.provider.Fetch(context.Background(), res, q, force)
-		slog.Debug("fetch", "resource", res.Key, "query", q, "force", force,
+		rows, at, cached, err := a.provider.Fetch(context.Background(), res, q, tr, force)
+		slog.Debug("fetch", "resource", res.Key, "query", q, "range", tr, "force", force,
 			"rows", len(rows), "cached", cached, "took", time.Since(start).Round(time.Millisecond), "err", err)
 		a.QueueUpdateDraw(func() {
 			a.loading = false
@@ -979,18 +1284,21 @@ func (a *App) load(force bool) {
 func (a *App) applyFilter() {
 	a.filtered = a.filtered[:0]
 	for i, r := range a.rows {
-		if matchRow(r, a.stateFilter, a.filter) {
+		if matchRow(r, a.colFilterCol, a.colFilterVal, a.filter) {
 			a.filtered = append(a.filtered, i)
 		}
 	}
+	a.sortFiltered()
 	a.render()
 }
 
-// matchRow applies both filters: state is an exact (case-insensitive) match
-// on the first column; text is a substring match across all cells.
-func matchRow(r data.Row, state, text string) bool {
-	if state != "" && (len(r.Cells) == 0 || !strings.EqualFold(r.Cells[0], state)) {
-		return false
+// matchRow applies both filters: an exact (case-insensitive) match on one
+// column (col>=0), and a substring match across all cells.
+func matchRow(r data.Row, col int, val, text string) bool {
+	if val != "" && col >= 0 {
+		if col >= len(r.Cells) || !strings.EqualFold(r.Cells[col], val) {
+			return false
+		}
 	}
 	if text == "" {
 		return true
@@ -1002,6 +1310,55 @@ func matchRow(r data.Row, state, text string) bool {
 		}
 	}
 	return false
+}
+
+// sortFiltered orders a.filtered by the chosen column, falling back to the
+// resource's natural order (already applied by the provider) when sortCol<0.
+// Numeric-looking columns sort numerically; everything else case-insensitive.
+func (a *App) sortFiltered() {
+	if a.sortCol < 0 {
+		return
+	}
+	col := a.sortCol
+	sort.SliceStable(a.filtered, func(i, j int) bool {
+		ci := cellAt(a.rows[a.filtered[i]], col)
+		cj := cellAt(a.rows[a.filtered[j]], col)
+		var less bool
+		if ni, oki := parseNum(ci); oki {
+			if nj, okj := parseNum(cj); okj {
+				less = ni < nj
+			} else {
+				less = ci < cj
+			}
+		} else {
+			less = strings.ToLower(ci) < strings.ToLower(cj)
+		}
+		if a.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+func cellAt(r data.Row, col int) string {
+	if col < len(r.Cells) {
+		return r.Cells[col]
+	}
+	return ""
+}
+
+// parseNum pulls a leading number out of a cell like "99.90%", "P1", "42".
+func parseNum(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	end := 0
+	for end < len(s) && (s[end] == '-' || s[end] == '.' || (s[end] >= '0' && s[end] <= '9')) {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s[:end], 64)
+	return f, err == nil
 }
 
 func (a *App) ticker() {
@@ -1043,8 +1400,8 @@ func (a *App) render() {
 		}
 	}
 	var parts []string
-	if a.stateFilter != "" {
-		parts = append(parts, "state:"+a.stateFilter)
+	if a.colFilterVal != "" && a.colFilterCol >= 0 && a.colFilterCol < len(a.res.Columns) {
+		parts = append(parts, strings.ToLower(a.res.Columns[a.colFilterCol])+":"+a.colFilterVal)
 	}
 	if a.filter != "" {
 		parts = append(parts, "/"+a.filter)
@@ -1056,7 +1413,14 @@ func (a *App) render() {
 	if a.res.ServerQuery {
 		flabel = a.queries[a.res.Key]
 	}
-	a.table.SetTitle(tview.Escape(fmt.Sprintf(" %s(%s)[%d] ", a.res.Title, flabel, len(a.filtered))))
+	if a.res.Key == "logs" {
+		flabel = fmt.Sprintf("%s · %s", flabel, logRanges[a.logRangeIx].label)
+	}
+	sortLabel := ""
+	if a.sortCol >= 0 && a.sortCol < len(a.res.Columns) {
+		sortLabel = fmt.Sprintf(" ↕%s%s", a.res.Columns[a.sortCol], arrow(a.sortAsc))
+	}
+	a.table.SetTitle(tview.Escape(fmt.Sprintf(" %s(%s)[%d]%s ", a.res.Title, flabel, len(a.filtered), sortLabel)))
 	// Re-assert the offset: this clears tview's internal trackEnd flag,
 	// which latches during the brief empty draw before data arrives and
 	// would otherwise pin the viewport to the bottom of the table.
@@ -1136,10 +1500,7 @@ func (a *App) updateInfo() {
 	if a.loading {
 		age = "loading…"
 	}
-	budget := strings.Join(a.provider.Budget(), " • ")
-	if budget == "" {
-		budget = "n/a (no API calls yet)"
-	}
+	budget := formatBudget(a.provider.Budget())
 	// Escape: context names like "staging" would otherwise parse as tview
 	// color tags inside this dynamic-colors TextView and vanish.
 	mode := tview.Escape(fmt.Sprintf("%s [%s]", a.provider.Mode(), a.current))
@@ -1155,8 +1516,60 @@ func (a *App) updateInfo() {
 		view = "Help"
 	}
 	a.infoTV.SetText(fmt.Sprintf(
-		" [orange]Mode:[%s]   %s\n [orange]Site:[white]   %s\n [orange]View:[white]   %s\n [orange]Age:[white]    %s\n [orange]Budget:[gray] %s",
-		modeColor, mode, a.provider.Site(), view, age, tview.Escape(budget)))
+		" [orange]Mode:[%s]   %s\n [orange]Site:[white]   %s\n [orange]View:[white]   %s\n [orange]Age:[white]    %s\n [orange]Budget:[white] %s",
+		modeColor, mode, a.provider.Site(), view, age, budget))
+}
+
+// budgetLine matches the provider's "name remaining/limit per Ns" budget
+// strings so the header can render compact, colour-coded headroom.
+var budgetLine = regexp.MustCompile(`^(\S+)\s+(\d+)/(\d+)\s+per`)
+
+// formatBudget turns raw X-RateLimit strings into a glanceable, colour-coded
+// summary: green >50% headroom, yellow >20%, red at/under 20% — so you see a
+// limit coming before it throttles you. Names are shortened for width.
+func formatBudget(raw []string) string {
+	if len(raw) == 0 {
+		return "[gray]n/a (no API calls yet)"
+	}
+	parts := make([]string, 0, len(raw))
+	for _, r := range raw {
+		m := budgetLine.FindStringSubmatch(r)
+		if m == nil {
+			parts = append(parts, "[gray]"+tview.Escape(r))
+			continue
+		}
+		name, rem, lim := m[1], parseIntSafe(m[2]), parseIntSafe(m[3])
+		color := "green"
+		if lim > 0 {
+			switch ratio := float64(rem) / float64(lim); {
+			case ratio <= 0.2:
+				color = "red"
+			case ratio <= 0.5:
+				color = "yellow"
+			}
+		}
+		parts = append(parts, fmt.Sprintf("[white]%s [%s]%d/%d[white]", shortBudgetName(name), color, rem, lim))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func parseIntSafe(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return n
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
+// shortBudgetName trims Datadog's verbose rate-limit names to something that
+// fits the header (e.g. "logs_public_search_api" → "logs_search").
+func shortBudgetName(n string) string {
+	n = strings.TrimSuffix(n, "_api")
+	n = strings.ReplaceAll(n, "_public", "")
+	return n
 }
 
 func (a *App) flash(msg string, isErr bool) {
@@ -1191,6 +1604,12 @@ func (a *App) openDetail(tableRow int) {
 	_ = tableRow
 	if a.res.Key == ctxResource.Key {
 		a.switchContext(r.ID) // enter on a context switches org, k9s-style
+		return
+	}
+	if a.res.Key == "dashboards" {
+		a.pushNav()
+		a.detailRow = r
+		a.loadDashboard(r, false) // render widgets + sparklines instead of JSON
 		return
 	}
 	a.pushNav()
@@ -1236,6 +1655,61 @@ func (a *App) renderDetail(r data.Row) {
 	}
 	a.detail.SetText(string(b)).ScrollToBeginning()
 	a.detail.SetTitle(fmt.Sprintf(" %s/%s ", strings.TrimSuffix(a.res.Title, "s"), r.ID))
+}
+
+// loadDashboard renders a dashboard's widgets with sparklines. Fetch is
+// on-demand and bounded (see data.maxDashWidgets); force=true is ctrl-r.
+func (a *App) loadDashboard(r data.Row, force bool) {
+	a.dash.SetTitle(fmt.Sprintf(" Dashboard/%s ", r.ID))
+	if !force {
+		a.dash.SetText("\n  [gray]loading widgets…").ScrollToBeginning()
+	} else {
+		a.flash("refreshing sparklines…", false)
+	}
+	a.showPage("dashboard")
+	go func() {
+		start := time.Now()
+		view, err := a.provider.Dashboard(context.Background(), r.ID)
+		slog.Debug("dashboard render", "id", r.ID, "took", time.Since(start).Round(time.Millisecond), "err", err)
+		a.QueueUpdateDraw(func() {
+			if a.page != "dashboard" || a.detailRow.ID != r.ID {
+				return // navigated away
+			}
+			if err != nil {
+				a.dash.SetText("\n  [red]✗ " + tview.Escape(err.Error()))
+				return
+			}
+			a.dash.SetText(renderDashboard(view))
+			if force {
+				a.flash("sparklines refreshed", false)
+			}
+		})
+	}()
+}
+
+// renderDashboard turns a DashboardView into the terminal panel: one block
+// per widget with a sparkline, last value, type and query.
+func renderDashboard(v *data.DashboardView) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, " [orange::b]%s[-:-:-]\n", tview.Escape(v.Title))
+	fmt.Fprintf(&b, " [gray]%d widgets · sparklines cover the last 1h · <ctrl-r> to refresh[-]\n\n", len(v.Widgets))
+	for _, w := range v.Widgets {
+		fmt.Fprintf(&b, " [aqua::b]%s[-:-:-]  [gray]%s[-]\n", tview.Escape(w.Title), tview.Escape(w.Type))
+		if w.HasData {
+			fmt.Fprintf(&b, "   [green]%s[-]  [white::b]%s[-:-:-]\n",
+				data.Sparkline(w.Spark), data.FormatValue(w.Last))
+		} else if w.Note != "" {
+			fmt.Fprintf(&b, "   [gray]· %s[-]\n", tview.Escape(w.Note))
+		}
+		if w.Query != "" {
+			fmt.Fprintf(&b, "   [darkcyan]%s[-]\n", tview.Escape(w.Query))
+		}
+		b.WriteString("\n")
+	}
+	if v.Truncated {
+		fmt.Fprintf(&b, " [yellow]Note: only the first %d metric widgets were charted to protect the API budget.[-]\n", data.MaxDashWidgets)
+	}
+	return b.String()
 }
 
 func (a *App) openSelected() {
