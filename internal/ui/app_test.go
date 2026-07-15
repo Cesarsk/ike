@@ -8,7 +8,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"github.com/Cesarsk/ddez/internal/data"
+	"github.com/Cesarsk/ike/internal/data"
 )
 
 // TestAppSmoke boots the full TUI on a headless simulation screen and walks
@@ -60,10 +60,18 @@ func TestAppSmoke(t *testing.T) {
 	typeCmd(sim, ":monitors")
 	waitFor(t, sim, "Monitors(all)")
 	typeRunes(sim, "1")
-	waitFor(t, sim, "Monitors(/Alert)")
+	waitFor(t, sim, "Monitors(state:Alert)")
 	typeRunes(sim, "0")
 	typeRunes(sim, "/kong")
 	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Monitors(/kong)")
+
+	// Drill-down: 'l' on the Kong monitor jumps to Logs pre-filtered with
+	// its service tag; esc pops back to the filtered monitors view.
+	typeRunes(sim, "l")
+	waitFor(t, sim, "Logs(service:kong-proxy)")
+	waitFor(t, sim, "kong-proxy") // rows for that service are on screen
+	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Monitors(/kong)")
 
 	// Help page.
@@ -76,7 +84,8 @@ func TestAppSmoke(t *testing.T) {
 	// '?' must open help, and esc must go back step by step.
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "Monitor/")
-	waitFor(t, sim, "<esc>back") // context hints visible in detail view
+	waitFor(t, sim, "<esc>back")   // context hints visible in detail view
+	waitFor(t, sim, "full_object") // detail upgraded to the on-demand fetch
 	typeRunes(sim, "?")
 	waitFor(t, sim, "NAVIGATION")
 	press(sim, tcell.KeyEscape) // help → back to detail, not to table
@@ -106,16 +115,14 @@ func TestAppSmoke(t *testing.T) {
 
 	// Save with no input: the validation error must be visible on the form
 	// page itself, not just in the bottom status bar.
-	for i := 0; i < 5; i++ {
-		press(sim, tcell.KeyTab) // skip Name, Site, both keys, token
+	for i := 0; i < 6; i++ {
+		press(sim, tcell.KeyTab) // skip Name, Site, both keys, token, subdomain
 	}
 	press(sim, tcell.KeyEnter) // Save
 	waitFor(t, sim, "✗ Name is required")
-	press(sim, tcell.KeyBacktab) // Shift-Tab ×5 back to Name
-	press(sim, tcell.KeyBacktab)
-	press(sim, tcell.KeyBacktab)
-	press(sim, tcell.KeyBacktab)
-	press(sim, tcell.KeyBacktab)
+	for i := 0; i < 6; i++ {
+		press(sim, tcell.KeyBacktab) // back to Name
+	}
 
 	typeRunes(sim, "staging") // Name — spaces would be legal too
 	press(sim, tcell.KeyTab)  // → Site dropdown (keep default US1)
@@ -124,6 +131,7 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyTab) // → APP key
 	typeRunes(sim, "pasted-app-key")
 	press(sim, tcell.KeyTab) // → Access token (left empty: key-pair auth)
+	press(sim, tcell.KeyTab) // → Subdomain (optional, left empty)
 	press(sim, tcell.KeyTab) // → Save button
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "staging") // new row in the contexts table
@@ -225,7 +233,7 @@ func TestEditConfigReload(t *testing.T) {
 }
 
 // newDemoApp builds an App with two offline demo contexts, mirroring what
-// `ddez --demo` wires up in main.go — including in-memory add/delete.
+// `ike --demo` wires up in main.go — including in-memory add/delete.
 func newDemoApp(t *testing.T) *App {
 	t.Helper()
 	sites := map[string]string{"demo-dev": "datadoghq.eu", "demo-prod": "datadoghq.com"}
@@ -238,7 +246,7 @@ func newDemoApp(t *testing.T) *App {
 		Factory: func(name string) (data.Provider, error) {
 			return data.NewDemo(sites[name]), nil
 		},
-		AddContext: func(name, site, _, _, _ string) (ContextInfo, error) {
+		AddContext: func(name, site, _, _, _, _ string) (ContextInfo, error) {
 			sites[name] = site
 			return ContextInfo{Name: name, Site: site, Keys: "in-memory"}, nil
 		},

@@ -1,9 +1,9 @@
-# CONTEXT.md — ddez glossary
+# CONTEXT.md — ike glossary
 
 Canonical vocabulary for this project. Use these words with exactly these
 meanings in code, docs, issues, and commit messages.
 
-- **Context** — one Datadog organization a user can point ddez at: a name,
+- **Context** — one Datadog organization a user can point ike at: a name,
   a site, and credentials. Named after kubeconfig/k9s contexts. Switching
   context is a hard boundary: nothing carries across (data, budget,
   history). *Not* to be confused with a Go `context.Context`.
@@ -29,5 +29,8 @@ meanings in code, docs, issues, and commit messages.
   is free, only expiry or an explicit refresh spends Budget.
 - **Navigation stack** — the esc-pops-back history of views (k9s page-stack
   semantics). "Back" always means popping this stack.
+- **Drill-down** — jumping from one resource to a related view of another
+  (monitor → its logs via `l`), carrying derived context (the log query)
+  and pushing the origin onto the navigation stack.
 - **Demo mode** — the offline run mode (`--demo`): demo providers, in-memory
   contexts, no network, no keychain.

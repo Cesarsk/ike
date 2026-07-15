@@ -35,7 +35,7 @@ func NewDemo(site string) *Demo {
 		name, typ, prio, tags string
 	}{
 		{"EKS node CPU high on {cluster}", "metric alert", "P2", "team:sre,service:eks"},
-		{"Kong data plane 5xx rate", "metric alert", "P1", "team:sre,service:kong"},
+		{"Kong data plane 5xx rate", "metric alert", "P1", "team:sre,service:kong-proxy"},
 		{"ArgoCD application out of sync", "service check", "P3", "team:sre,service:argocd"},
 		{"RDS free storage below 20%", "metric alert", "P2", "team:sre,service:rds"},
 		{"Payments API p99 latency > 800ms", "metric alert", "P1", "team:payments,service:payments-api"},
@@ -93,6 +93,22 @@ func (d *Demo) Fetch(_ context.Context, key, query string) ([]Row, error) {
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
 
+// FetchDetail mirrors the live behavior (monitors, dashboards and incidents
+// have richer detail objects) so the on-demand upgrade is demoable and
+// testable offline.
+func (d *Demo) FetchDetail(_ context.Context, key, id string) (any, error) {
+	switch key {
+	case "monitors", "dashboards", "incidents":
+		return map[string]any{
+			"id":          id,
+			"resource":    key,
+			"full_object": true,
+			"note":        "demo: in live mode this is the complete object fetched on demand (widgets, options, timeline …)",
+		}, nil
+	}
+	return nil, nil
+}
+
 func (d *Demo) monitors() []Row {
 	// Jitter: occasionally flip a monitor state so refreshes are visible.
 	if i := d.rnd.Intn(len(d.mons) * 3); i < len(d.mons) {
@@ -107,9 +123,16 @@ func (d *Demo) monitors() []Row {
 	}
 	rows := make([]Row, 0, len(d.mons))
 	for _, m := range d.mons {
+		var logQ []string
+		for _, tag := range strings.Split(m.tags, ",") {
+			if strings.HasPrefix(tag, "service:") || strings.HasPrefix(tag, "env:") {
+				logQ = append(logQ, tag)
+			}
+		}
 		rows = append(rows, Row{
-			ID:    fmt.Sprintf("%d", m.id),
-			Cells: []string{m.state, m.name, m.typ, m.prio, m.tags},
+			ID:       fmt.Sprintf("%d", m.id),
+			LogQuery: strings.Join(logQ, " "),
+			Cells:    []string{m.state, m.name, m.typ, m.prio, m.tags},
 			Raw: map[string]any{
 				"id": m.id, "name": m.name, "type": m.typ, "overall_state": m.state,
 				"priority": m.prio, "tags": strings.Split(m.tags, ","),
@@ -157,7 +180,7 @@ func (d *Demo) incidents() []Row {
 
 func (d *Demo) slos() []Row {
 	slos := []struct{ name, typ, target, tf, tags string }{
-		{"Kong availability", "metric", "99.90%", "30d", "team:sre,service:kong"},
+		{"Kong availability", "metric", "99.90%", "30d", "team:sre,service:kong-proxy"},
 		{"Payments API latency < 500ms", "metric", "99.50%", "30d", "team:payments"},
 		{"EKS control plane availability", "monitor", "99.95%", "90d", "team:sre"},
 		{"Trading order success rate", "metric", "99.90%", "7d", "team:trading"},
@@ -196,14 +219,22 @@ func (d *Demo) logs(query string) []Row {
 		{"warn", "certificate expires in 13 days cn=*.example.com"},
 		{"error", "panic recovered in handler path=/api/v1/quotes"},
 	}
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "*" {
-		q = ""
-	}
-	var statusFilter string
-	if strings.HasPrefix(q, "status:") {
-		statusFilter = strings.TrimPrefix(q, "status:")
-		q = ""
+	// Token-aware query handling so drill-down queries like
+	// "service:kong-proxy status:error" behave like the real search API.
+	var statusFilter, svcFilter string
+	var textToks []string
+	for _, tok := range strings.Fields(strings.ToLower(strings.TrimSpace(query))) {
+		switch {
+		case tok == "*":
+		case strings.HasPrefix(tok, "status:"):
+			statusFilter = strings.TrimPrefix(tok, "status:")
+		case strings.HasPrefix(tok, "service:"):
+			svcFilter = strings.TrimPrefix(tok, "service:")
+		case strings.HasPrefix(tok, "env:"):
+			// demo data is single-env; accept and ignore
+		default:
+			textToks = append(textToks, tok)
+		}
 	}
 	var rows []Row
 	for i := 0; i < 60; i++ {
@@ -212,8 +243,18 @@ func (d *Demo) logs(query string) []Row {
 		if statusFilter != "" && m.status != statusFilter {
 			continue
 		}
+		if svcFilter != "" && s.svc != svcFilter {
+			continue
+		}
 		line := strings.ToLower(s.svc + " " + m.msg)
-		if q != "" && !strings.Contains(line, q) {
+		skip := false
+		for _, tok := range textToks {
+			if !strings.Contains(line, tok) {
+				skip = true
+				break
+			}
+		}
+		if skip {
 			continue
 		}
 		ts := time.Now().Add(-time.Duration(d.rnd.Intn(900)) * time.Second)

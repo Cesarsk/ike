@@ -1,4 +1,4 @@
-// ddez — a k9s-style terminal UI for Datadog.
+// ike — a k9s-style terminal UI for Datadog.
 package main
 
 import (
@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Cesarsk/ddez/internal/config"
-	"github.com/Cesarsk/ddez/internal/data"
-	"github.com/Cesarsk/ddez/internal/ui"
+	"github.com/Cesarsk/ike/internal/config"
+	"github.com/Cesarsk/ike/internal/data"
+	"github.com/Cesarsk/ike/internal/ui"
 )
 
 // version is injected by goreleaser via -ldflags at release time.
@@ -21,7 +21,7 @@ var version = "dev"
 func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	demo := flag.Bool("demo", false, "run with built-in demo data (no credentials needed)")
-	ctxFlag := flag.String("context", "", "context to start on (overrides $DDEZ_CONTEXT and current-context)")
+	ctxFlag := flag.String("context", "", "context to start on (overrides $IKE_CONTEXT and current-context)")
 	site := flag.String("site", "", "Datadog site override when running without a config file")
 	refresh := flag.Duration("refresh", 30*time.Second, "auto-refresh interval for live views (monitors, incidents)")
 	debug := flag.Bool("debug", false, "log at debug level (every fetch with timing and cache state)")
@@ -29,12 +29,12 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("ddez", version)
+		fmt.Println("ike", version)
 		return
 	}
 
 	setupLogging(*logFile, *debug)
-	slog.Info("ddez starting", "version", version, "demo", *demo, "config", config.Path(), "refresh", *refresh)
+	slog.Info("ike starting", "version", version, "demo", *demo, "config", config.Path(), "refresh", *refresh)
 
 	var opts ui.Options
 	opts.Refresh = *refresh
@@ -56,7 +56,7 @@ func main() {
 			}
 			return data.NewDemo(s), nil
 		}
-		opts.AddContext = func(name, site, _, _, _ string) (ui.ContextInfo, error) {
+		opts.AddContext = func(name, site, _, _, _, _ string) (ui.ContextInfo, error) {
 			sites[name] = site
 			return ui.ContextInfo{Name: name, Site: site, Keys: "in-memory"}, nil
 		}
@@ -77,7 +77,7 @@ func main() {
 			}
 		}
 		current := cfg.CurrentContext
-		if v := os.Getenv("DDEZ_CONTEXT"); v != "" {
+		if v := os.Getenv("IKE_CONTEXT"); v != "" {
 			current = v
 		}
 		if *ctxFlag != "" {
@@ -103,32 +103,35 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				return data.NewLiveToken(c.Site, token), nil
+				return data.NewLiveToken(c.Site, c.WebBase(), token), nil
 			case c.Keychain:
 				apiKey, appKey, err := store.Get(name)
 				if err != nil {
 					return nil, err
 				}
-				return data.NewLive(c.Site, apiKey, appKey), nil
+				return data.NewLive(c.Site, c.WebBase(), apiKey, appKey), nil
 			case c.TokenEnv != "":
 				token, err := c.ResolveToken()
 				if err != nil {
 					return nil, err
 				}
-				return data.NewLiveToken(c.Site, token), nil
+				return data.NewLiveToken(c.Site, c.WebBase(), token), nil
 			default:
 				apiKey, appKey, err := c.Resolve()
 				if err != nil {
 					return nil, err
 				}
-				return data.NewLive(c.Site, apiKey, appKey), nil
+				return data.NewLive(c.Site, c.WebBase(), apiKey, appKey), nil
 			}
 		}
-		opts.AddContext = func(name, site, apiKey, appKey, token string) (ui.ContextInfo, error) {
+		opts.AddContext = func(name, site, apiKey, appKey, token, subdomain string) (ui.ContextInfo, error) {
 			if _, exists := cfg.Contexts[name]; exists {
 				return ui.ContextInfo{}, fmt.Errorf("context %q already exists in %s", name, config.Path())
 			}
-			entry := config.Context{Site: site, Keychain: true}
+			if !config.ValidSubdomain(subdomain) {
+				return ui.ContextInfo{}, fmt.Errorf("invalid subdomain %q — a single DNS label like acme-stage", subdomain)
+			}
+			entry := config.Context{Site: site, Subdomain: subdomain, Keychain: true}
 			var err error
 			if token != "" {
 				entry.Auth = "token"
@@ -179,7 +182,7 @@ func main() {
 
 	app, err := ui.New(opts)
 	if err != nil {
-		fatal(err.Error() + "\n      Try `ddez --demo` to explore without credentials.")
+		fatal(err.Error() + "\n      Try `ike --demo` to explore without credentials.")
 	}
 	if err := app.Run(); err != nil {
 		fatal(err.Error())
@@ -187,7 +190,7 @@ func main() {
 }
 
 // defaultLogPath follows the k9s convention: an XDG state file, e.g.
-// ~/.local/state/ddez/ddez.log.
+// ~/.local/state/ike/ike.log.
 func defaultLogPath() string {
 	base := os.Getenv("XDG_STATE_HOME")
 	if base == "" {
@@ -197,7 +200,7 @@ func defaultLogPath() string {
 		}
 		base = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(base, "ddez", "ddez.log")
+	return filepath.Join(base, "ike", "ike.log")
 }
 
 // setupLogging routes slog to a file — never to stderr, which the TUI owns.
@@ -232,6 +235,6 @@ func keysLabel(c config.Context) string {
 }
 
 func fatal(msg string) {
-	fmt.Fprintln(os.Stderr, "ddez:", msg)
+	fmt.Fprintln(os.Stderr, "ike:", msg)
 	os.Exit(1)
 }

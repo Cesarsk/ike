@@ -12,6 +12,10 @@ type Row struct {
 	Cells []string
 	Raw   any    // full object, rendered in the detail view
 	URL   string // deep link into the Datadog web UI
+	// LogQuery is the derived Datadog logs search for the 'l' drill-down
+	// (monitors: the log monitor's own query, or service:/env: tags).
+	// Empty = no drill-down available for this row.
+	LogQuery string
 }
 
 // Resource describes a navigable Datadog resource type.
@@ -31,6 +35,11 @@ type Resource struct {
 // Provider serves rows for resources — live API or built-in demo data.
 type Provider interface {
 	Fetch(ctx context.Context, key, query string) ([]Row, error)
+	// FetchDetail returns the full object behind a row: list endpoints
+	// return summaries (a dashboard listing has no widgets, for example),
+	// so the detail view upgrades on demand. Returning (nil, nil) means
+	// the list row is already the complete object.
+	FetchDetail(ctx context.Context, key, id string) (any, error)
 	// Budget reports the last-seen API rate-limit state, one line per
 	// endpoint family (from X-RateLimit-* response headers).
 	Budget() []string

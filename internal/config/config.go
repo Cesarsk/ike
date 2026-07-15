@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 
 	"gopkg.in/yaml.v3"
@@ -43,6 +44,26 @@ func ValidSite(s string) bool {
 	return false
 }
 
+// subdomainRe: a single DNS label. Anything else (dots, slashes, '#') could
+// turn https://<subdomain>.<site> into a link to an arbitrary host.
+var subdomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// ValidSubdomain reports whether s is a safe org subdomain (empty = unset).
+func ValidSubdomain(s string) bool {
+	return s == "" || subdomainRe.MatchString(s)
+}
+
+// WebBase returns the browser base URL for this context's org.
+func (c Context) WebBase() string {
+	if c.Subdomain != "" {
+		return "https://" + c.Subdomain + "." + c.Site
+	}
+	if c.Site == "datadoghq.com" || c.Site == "datadoghq.eu" {
+		return "https://app." + c.Site
+	}
+	return "https://" + c.Site
+}
+
 // Context is one Datadog organization. Credentials come from either the
 // named environment variables or, for contexts added in the TUI, the OS
 // keychain (macOS Keychain / Linux Secret Service) — never from this file.
@@ -52,7 +73,11 @@ func ValidSite(s string) bool {
 // issues). For env contexts the shape is implied by which env names are
 // set; for keychain contexts it is recorded in `auth: token`.
 type Context struct {
-	Site      string `yaml:"site,omitempty"`
+	Site string `yaml:"site,omitempty"`
+	// Subdomain is the org's custom web subdomain, for orgs whose UI lives
+	// at https://<subdomain>.<site> instead of https://app.<site>. It only
+	// affects browser deep links ('o'), never API calls or credentials.
+	Subdomain string `yaml:"subdomain,omitempty"`
 	APIKeyEnv string `yaml:"api-key-env,omitempty"`
 	AppKeyEnv string `yaml:"app-key-env,omitempty"`
 	TokenEnv  string `yaml:"token-env,omitempty"`
@@ -65,22 +90,22 @@ type Config struct {
 	Contexts       map[string]Context `yaml:"contexts"`
 }
 
-// Path returns the config file location: $DDEZ_CONFIG if set, otherwise
-// ~/.config/ddez/config.yaml.
+// Path returns the config file location: $IKE_CONFIG if set, otherwise
+// ~/.config/ike/config.yaml.
 func Path() string {
-	if p := os.Getenv("DDEZ_CONFIG"); p != "" {
+	if p := os.Getenv("IKE_CONFIG"); p != "" {
 		return p
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "ddez", "config.yaml")
+	return filepath.Join(home, ".config", "ike", "config.yaml")
 }
 
 // Load reads and validates the config file. A missing file is not an error:
 // it returns an implicit single-context config built from the classic
-// DD_API_KEY / DD_APP_KEY / DD_SITE environment variables, so ddez keeps
+// DD_API_KEY / DD_APP_KEY / DD_SITE environment variables, so ike keeps
 // working with no config at all.
 func Load(path string) (*Config, error) {
 	if path == "" {
@@ -113,6 +138,9 @@ func Load(path string) (*Config, error) {
 		}
 		if !ValidSite(ctx.Site) {
 			return nil, fmt.Errorf("%s: context %q has unknown site %q — refusing to send credentials to an unrecognized host (valid sites: %v)", path, name, ctx.Site, Sites)
+		}
+		if !ValidSubdomain(ctx.Subdomain) {
+			return nil, fmt.Errorf("%s: context %q has invalid subdomain %q — must be a single DNS label like acme-stage", path, name, ctx.Subdomain)
 		}
 		keyPair := ctx.APIKeyEnv != "" && ctx.AppKeyEnv != ""
 		if !ctx.Keychain && !keyPair && ctx.TokenEnv == "" {

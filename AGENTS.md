@@ -1,7 +1,8 @@
-# AGENTS.md — working on ddez
+# AGENTS.md — working on ike
 
-ddez ("datadog easy") is a k9s-style terminal UI for Datadog: Go + tview/tcell,
-read-only against the Datadog API, organized around per-org "contexts".
+ike is a k9s-style terminal UI for Datadog (the name is a dog's name — "keep an
+eye on your Datadog"): Go + tview/tcell, read-only against the Datadog API,
+organized around per-org "contexts".
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (diagrams, component map)
 and [docs/DESIGN.md](docs/DESIGN.md) (decisions, roadmap) before changing
 anything structural.
@@ -9,11 +10,11 @@ anything structural.
 ## Build, test, verify
 
 ```sh
-go build -o ddez .        # binary
+go build -o ike .        # binary
 go vet ./... && gofmt -l .  # must both be clean
 go test ./...             # unit + headless end-to-end TUI tests
-./ddez --demo             # full app on fake data, no credentials
-DDEZ_DUMP=1 go test -run TestScreenDump ./internal/ui -v   # README screenshots
+./ike --demo             # full app on fake data, no credentials
+IKE_DUMP=1 go test -run TestScreenDump ./internal/ui -v   # README screenshots
 ```
 
 Every change must leave `vet`, `gofmt -l` (no output) and `go test ./...`
@@ -72,7 +73,7 @@ without the maintainer's go-ahead. Use the vocabulary defined in
 ## Conventions
 
 - Logging: `log/slog` to the file configured in `main.go` (`--log-file`,
-  default `~/.local/state/ddez/ddez.log`; `--debug` for fetch-level lines).
+  default `~/.local/state/ike/ike.log`; `--debug` for fetch-level lines).
   Never write to stdout/stderr while the TUI runs — tview owns the terminal.
 - Keep `README.md` (user-facing), `docs/DESIGN.md` (decisions/roadmap) and
   `docs/ARCHITECTURE.md` (structure/diagrams, Mermaid) in sync with feature

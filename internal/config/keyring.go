@@ -16,7 +16,7 @@ type SecretStore interface {
 	Delete(context string) error
 }
 
-const keyringService = "ddez"
+const keyringService = "ike"
 
 // KeyringStore stores credentials in the OS keychain: macOS Keychain,
 // Linux Secret Service (GNOME Keyring / KWallet), Windows Credential

@@ -22,11 +22,11 @@ current-context: dev
 contexts:
   dev:
     site: datadoghq.eu
-    api-key-env: DDEZ_DEV_API_KEY
-    app-key-env: DDEZ_DEV_APP_KEY
+    api-key-env: IKE_DEV_API_KEY
+    app-key-env: IKE_DEV_APP_KEY
   prod:
-    api-key-env: DDEZ_PROD_API_KEY
-    app-key-env: DDEZ_PROD_APP_KEY
+    api-key-env: IKE_PROD_API_KEY
+    app-key-env: IKE_PROD_APP_KEY
 `)
 	c, err := Load(p)
 	if err != nil {
@@ -104,16 +104,51 @@ current-context: dev
 contexts:
   dev:
     site: datadoghq.eu
-    token-env: DDEZ_DEV_TOKEN
+    token-env: IKE_DEV_TOKEN
 `)
 	c, err := Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DDEZ_DEV_TOKEN", "tok-123")
+	t.Setenv("IKE_DEV_TOKEN", "tok-123")
 	tok, err := c.Contexts["dev"].ResolveToken()
 	if err != nil || tok != "tok-123" {
 		t.Fatalf("token resolve: %v %q", err, tok)
+	}
+}
+
+func TestSubdomainValidation(t *testing.T) {
+	good := write(t, `
+current-context: stage
+contexts:
+  stage:
+    site: datadoghq.eu
+    subdomain: acme-stage
+    api-key-env: A
+    app-key-env: B
+`)
+	c, err := Load(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Contexts["stage"].WebBase(); got != "https://acme-stage.datadoghq.eu" {
+		t.Errorf("WebBase = %q", got)
+	}
+	if got := (Context{Site: "datadoghq.eu"}).WebBase(); got != "https://app.datadoghq.eu" {
+		t.Errorf("default WebBase = %q", got)
+	}
+
+	bad := write(t, `
+current-context: stage
+contexts:
+  stage:
+    site: datadoghq.eu
+    subdomain: "evil.com/x"
+    api-key-env: A
+    app-key-env: B
+`)
+	if _, err := Load(bad); err == nil {
+		t.Fatal("subdomain with dots/slashes must be rejected — it would escape the site domain")
 	}
 }
 

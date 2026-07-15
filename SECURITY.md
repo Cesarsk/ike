@@ -1,8 +1,8 @@
 # Security Policy
 
-ddez handles Datadog credentials (API/application keys, access tokens). By
+ike handles Datadog credentials (API/application keys, access tokens). By
 design they live only in the OS keychain or in environment variables — never
-in the config file, never in logs. If you find a way to make ddez leak a
+in the config file, never in logs. If you find a way to make ike leak a
 credential, that is a security bug.
 
 ## Reporting
@@ -14,7 +14,7 @@ issue or PR.
 
 Supported version: the latest release only.
 
-## Threat model (what ddez defends against)
+## Threat model (what ike defends against)
 
 - **Credential exfiltration via config tampering**: the `site` field is
   validated against the fixed allowlist of Datadog endpoints at load time —
@@ -38,5 +38,5 @@ Supported version: the latest release only.
   the user's own environment on their own machine.
 - Log-search queries are written to the debug log (0600). Query *text* may
   be sensitive in some orgs; the log never contains credentials.
-- OS keychain semantics apply: any process the OS lets read the "ddez"
+- OS keychain semantics apply: any process the OS lets read the "ike"
   keychain service can read the keys (on macOS this prompts the user).

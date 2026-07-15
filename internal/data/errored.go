@@ -14,6 +14,9 @@ type Errored struct {
 func NewErrored(site string, err error) *Errored { return &Errored{site: site, err: err} }
 
 func (e *Errored) Fetch(context.Context, string, string) ([]Row, error) { return nil, e.err }
-func (e *Errored) Budget() []string                                     { return nil }
-func (e *Errored) Mode() string                                         { return "live" }
-func (e *Errored) Site() string                                         { return e.site }
+func (e *Errored) FetchDetail(context.Context, string, string) (any, error) {
+	return nil, e.err
+}
+func (e *Errored) Budget() []string { return nil }
+func (e *Errored) Mode() string     { return "live" }
+func (e *Errored) Site() string     { return e.site }

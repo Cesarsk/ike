@@ -1,4 +1,4 @@
-# ddez — Architecture
+# ike — Architecture
 
 Companion to [DESIGN.md](DESIGN.md) (which holds the *why*); this document is
 the *what and how*. Diagrams are Mermaid — GitHub renders them inline.
@@ -10,7 +10,7 @@ goes through the TTL cache, and the cache talks to a swappable `Provider`.
 
 ```mermaid
 flowchart TB
-    subgraph terminal["ddez (single binary)"]
+    subgraph terminal["ike (single binary)"]
         subgraph uiL["internal/ui"]
             APP["App (tview shell)<br/>header · table · prompt · status"]
             NAV["navigation stack<br/>(esc pops, k9s-style)"]
@@ -24,10 +24,10 @@ flowchart TB
             DEMO["Demo provider<br/>offline fake data (--demo)"]
         end
         subgraph cfgL["internal/config"]
-            CFG["contexts config<br/>~/.config/ddez/config.yaml"]
+            CFG["contexts config<br/>~/.config/ike/config.yaml"]
         end
     end
-    ENV["env vars<br/>$DDEZ_DEV_API_KEY …"]
+    ENV["env vars<br/>$IKE_DEV_API_KEY …"]
     DD1["Datadog org: dev"]
     DD2["Datadog org: prod"]
 
@@ -81,7 +81,7 @@ sequenceDiagram
 ## Context switching (`:ctx`)
 
 A context = one Datadog org (site + credentials), named in
-`~/.config/ddez/config.yaml`. Secrets are **never** in the file — a context
+`~/.config/ike/config.yaml`. Secrets are **never** in the file — a context
 either names the env vars that hold its credentials (`api-key-env` +
 `app-key-env`, or `token-env` for bearer/access-token auth), or is marked
 `keychain: true` with secrets in the OS keychain (macOS Keychain / Linux
@@ -117,7 +117,7 @@ flowchart LR
 ```
 
 Startup context selection precedence: `--context` flag →
-`$DDEZ_CONTEXT` → `current-context` in the config file. With no config file
+`$IKE_CONTEXT` → `current-context` in the config file. With no config file
 at all, the classic `DD_API_KEY`/`DD_APP_KEY`/`DD_SITE` env vars become an
 implicit `default` context, so pre-contexts usage keeps working.
 
@@ -187,5 +187,5 @@ No pty, no credentials, no network:
   inject keystrokes and assert on the rendered screen text. This covers
   command mode, filters, quick filters, help, detail, esc-history and
   context switching end-to-end.
-- `TestScreenDump` (`DDEZ_DUMP=1`) regenerates the README screenshots from
+- `TestScreenDump` (`IKE_DUMP=1`) regenerates the README screenshots from
   the same harness.

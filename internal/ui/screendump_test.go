@@ -10,13 +10,13 @@ import (
 )
 
 // TestScreenDump renders the demo TUI headlessly and prints the screens to
-// stdout. It only runs when DDEZ_DUMP=1 — used to regenerate the README
+// stdout. It only runs when IKE_DUMP=1 — used to regenerate the README
 // screenshots:
 //
-//	DDEZ_DUMP=1 go test -run TestScreenDump ./internal/ui -v
+//	IKE_DUMP=1 go test -run TestScreenDump ./internal/ui -v
 func TestScreenDump(t *testing.T) {
-	if os.Getenv("DDEZ_DUMP") != "1" {
-		t.Skip("set DDEZ_DUMP=1 to dump screens")
+	if os.Getenv("IKE_DUMP") != "1" {
+		t.Skip("set IKE_DUMP=1 to dump screens")
 	}
 	sim := tcell.NewSimulationScreen("UTF-8")
 	if err := sim.Init(); err != nil {

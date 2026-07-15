@@ -1,4 +1,4 @@
-# ddez — Design
+# ike — Design
 
 ## Vision
 
@@ -30,7 +30,7 @@ Consequences baked into the architecture:
    from every response and the header widget displays remaining headroom.
    A TUI on five laptops shares one org budget with Terraform providers and
    Grafana — the user must be able to see what the tool is spending.
-4. **Stale-tolerant.** On fetch error with a cached copy, ddez serves the stale
+4. **Stale-tolerant.** On fetch error with a cached copy, ike serves the stale
    rows and surfaces the error, instead of blanking the screen mid-incident.
 
 ## Architecture
@@ -45,7 +45,7 @@ internal/data/
 internal/ui/
   app.go                tview shell: header, table, prompt, status, keys
   app_test.go           headless end-to-end smoke test (tcell SimulationScreen)
-  screendump_test.go    README screenshot generator (DDEZ_DUMP=1)
+  screendump_test.go    README screenshot generator (IKE_DUMP=1)
 ```
 
 Decisions:
@@ -69,9 +69,9 @@ Decisions:
   heterogeneous across companies (org-per-env, org-per-BU, single org) to
   infer; kubeconfig-style named contexts is the only shape that fits all.
 
-## UX parity map (k9s → ddez)
+## UX parity map (k9s → ike)
 
-| k9s | ddez |
+| k9s | ike |
 |---|---|
 | `:pods`, `:deploy` | `:monitors`, `:incidents`, `:slos`, `:logs`, `:dashboards` |
 | `/` filter | `/` — client-side filter; in Logs, a server-side Datadog query |
@@ -84,11 +84,9 @@ Decisions:
 
 ## Roadmap
 
-1. **Drill-down navigation** — the real k9s killer feature: monitor → its
-   triggering logs (`enter` on an Alert pre-fills the log query from the
-   monitor's scope), incident → linked monitors/logs.
+1. Incident → linked monitors/logs drill-down (monitor → logs shipped as `l`).
 2. Monitor mute/unmute via Downtimes API behind a confirm modal.
-3. Pagination + hardened incidents field mapping (pre-first-live-run work).
+3. Hardened incidents field mapping (union types; verify against live org).
 4. Sparkline metric previews in the detail view (braille rendering).
 5. Live tail emulation for logs: bounded polling loop with visible budget
    spend (there is no public streaming API).
@@ -97,17 +95,19 @@ Decisions:
 
 Done: ~~multi-org contexts + config file~~ (`:ctx`, env-indirected secrets),
 ~~esc navigation stack~~, ~~in-app context add/delete with OS-keychain
-storage~~ (`:ctx` → `a` / `ctrl-d`).
+storage~~ (`:ctx` → `a` / `ctrl-d`), ~~monitor → logs drill-down~~ (`l`),
+~~pagination~~ (bounded, truncation logged), ~~on-demand full-object detail
+fetch~~, ~~org web subdomains~~.
 
 ## Project policy (decided 2026-07-14)
 
-- **Visibility**: public on GitHub (`Cesarsk/ddez`) from the first push, no
+- **Visibility**: public on GitHub (`Cesarsk/ike`) from the first push, no
   announcement until live mode is validated.
 - **License**: Apache-2.0 (matches k9s and pup; explicit patent grant).
 - **CI**: GitHub Actions on every push/PR — gofmt, vet, test, build on
   ubuntu + macos. No golangci-lint until contributors arrive.
 - **Releases**: goreleaser on `v*` tags → GitHub Releases + Homebrew
-  formula in `Cesarsk/homebrew-tap` (`brew install cesarsk/tap/ddez`).
+  formula in `Cesarsk/homebrew-tap` (`brew install cesarsk/tap/ike`).
   Targets: darwin/linux, amd64/arm64 only — no Windows. Prereqs: tap repo
   + `TAP_GITHUB_TOKEN` secret.
 - **Versioning**: no tag until live mode is verified against a real org.

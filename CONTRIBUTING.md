@@ -1,6 +1,6 @@
-# Contributing to ddez
+# Contributing to ike
 
-Thanks for your interest! ddez is early and small — process is deliberately
+Thanks for your interest! ike is early and small — process is deliberately
 minimal.
 
 1. **Read [AGENTS.md](AGENTS.md).** It is the contributor guide: build/test
@@ -12,7 +12,7 @@ minimal.
 3. **Every PR needs:** `gofmt -l .` clean, `go vet ./...` clean,
    `go test ./...` green, a SimulationScreen e2e test for any new
    interaction, and doc updates (README / docs/) in the same PR.
-4. **UX questions default to k9s behavior.** If k9s does it some way, ddez
+4. **UX questions default to k9s behavior.** If k9s does it some way, ike
    does too unless docs/DESIGN.md records a reason not to.
 
 By contributing you agree your work is licensed under Apache-2.0.

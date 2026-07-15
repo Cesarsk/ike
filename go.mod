@@ -1,4 +1,4 @@
-module github.com/Cesarsk/ddez
+module github.com/Cesarsk/ike
 
 go 1.25.0
 

@@ -29,6 +29,12 @@ func (c *Cached) Mode() string     { return c.p.Mode() }
 func (c *Cached) Site() string     { return c.p.Site() }
 func (c *Cached) Budget() []string { return c.p.Budget() }
 
+// FetchDetail is an explicit on-demand action (enter on a row), so it is
+// deliberately not cached: one keypress, one call.
+func (c *Cached) FetchDetail(ctx context.Context, key, id string) (any, error) {
+	return c.p.FetchDetail(ctx, key, id)
+}
+
 // Fetch returns rows for a resource, from cache when fresh.
 // It reports the fetch time and whether the result came from cache.
 func (c *Cached) Fetch(ctx context.Context, res Resource, query string, force bool) ([]Row, time.Time, bool, error) {

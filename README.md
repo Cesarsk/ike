@@ -1,10 +1,13 @@
-# ddez 🐶
+# ike 🐶
 
-**A k9s-style terminal UI for Datadog.**
+**ike — keep an eye on your Datadog. A k9s-style terminal UI.**
 
-Navigate monitors, incidents, SLOs, logs and dashboards from your terminal with
-the muscle memory you already have from [k9s](https://k9scli.io): `:` to switch
-resources, `/` to filter, `enter` to drill down, `esc` to go back.
+Your Datadog's sitter: navigate monitors, incidents, SLOs, logs and dashboards
+from your terminal with the muscle memory you already have from
+[k9s](https://k9scli.io): `:` to switch resources, `/` to filter, `enter` to
+drill down, `esc` to go back.
+
+<sub>Named after a dog named Ike. The command is `ike`; the job is keeping an eye on things.</sub>
 
 ```
  Mode:   demo                     <:>cmd  </>filter  <enter>details  <o>open in
@@ -33,19 +36,19 @@ resources, `/` to filter, `enter` to drill down, `esc` to go back.
 [Pup](https://github.com/DataDog/pup), Datadog's official CLI, is built for
 AI agents and scripting — 200+ commands, JSON out. It is `kubectl`. Nothing in
 the ecosystem is `k9s`: an interactive, keyboard-driven cockpit for a human
-running incident response. ddez is that tool.
+running incident response. ike is that tool.
 
 ## Quick start
 
 ```sh
-go build -o ddez .
+go build -o ike .
 
 # No credentials? Explore with demo data (ships two fake orgs — try :ctx):
-./ddez --demo
+./ike --demo
 
 # Live mode, single org — same env vars as dogshell/terraform:
 export DD_API_KEY=... DD_APP_KEY=... DD_SITE=datadoghq.eu
-./ddez
+./ike
 ```
 
 Flags: `--context` (start on a named context), `--refresh` (auto-refresh
@@ -55,20 +58,23 @@ config file), `--demo`.
 ## Multiple orgs (contexts)
 
 Most companies run several Datadog organizations (dev/stage/uat/prod,
-org-per-BU, …). ddez models them as **contexts**, kubeconfig-style, in
-`~/.config/ddez/config.yaml` (or `$DDEZ_CONFIG`):
+org-per-BU, …). ike models them as **contexts**, kubeconfig-style, in
+`~/.config/ike/config.yaml` (or `$IKE_CONFIG`):
 
 ```yaml
 current-context: dev
 contexts:
   dev:
     site: datadoghq.eu
-    api-key-env: DDEZ_DEV_API_KEY     # name of the env var holding the key —
-    app-key-env: DDEZ_DEV_APP_KEY     # secrets NEVER go in this file
+    subdomain: acme-dev               # only if your org's web UI lives at
+                                      # https://acme-dev.datadoghq.eu — fixes
+                                      # 'open in Datadog' links, API unaffected
+    api-key-env: IKE_DEV_API_KEY     # name of the env var holding the key —
+    app-key-env: IKE_DEV_APP_KEY     # secrets NEVER go in this file
   prod:
     site: datadoghq.com
-    api-key-env: DDEZ_PROD_API_KEY
-    app-key-env: DDEZ_PROD_APP_KEY
+    api-key-env: IKE_PROD_API_KEY
+    app-key-env: IKE_PROD_APP_KEY
 ```
 
 - `:ctx` inside the app lists contexts; `enter` switches org. A switch drops
@@ -86,9 +92,9 @@ contexts:
   opens the config file in `$EDITOR` (vi by default), k9s-style; on exit
   the file is reloaded and re-validated.
 - **Token auth in the config file** works too: set `token-env` instead of
-  the two key env vars, and ddez sends it as an `Authorization: Bearer`
+  the two key env vars, and ike sends it as an `Authorization: Bearer`
   header (OAuth2 access tokens / PATs, e.g. from Datadog's pup CLI).
-- Startup selection: `--context` flag → `$DDEZ_CONTEXT` → `current-context`.
+- Startup selection: `--context` flag → `$IKE_CONTEXT` → `current-context`.
 - Plaintext `api-key:` fields are **rejected at parse time**; point the
   `*-env` fields at env vars populated by direnv, 1Password CLI, etc., or
   use the in-app form for keychain storage.
@@ -102,19 +108,20 @@ contexts:
 | `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:dashboards` (or `mon`, `inc`, `s`, `l`, `d`) |
 | `:ctx` | list org contexts; `enter` switches, `a` adds (keys/token → OS keychain), `e` edits the config in `$EDITOR`, `ctrl-d` deletes |
 | `/` | filter rows; in **Logs** this is a Datadog search query sent to the API |
-| `enter` | detail view (full object as JSON) |
+| `enter` | detail view — fetches the **full object** on demand where the list is only a summary (monitors, dashboards, incidents) |
 | `esc` | go back to the previous view (k9s-style navigation history); clears the active filter |
+| `l` | on a monitor: **drill down to its logs** — jumps to the Logs view pre-filtered with the monitor's log query (log monitors) or its `service:`/`env:` tags; `esc` returns |
 | `o` | open selected item in the Datadog web UI (works in detail view too) |
 | `ctrl-r` | force refresh (bypasses cache — spends API budget) |
 | `1`–`4`, `0` | monitors quick filter: alert / warn / no data / ok / all |
 | `j`/`k`, `↑`/`↓` | move selection / scroll detail |
 | `?` | help (from any view) |
-| `q` | back in detail/help; quit from a table view (`ctrl-c` always quits) |
+| `q` | back in detail/help; quit from a table view (`ctrl-c`, `:q`, `:quit`, `:exit` always quit) |
 
 ## Rate limits are a feature, not a footnote
 
 Datadog's API is rate-limited **per organization** (e.g. log search: 300
-requests/hour). Unlike Kubernetes, you cannot poll it every two seconds. ddez
+requests/hour). Unlike Kubernetes, you cannot poll it every two seconds. ike
 is designed around that:
 
 - every view is cached with a per-resource TTL — navigation is free;
@@ -127,7 +134,7 @@ is designed around that:
 
 ```sh
 go test ./...                                  # includes a headless TUI smoke test
-DDEZ_DUMP=1 go test -run TestScreenDump ./internal/ui -v   # regenerate README screens
+IKE_DUMP=1 go test -run TestScreenDump ./internal/ui -v   # regenerate README screens
 ```
 
 The TUI is tested end-to-end on a tcell `SimulationScreen` — no pty needed.

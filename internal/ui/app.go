@@ -14,8 +14,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/Cesarsk/ddez/internal/config"
-	"github.com/Cesarsk/ddez/internal/data"
+	"github.com/Cesarsk/ike/internal/config"
+	"github.com/Cesarsk/ike/internal/data"
 )
 
 type promptMode int
@@ -30,7 +30,7 @@ const (
 type ContextInfo struct {
 	Name string
 	Site string
-	Keys string // where the credentials come from, e.g. "$DDEZ_DEV_API_KEY"
+	Keys string // where the credentials come from, e.g. "$IKE_DEV_API_KEY"
 }
 
 // ProviderFactory builds a fresh Provider for a named context.
@@ -45,8 +45,8 @@ type Options struct {
 	Current  string
 	Factory  ProviderFactory
 	// AddContext persists a TUI-added context. Exactly one of
-	// (apiKey, appKey) or token is provided.
-	AddContext    func(name, site, apiKey, appKey, token string) (ContextInfo, error)
+	// (apiKey, appKey) or token is provided; subdomain may be empty.
+	AddContext    func(name, site, apiKey, appKey, token, subdomain string) (ContextInfo, error)
 	DeleteContext func(name string) error
 	// ConfigPath is the contexts file, opened by 'e' in :ctx via $EDITOR.
 	// Empty disables in-app editing (demo mode).
@@ -88,30 +88,32 @@ type App struct {
 	formErr *tview.TextView
 	confirm *tview.Modal
 
-	res        data.Resource
-	rows       []data.Row
-	filtered   []int
-	filter     string
-	queries    map[string]string // per-resource server-side query (logs)
-	fetchedAt  time.Time
-	loading    bool
-	promptM    promptMode
-	page       string // current content page: "table", "help", "detail"
-	detailRow  data.Row
-	stack      []navEntry // navigation history, k9s-style: esc pops
-	pendingSel int        // row to re-select once restored rows arrive
-	flashTimer *time.Timer
+	res         data.Resource
+	rows        []data.Row
+	filtered    []int
+	filter      string            // '/' text filter: substring across all cells
+	stateFilter string            // 0-4 quick filter: exact match on the STATE column
+	queries     map[string]string // per-resource server-side query (logs)
+	fetchedAt   time.Time
+	loading     bool
+	promptM     promptMode
+	page        string // current content page: "table", "help", "detail"
+	detailRow   data.Row
+	stack       []navEntry // navigation history, k9s-style: esc pops
+	pendingSel  int        // row to re-select once restored rows arrive
+	flashTimer  *time.Timer
 }
 
 // navEntry is one step of navigation history. Like k9s's page stack, every
 // view change (":resource", enter on a row, "?") pushes the current state,
 // and esc pops back to it — resource, filter and selection included.
 type navEntry struct {
-	page      string
-	res       data.Resource
-	filter    string
-	detailRow data.Row
-	selRow    int
+	page        string
+	res         data.Resource
+	filter      string
+	stateFilter string
+	detailRow   data.Row
+	selRow      int
 }
 
 func New(o Options) (*App, error) {
@@ -286,7 +288,7 @@ func (a *App) setHints() {
 		}
 		switch a.res.Key {
 		case "monitors":
-			lines = append(lines, "[gray]quick filters: <1>alert <2>warn <3>nodata <4>ok <0>all")
+			lines = append(lines, "[gray]<l>drill to logs   quick filters: <1>alert <2>warn <3>nodata <4>ok <0>all")
 		case ctxResource.Key:
 			lines = append(lines, "[gray]<enter>switch org  <a>add  <e>edit config  <ctrl-d>delete")
 		}
@@ -309,11 +311,15 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]ctrl-d[white]        (in :ctx) delete the selected context (asks first)
    [aqua]/<text>[white]       filter rows; in Logs this is a Datadog search query sent to the API
    [aqua]↑/↓ j/k[white]       move selection
-   [aqua]enter[white]         open detail view (full object)
+   [aqua]enter[white]         open detail view — fetches the full object on demand where the
+                 list is only a summary (monitors, dashboards, incidents)
    [aqua]esc[white]           go back to the previous view (navigation history, like k9s);
                  clears the active filter on the way out
 
  [orange]ACTIONS
+   [aqua]l[white]             (on a monitor) drill down to its logs: jumps to the Logs view
+                 with the monitor's log query, or its service:/env: tags.
+                 esc returns to the monitors view
    [aqua]o[white]             open the selected item in the Datadog web UI (also works in detail view)
    [aqua]ctrl-r[white]        force refresh (bypasses cache — spends API budget)
    [aqua]0-4[white]           monitors quick filter: all/alert/warn/nodata/ok
@@ -321,7 +327,7 @@ func (a *App) buildHelp() tview.Primitive {
  [orange]OTHER
    [aqua]?[white]             this help (from any view)
    [aqua]q[white]             back in detail/help; quit from a table view
-   [aqua]ctrl-c[white]        quit
+   [aqua]ctrl-c[white]        quit (also :q :quit :exit)
 
  [gray]Views auto-refresh only where it is cheap (monitors, incidents) and are
  [gray]otherwise cached per TTL. The Budget header shows Datadog rate-limit
@@ -362,6 +368,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == 'o':
 			a.openURL(a.detailRow.URL)
+			return nil
+		case ev.Rune() == 'l' && a.res.Key == "monitors":
+			a.drillToLogs(a.detailRow)
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -414,6 +423,13 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.editConfig()
 			return nil
 		}
+	case 'l':
+		if a.res.Key == "monitors" {
+			if r, ok := a.selectedRow(); ok {
+				a.drillToLogs(r)
+			}
+			return nil
+		}
 	case '0', '1', '2', '3', '4':
 		if a.res.Key == "monitors" {
 			a.quickFilter(ev.Rune())
@@ -427,18 +443,20 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	return ev
 }
 
+// quickFilter matches the STATE column exactly — a monitor named
+// "… Warning Threshold Reached" must NOT match the Warn quick filter.
 func (a *App) quickFilter(r rune) {
 	switch r {
 	case '1':
-		a.filter = "Alert"
+		a.stateFilter = "Alert"
 	case '2':
-		a.filter = "Warn"
+		a.stateFilter = "Warn"
 	case '3':
-		a.filter = "No Data"
+		a.stateFilter = "No Data"
 	case '4':
-		a.filter = "OK"
+		a.stateFilter = "OK"
 	default:
-		a.filter = ""
+		a.stateFilter = ""
 	}
 	a.applyFilter()
 }
@@ -503,7 +521,7 @@ func (a *App) execCommand(cmd string) {
 	switch cmd {
 	case "":
 		return
-	case "q", "quit":
+	case "q", "quit", "exit":
 		a.Stop()
 		return
 	case "help", "?":
@@ -521,6 +539,25 @@ func (a *App) execCommand(cmd string) {
 	a.flash(fmt.Sprintf("unknown command %q — try :monitors :incidents :slos :logs :dashboards :ctx", cmd), true)
 }
 
+// drillToLogs is the k9s killer feature: from a monitor, jump straight to
+// its logs — the monitor's own query for log monitors, service:/env: tags
+// otherwise. Esc pops back to the monitors view via the navigation stack.
+func (a *App) drillToLogs(r data.Row) {
+	if r.LogQuery == "" {
+		a.flash("no log query derivable from this monitor (no log query or service:/env: tags)", true)
+		return
+	}
+	var logsRes data.Resource
+	for _, res := range data.Resources() {
+		if res.Key == "logs" {
+			logsRes = res
+		}
+	}
+	slog.Info("drill-down monitor→logs", "monitor", r.ID, "query", r.LogQuery)
+	a.queries["logs"] = r.LogQuery
+	a.switchResource(logsRes) // pushes the current view; esc returns here
+}
+
 // showContexts opens the :ctx view listing the configured Datadog orgs.
 func (a *App) showContexts() {
 	if a.page == "table" && a.res.Key == ctxResource.Key {
@@ -531,6 +568,7 @@ func (a *App) showContexts() {
 	}
 	a.res = ctxResource
 	a.filter = ""
+	a.stateFilter = ""
 	a.rows = nil
 	a.filtered = nil
 	a.pendingSel = 1
@@ -585,11 +623,12 @@ func (a *App) switchContext(name string) {
 func (a *App) pushNav() {
 	sel, _ := a.table.GetSelection()
 	a.stack = append(a.stack, navEntry{
-		page:      a.page,
-		res:       a.res,
-		filter:    a.filter,
-		detailRow: a.detailRow,
-		selRow:    sel,
+		page:        a.page,
+		res:         a.res,
+		filter:      a.filter,
+		stateFilter: a.stateFilter,
+		detailRow:   a.detailRow,
+		selRow:      sel,
 	})
 }
 
@@ -606,8 +645,9 @@ func (a *App) showHelp() {
 // filter, then pop the navigation stack to the previous view. At the root
 // with no filter, esc is a no-op.
 func (a *App) back() {
-	if a.page == "table" && a.filter != "" {
+	if a.page == "table" && (a.filter != "" || a.stateFilter != "") {
 		a.filter = ""
+		a.stateFilter = ""
 		a.applyFilter()
 	}
 	if len(a.stack) == 0 {
@@ -622,6 +662,7 @@ func (a *App) back() {
 func (a *App) restore(e navEntry) {
 	a.res = e.res
 	a.filter = e.filter
+	a.stateFilter = e.stateFilter
 	a.detailRow = e.detailRow
 	switch e.page {
 	case "detail":
@@ -687,6 +728,7 @@ func (a *App) openCtxForm() {
 		AddPasswordField("API key (option 1)", "", 50, '*', nil).
 		AddPasswordField("APP key (option 1)", "", 50, '*', nil).
 		AddPasswordField("Access token (option 2)", "", 50, '*', nil).
+		AddInputField("Subdomain (optional)", "", 30, nil, nil).
 		AddButton("Save", a.saveCtxForm).
 		AddButton("Cancel", a.back)
 	a.showPage("ctxform")
@@ -719,7 +761,9 @@ Scope it read-only: monitors_read, incidents_read, slos_read, logs_read_data, da
 [yellow]Option 2) Access token only[white]
 A bearer token (OAuth2 access token or PAT), e.g. from Datadog's pup CLI or your SSO tooling. Leave both key fields empty. Tokens are usually short-lived (~1h).
 
-[gray]Secrets go to the OS keychain (service "ddez"), never into the config file. <esc> cancels.`
+[aqua]Subdomain[white] — only if your org's web UI lives on a custom subdomain: for https://[green]acme-stage[white].datadoghq.eu enter [green]acme-stage[white]. Fixes 'open in Datadog' links; API calls are unaffected. Leave empty if your URL starts with app.
+
+[gray]Secrets go to the OS keychain (service "ike"), never into the config file. <esc> cancels.`
 
 func (a *App) saveCtxForm() {
 	name := strings.TrimSpace(a.ctxForm.GetFormItem(0).(*tview.InputField).GetText())
@@ -731,9 +775,14 @@ func (a *App) saveCtxForm() {
 	apiKey := a.ctxForm.GetFormItem(2).(*tview.InputField).GetText()
 	appKey := a.ctxForm.GetFormItem(3).(*tview.InputField).GetText()
 	token := a.ctxForm.GetFormItem(4).(*tview.InputField).GetText()
+	subdomain := strings.TrimSpace(a.ctxForm.GetFormItem(5).(*tview.InputField).GetText())
 
 	if name == "" {
 		a.formError("Name is required")
+		return
+	}
+	if !config.ValidSubdomain(subdomain) {
+		a.formError("subdomain must be a single DNS label, e.g. acme-stage (from https://acme-stage." + site + ")")
 		return
 	}
 	for _, c := range a.ctxInfos {
@@ -754,7 +803,7 @@ func (a *App) saveCtxForm() {
 	case token != "":
 		auth = "token"
 	}
-	info, err := a.opts.AddContext(name, site, apiKey, appKey, token)
+	info, err := a.opts.AddContext(name, site, apiKey, appKey, token, subdomain)
 	if err != nil {
 		a.formError(err.Error())
 		return
@@ -872,6 +921,7 @@ func (a *App) switchResource(res data.Resource) {
 	}
 	a.res = res
 	a.filter = ""
+	a.stateFilter = ""
 	if res.ServerQuery && a.queries[res.Key] == "" {
 		a.queries[res.Key] = res.DefaultQuery
 	}
@@ -928,20 +978,30 @@ func (a *App) load(force bool) {
 
 func (a *App) applyFilter() {
 	a.filtered = a.filtered[:0]
-	f := strings.ToLower(a.filter)
 	for i, r := range a.rows {
-		if f == "" {
+		if matchRow(r, a.stateFilter, a.filter) {
 			a.filtered = append(a.filtered, i)
-			continue
-		}
-		for _, c := range r.Cells {
-			if strings.Contains(strings.ToLower(c), f) {
-				a.filtered = append(a.filtered, i)
-				break
-			}
 		}
 	}
 	a.render()
+}
+
+// matchRow applies both filters: state is an exact (case-insensitive) match
+// on the first column; text is a substring match across all cells.
+func matchRow(r data.Row, state, text string) bool {
+	if state != "" && (len(r.Cells) == 0 || !strings.EqualFold(r.Cells[0], state)) {
+		return false
+	}
+	if text == "" {
+		return true
+	}
+	t := strings.ToLower(text)
+	for _, c := range r.Cells {
+		if strings.Contains(strings.ToLower(c), t) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) ticker() {
@@ -982,9 +1042,16 @@ func (a *App) render() {
 			a.table.SetCell(n+1, c, cell)
 		}
 	}
-	flabel := "all"
+	var parts []string
+	if a.stateFilter != "" {
+		parts = append(parts, "state:"+a.stateFilter)
+	}
 	if a.filter != "" {
-		flabel = "/" + a.filter
+		parts = append(parts, "/"+a.filter)
+	}
+	flabel := strings.Join(parts, " ")
+	if flabel == "" {
+		flabel = "all"
 	}
 	if a.res.ServerQuery {
 		flabel = a.queries[a.res.Key]
@@ -1130,6 +1197,36 @@ func (a *App) openDetail(tableRow int) {
 	a.renderDetail(r)
 	a.detailRow = r
 	a.showPage("detail")
+
+	// The list row is often only a summary (dashboards have no widgets in
+	// the listing) — upgrade to the full object on demand, in background,
+	// and swap it in if the user is still looking at this row.
+	res := a.res
+	go func() {
+		full, err := a.provider.FetchDetail(context.Background(), res.Key, r.ID)
+		if err != nil {
+			slog.Warn("detail fetch failed", "resource", res.Key, "id", r.ID, "err", err)
+			a.QueueUpdateDraw(func() { a.flash("✗ full object: "+err.Error(), true) })
+			return
+		}
+		if full == nil {
+			return // the row already was the complete object
+		}
+		slog.Debug("detail fetched", "resource", res.Key, "id", r.ID)
+		a.QueueUpdateDraw(func() {
+			if a.page != "detail" || a.detailRow.ID != r.ID {
+				return // user navigated away meanwhile
+			}
+			b, err := json.MarshalIndent(full, "", "  ")
+			if err != nil {
+				return
+			}
+			row, col := a.detail.GetScrollOffset()
+			a.detail.SetText(string(b))
+			a.detail.ScrollTo(row, col)
+			a.flash("full object loaded", false)
+		})
+	}()
 }
 
 func (a *App) renderDetail(r data.Row) {
