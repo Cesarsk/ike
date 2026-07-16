@@ -235,18 +235,19 @@ func (l *Live) sloStatus(ctx context.Context, id string) (any, error) {
 	return out, nil
 }
 
-// SetIncidentState moves an incident to a new state (active/stable/resolved)
-// by patching its state field. The only write operation ike performs.
-func (l *Live) SetIncidentState(ctx context.Context, id, state string) error {
+// SetIncidentField patches a single-value incident field — "state"
+// (active/stable/resolved) or "severity" (SEV-1…SEV-5). Both share the same
+// single-value attribute shape, so one method covers them. A write; UI-gated.
+func (l *Live) SetIncidentField(ctx context.Context, id, field, value string) error {
 	ctx = l.authCtx(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	sv := datadogV2.NewIncidentFieldAttributesSingleValue()
-	sv.SetValue(state)
+	sv.SetValue(value)
 	attrs := datadogV2.NewIncidentUpdateAttributes()
 	attrs.SetFields(map[string]datadogV2.IncidentFieldAttributes{
-		"state": datadogV2.IncidentFieldAttributesSingleValueAsIncidentFieldAttributes(sv),
+		field: datadogV2.IncidentFieldAttributesSingleValueAsIncidentFieldAttributes(sv),
 	})
 	data := datadogV2.NewIncidentUpdateData(id, datadogV2.INCIDENTTYPE_INCIDENTS)
 	data.SetAttributes(*attrs)
@@ -255,9 +256,9 @@ func (l *Live) SetIncidentState(ctx context.Context, id, state string) error {
 	_, resp, err := datadogV2.NewIncidentsApi(l.client).UpdateIncident(ctx, id, *body)
 	l.track(resp)
 	if err != nil {
-		return apiErr("set incident state", err)
+		return apiErr("set incident "+field, err)
 	}
-	slog.Info("incident state changed", "id", id, "state", state)
+	slog.Info("incident field changed", "id", id, "field", field, "value", value)
 	return nil
 }
 
@@ -294,6 +295,22 @@ func (l *Live) SetMonitorMute(ctx context.Context, id string, mute bool) error {
 		return apiErr("mute: update monitor", err)
 	}
 	slog.Info("monitor mute changed", "id", id, "muted", mute)
+	return nil
+}
+
+// CancelDowntime cancels a scheduled/active downtime by id (v2 Downtimes API).
+// A write; UI-gated behind confirmation.
+func (l *Live) CancelDowntime(ctx context.Context, id string) error {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := datadogV2.NewDowntimesApi(l.client).CancelDowntime(ctx, id)
+	l.track(resp)
+	if err != nil {
+		return apiErr("cancel downtime", err)
+	}
+	slog.Info("downtime cancelled", "id", id)
 	return nil
 }
 

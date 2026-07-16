@@ -46,6 +46,15 @@ func TestAppSmoke(t *testing.T) {
 	// and the incidents view reloaded.
 	waitFor(t, sim, "IR-142 SEV-1 resolved")
 
+	// Incident severity: v opens a confirm modal; pick a target severity and
+	// the change is applied + reflected on reload (SEV column, independent of
+	// the state just changed above).
+	typeRunes(sim, "v")
+	waitFor(t, sim, "currently SEV-1")
+	press(sim, tcell.KeyRight) // Cancel → "→ SEV-2"
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "IR-142 SEV-2 resolved")
+
 	// Incident quick filter: digit 3 = resolved only (STATE column).
 	typeRunes(sim, "3")
 	waitFor(t, sim, "Incidents(state:resolved)")
@@ -142,10 +151,15 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "Events(")
 	waitFor(t, sim, "Deployed payments-api")
 
-	// Downtimes: org-wide mute visibility.
+	// Downtimes: org-wide mute visibility + cancel (x) behind a confirm.
 	typeCmd(sim, ":downtimes")
 	waitFor(t, sim, "Downtimes(")
 	waitFor(t, sim, "Maintenance window")
+	typeRunes(sim, "x") // cancel the selected (top) downtime
+	waitFor(t, sim, "Cancel downtime dt-0")
+	press(sim, tcell.KeyRight) // Cancel → "Cancel downtime"
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "canceled") // status flips once the write applied + reloaded
 	press(sim, tcell.KeyEscape) // back to events
 	waitFor(t, sim, "Events(")
 	press(sim, tcell.KeyEscape) // back to traces (nav stack)

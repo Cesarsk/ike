@@ -52,10 +52,10 @@ func (c *Cached) MonitorMetric(ctx context.Context, id string) (*MetricSeries, e
 	return c.p.MonitorMetric(ctx, id)
 }
 
-// SetIncidentState writes through and drops the incidents cache so the next
+// SetIncidentField writes through and drops the incidents cache so the next
 // fetch reflects the change.
-func (c *Cached) SetIncidentState(ctx context.Context, id, state string) error {
-	if err := c.p.SetIncidentState(ctx, id, state); err != nil {
+func (c *Cached) SetIncidentField(ctx context.Context, id, field, value string) error {
+	if err := c.p.SetIncidentField(ctx, id, field, value); err != nil {
 		return err
 	}
 	c.dropResource("incidents")
@@ -69,6 +69,16 @@ func (c *Cached) SetMonitorMute(ctx context.Context, id string, mute bool) error
 		return err
 	}
 	c.dropResource("monitors")
+	return nil
+}
+
+// CancelDowntime writes through and drops the downtimes cache so the next
+// fetch reflects the cancellation.
+func (c *Cached) CancelDowntime(ctx context.Context, id string) error {
+	if err := c.p.CancelDowntime(ctx, id); err != nil {
+		return err
+	}
+	c.dropResource("downtimes")
 	return nil
 }
 

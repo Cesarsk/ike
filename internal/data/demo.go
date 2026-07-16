@@ -15,11 +15,13 @@ import (
 // can be exercised (and demoed) without Datadog credentials. States jitter
 // a little on every refresh to make auto-refresh visible.
 type Demo struct {
-	site  string
-	mu    sync.Mutex
-	rnd   *rand.Rand
-	mons  []demoMonitor
-	incSt map[string]string // incident id → state, mutated by SetIncidentState
+	site   string
+	mu     sync.Mutex
+	rnd    *rand.Rand
+	mons   []demoMonitor
+	incSt  map[string]string // incident id → state, mutated by SetIncidentField
+	incSev map[string]string // incident id → severity, mutated by SetIncidentField
+	dtGone map[string]bool   // downtime id → cancelled, mutated by CancelDowntime
 }
 
 type demoMonitor struct {
@@ -238,7 +240,11 @@ func (d *Demo) incidents() []Row {
 	for _, in := range incs {
 		state := in.state
 		if s, ok := d.incSt[in.id]; ok {
-			state = s // reflect an in-session SetIncidentState change
+			state = s // reflect an in-session state change
+		}
+		sev := in.sev
+		if s, ok := d.incSev[in.id]; ok {
+			sev = s // reflect an in-session severity change
 		}
 		created := time.Now().Add(-in.age)
 		impact := ""
@@ -247,9 +253,9 @@ func (d *Demo) incidents() []Row {
 		}
 		rows = append(rows, Row{
 			ID:    in.id,
-			Cells: []string{in.id, in.sev, state, in.title, impact, created.Format("2006-01-02 15:04")},
+			Cells: []string{in.id, sev, state, in.title, impact, created.Format("2006-01-02 15:04")},
 			Raw: map[string]any{
-				"public_id": in.id, "severity": in.sev, "state": state,
+				"public_id": in.id, "severity": sev, "state": state,
 				"title": in.title, "customer_impacted": in.impact, "created": created.Format(time.RFC3339),
 			},
 			URL: WebBase(d.site) + "/incidents/" + strings.TrimPrefix(in.id, "IR-"),
@@ -258,15 +264,23 @@ func (d *Demo) incidents() []Row {
 	return rows
 }
 
-// SetIncidentState records a state change in demo mode so the incidents view
-// reflects it, mirroring the live write path.
-func (d *Demo) SetIncidentState(_ context.Context, id, state string) error {
+// SetIncidentField records a state or severity change in demo mode so the
+// incidents view reflects it, mirroring the live write path.
+func (d *Demo) SetIncidentField(_ context.Context, id, field, value string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.incSt == nil {
-		d.incSt = map[string]string{}
+	switch field {
+	case "severity":
+		if d.incSev == nil {
+			d.incSev = map[string]string{}
+		}
+		d.incSev[id] = value
+	default: // "state"
+		if d.incSt == nil {
+			d.incSt = map[string]string{}
+		}
+		d.incSt[id] = value
 	}
-	d.incSt[id] = state
 	return nil
 }
 
@@ -501,15 +515,32 @@ func (d *Demo) downtimes() []Row {
 	}
 	rows := make([]Row, 0, len(dts))
 	for i, dt := range dts {
+		id := fmt.Sprintf("dt-%d", i)
+		status := dt.status
+		if d.dtGone[id] {
+			status = "canceled" // reflect an in-session CancelDowntime
+		}
 		created := time.Now().Add(-dt.age)
 		rows = append(rows, Row{
-			ID:    fmt.Sprintf("dt-%d", i),
-			Cells: []string{dt.status, dt.scope, dt.msg, created.Format("2006-01-02 15:04")},
-			Raw:   map[string]any{"status": dt.status, "scope": dt.scope, "message": dt.msg},
+			ID:    id,
+			Cells: []string{status, dt.scope, dt.msg, created.Format("2006-01-02 15:04")},
+			Raw:   map[string]any{"status": status, "scope": dt.scope, "message": dt.msg},
 			URL:   WebBase(d.site) + "/monitors/downtimes",
 		})
 	}
 	return rows
+}
+
+// CancelDowntime marks a demo downtime canceled so the view reflects it,
+// mirroring the live write path.
+func (d *Demo) CancelDowntime(_ context.Context, id string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.dtGone == nil {
+		d.dtGone = map[string]bool{}
+	}
+	d.dtGone[id] = true
+	return nil
 }
 
 func (d *Demo) events() []Row {

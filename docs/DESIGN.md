@@ -56,10 +56,11 @@ Decisions:
 - **`Provider` interface with a demo implementation** — the TUI is fully
   exercisable and testable without credentials, and the smoke test drives the
   real app end-to-end on a simulation screen in CI.
-- **Read-mostly.** The one write operation is changing an incident's state
-  (`r`), always behind a confirmation modal. Everything else is read or a
-  browser deep-link. Any future write (monitor mute/downtime) follows the
-  same confirm-gated rule.
+- **Read-mostly, every write confirm-gated.** The write surface is
+  deliberately small: incident state (`r`) and severity (`v`), monitor
+  mute/unmute (`m`), cancel downtime (`x`). Each is behind a confirmation
+  modal built fresh per invocation; everything else is a read or a browser
+  deep-link. Any future write follows the same confirm-gated rule.
 - **Auth = named contexts with env-indirected secrets** (see
   [ARCHITECTURE.md](ARCHITECTURE.md)). The config file names *which env
   vars* hold each org's keys; plaintext keys in the file are rejected at
@@ -112,22 +113,23 @@ Auth (its own milestone — the biggest single feature):
 Near-term (rest of Tier 2):
 2. **APM services** view (`:services`) — needs metrics for health/latency/
    error-rate to be worth it (service-definitions alone is thin); enter → traces.
-3. **Downtimes cancel** — the list ships now (read-only); add cancel behind a
-   confirm (CancelDowntime) next.
-4. Live log tail (bounded polling) + log → surrounding-context (±N min, same host).
-5. Richer incident verbs: timeline note, change severity, assign commander.
+3. Live log tail (bounded polling) + log → surrounding-context (±N min, same host).
+4. Remaining incident verbs: timeline note, assign commander (severity ships now
+   via `v`; both remaining verbs are add-a-note / relationship writes, not
+   single-value field patches, so they need their own request shapes).
 
 UX polish (rest of Tier 3 — bigger / config-schema changes):
 6. Saved queries per context; column customization. A dedicated command
    palette is largely covered by `:`-autocomplete already.
 
 Longer-term:
-7. `x` = set/replace credentials on an existing context (token rotation ~1h).
+7. Set/replace credentials on an existing context (`:ctx`, token rotation ~1h)
+   — needs a fresh key (`x` is now cancel-downtime on the downtimes view).
 8. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
 9. Hardened incidents field mapping (union types; verify against live org).
 10. First Homebrew release: create `Cesarsk/homebrew-tap` + `TAP_GITHUB_TOKEN`
     secret, then `git tag v0.1.0` (goreleaser + release workflow already built).
-8. Per-resource TTL overrides and skins in the config file.
+11. Per-resource TTL overrides and skins in the config file.
 
 Deferred deliberately (unverifiable-write-heavy or lower ROI than the above):
 richer incident write verbs and bulk actions above are **write** paths that
@@ -152,8 +154,9 @@ trace's logs), ~~events feed~~ (`:events`), ~~metric-behind-a-monitor~~ (detail
 sparkline), ~~log patterns~~ (`P`, zero-API clustering), ~~query history~~ (↑
 in the prompt), ~~429 rate-limit backoff~~ (auto-pauses auto-refresh),
 ~~double-ctrl-c quit~~, ~~unified trace timeline~~ (waterfall + all-services
-logs chronological), ~~downtimes list~~ (`:downtimes`).
-trace's logs).
+logs chronological), ~~downtimes list~~ (`:downtimes`), ~~downtimes cancel~~
+(`x`, confirm-gated), ~~incident severity change~~ (`v`, SEV-1…SEV-5,
+confirm-gated).
 
 ## Traces & correlation
 

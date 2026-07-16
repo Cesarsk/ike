@@ -358,7 +358,9 @@ func (a *App) setHints() {
 		case "slos":
 			lines = append(lines, "[gray]<enter>error budget  <t>cycle type filter  <s>sort <S>reverse")
 		case "incidents":
-			lines = append(lines, "[gray]<r>change state  quick: <1>active <2>stable <3>resolved <0>all  <s>sort")
+			lines = append(lines, "[gray]<r>state  <v>severity  quick: <1>active <2>stable <3>resolved <0>all  <s>sort")
+		case "downtimes":
+			lines = append(lines, "[gray]<x>cancel downtime  <s>sort <S>reverse")
 		case "logs":
 			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <P>patterns  window: <1>15m..<5>7d")
 		case "traces":
@@ -405,6 +407,8 @@ func (a *App) buildHelp() tview.Primitive {
  [orange]ACTIONS
    [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
    [aqua]r[white]             (incident) change state (active/stable/resolved) — behind a confirm
+   [aqua]v[white]             (incident) change severity (SEV-1…SEV-5) — behind a confirm
+   [aqua]x[white]             (downtime) cancel the selected downtime — behind a confirm
    [aqua]c[white]             copy the row's URL / query / id to the clipboard
    [aqua]ctrl-r[white]        force refresh (bypasses cache — spends API budget)
    [aqua]p[white]             pause / resume auto-refresh (header shows auto:on/off)
@@ -669,6 +673,20 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		if a.res.Key == "incidents" {
 			if row, ok := a.selectedRow(); ok {
 				a.confirmIncidentAction(row)
+			}
+			return nil
+		}
+	case 'v':
+		if a.res.Key == "incidents" {
+			if row, ok := a.selectedRow(); ok {
+				a.confirmIncidentSeverity(row)
+			}
+			return nil
+		}
+	case 'x':
+		if a.res.Key == "downtimes" {
+			if row, ok := a.selectedRow(); ok {
+				a.confirmCancelDowntime(row)
 			}
 			return nil
 		}
@@ -1593,7 +1611,7 @@ func (a *App) showConfirm(text string, buttons []string, onDone func(label strin
 }
 
 // confirmIncidentAction offers to move the selected incident to another
-// state. This is ike's only write path, so it is always behind this modal.
+// state, behind a confirmation modal (a write path).
 func (a *App) confirmIncidentAction(r data.Row) {
 	cur := ""
 	if len(r.Cells) > 2 {
@@ -1607,38 +1625,102 @@ func (a *App) confirmIncidentAction(r data.Row) {
 	}
 	buttons := append([]string{"Cancel"}, targetLabels(targets)...)
 	a.showConfirm(
-		fmt.Sprintf("Change %s (currently %s) to:\nThis writes to Datadog.", r.ID, cur),
+		fmt.Sprintf("Change %s state (currently %s) to:\nThis writes to Datadog.", r.ID, cur),
 		buttons,
 		func(label string) {
 			state := strings.TrimPrefix(label, "→ ")
 			if label == "Cancel" || state == "" {
 				return
 			}
-			a.applyIncidentState(r, state)
+			a.applyIncidentField(r, "state", state, r.ID+" → "+state)
 		})
 }
 
-func targetLabels(states []string) []string {
-	out := make([]string, len(states))
-	for i, s := range states {
+// confirmIncidentSeverity offers to change the selected incident's severity,
+// behind a confirmation modal (a write path).
+func (a *App) confirmIncidentSeverity(r data.Row) {
+	cur := ""
+	if len(r.Cells) > 1 {
+		cur = strings.ToUpper(r.Cells[1])
+	}
+	var targets []string
+	for _, s := range data.IncidentSeverities {
+		if s != cur {
+			targets = append(targets, s)
+		}
+	}
+	buttons := append([]string{"Cancel"}, targetLabels(targets)...)
+	a.showConfirm(
+		fmt.Sprintf("Change %s severity (currently %s) to:\nThis writes to Datadog.", r.ID, cur),
+		buttons,
+		func(label string) {
+			sev := strings.TrimPrefix(label, "→ ")
+			if label == "Cancel" || sev == "" {
+				return
+			}
+			a.applyIncidentField(r, "severity", sev, r.ID+" → "+sev)
+		})
+}
+
+func targetLabels(vals []string) []string {
+	out := make([]string, len(vals))
+	for i, s := range vals {
 		out[i] = "→ " + s
 	}
 	return out
 }
 
-func (a *App) applyIncidentState(r data.Row, state string) {
-	a.flash("setting "+r.ID+" → "+state+" …", false)
+// applyIncidentField performs a confirmed incident write (state or severity)
+// off the UI thread; ok is the success flash message.
+func (a *App) applyIncidentField(r data.Row, field, value, ok string) {
+	a.flash("setting "+r.ID+" "+field+" → "+value+" …", false)
 	go func() {
-		err := a.provider.SetIncidentState(context.Background(), r.ID, state)
+		err := a.provider.SetIncidentField(context.Background(), r.ID, field, value)
 		a.QueueUpdateDraw(func() {
 			if err != nil {
-				slog.Error("incident state change failed", "id", r.ID, "state", state, "err", err)
+				slog.Error("incident field change failed", "id", r.ID, "field", field, "value", value, "err", err)
 				a.flash("✗ "+err.Error(), true)
 				return
 			}
-			a.flash(r.ID+" → "+state, false)
+			a.flash(ok, false)
 			if a.res.Key == "incidents" && a.page == "table" {
-				a.load(true) // cache was dropped; re-fetch to show the new state
+				a.load(true) // cache was dropped; re-fetch to show the change
+			}
+		})
+	}()
+}
+
+// confirmCancelDowntime offers to cancel the selected downtime, behind a
+// confirmation modal (a write path).
+func (a *App) confirmCancelDowntime(r data.Row) {
+	scope := ""
+	if len(r.Cells) > 1 {
+		scope = r.Cells[1]
+	}
+	a.showConfirm(
+		fmt.Sprintf("Cancel downtime %s (scope %s)?\nThis writes to Datadog.", r.ID, scope),
+		[]string{"Cancel", "Cancel downtime"},
+		func(label string) {
+			if label != "Cancel downtime" {
+				return
+			}
+			a.applyCancelDowntime(r)
+		})
+}
+
+func (a *App) applyCancelDowntime(r data.Row) {
+	a.flash("cancelling downtime "+r.ID+" …", false)
+	go func() {
+		err := a.provider.CancelDowntime(context.Background(), r.ID)
+		a.QueueUpdateDraw(func() {
+			if err != nil {
+				slog.Error("downtime cancel failed", "id", r.ID, "err", err)
+				a.flash("✗ "+err.Error(), true)
+				return
+			}
+			a.flash(r.ID+" canceled", false)
+			if a.res.Key == "downtimes" && a.page == "table" {
+				a.load(true) // cache was dropped; re-fetch to show the change
 			}
 		})
 	}()

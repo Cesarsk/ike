@@ -28,9 +28,10 @@ drill down, `esc` to go back.
 
 > **Status: real-org validated.** Eight views (monitors, incidents, SLOs,
 > logs, traces, events, downtimes, dashboards), log⇄trace correlation with a
-> unified request timeline, multi-org contexts, confirm-gated writes (mute,
-> incident state), demo mode. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-> for diagrams and [docs/DESIGN.md](docs/DESIGN.md) for decisions and roadmap.
+> unified request timeline, multi-org contexts, confirm-gated writes (mute
+> monitor, incident state + severity, cancel downtime), demo mode. See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and
+> [docs/DESIGN.md](docs/DESIGN.md) for decisions and roadmap.
 
 ## The debugging loop
 
@@ -124,6 +125,8 @@ contexts:
 | `P` | (logs) **cluster the loaded lines into patterns** — flood triage, zero extra API |
 | `↑`/`↓` | (in the `/` prompt) recall previous queries for this view |
 | `r` | on an incident: **change its state** (active/stable/resolved) — behind a confirmation |
+| `v` | on an incident: **change its severity** (SEV-1…SEV-5) — behind a confirmation |
+| `x` | on a downtime: **cancel** the selected downtime — behind a confirmation |
 | `m` | on a monitor: **mute / unmute** (toggles based on current state, via the monitor's `silenced` option, read-modify-write) — behind a confirmation. Mute status shows in the **MUTED** column, independent of alert state |
 | `c` | **copy** the selected row's web URL (or log query / id) to the clipboard |
 | `s` / `S` | cycle the sort column / reverse the direction (any table view) |

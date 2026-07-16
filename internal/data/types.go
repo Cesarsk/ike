@@ -100,6 +100,9 @@ type TraceView struct {
 // IncidentStates are the states an incident can be moved to via 'r'.
 var IncidentStates = []string{"active", "stable", "resolved"}
 
+// IncidentSeverities are the severities an incident can be set to via 'v'.
+var IncidentSeverities = []string{"SEV-1", "SEV-2", "SEV-3", "SEV-4", "SEV-5"}
+
 // MetricSeries is a monitor's evaluated metric over a recent window — the
 // data behind the alert, for the monitor detail view. Note explains why
 // there's no sparkline (non-metric monitor, unparseable query, no data).
@@ -129,13 +132,16 @@ type Provider interface {
 	// MonitorMetric evaluates a monitor's metric query over a recent window
 	// so the detail view can show the data behind the alert. On-demand.
 	MonitorMetric(ctx context.Context, id string) (*MetricSeries, error)
-	// SetIncidentState changes an incident's state (e.g. active → resolved).
-	// A write operation; the UI gates it behind a confirmation modal.
-	SetIncidentState(ctx context.Context, id, state string) error
+	// SetIncidentField changes a single-value incident field (e.g. "state"
+	// → resolved, "severity" → SEV-2). A write operation; the UI gates it
+	// behind a confirmation modal.
+	SetIncidentField(ctx context.Context, id, field, value string) error
 	// SetMonitorMute mutes or unmutes a monitor. Implemented as a
 	// read-modify-write on the monitor's options so no other option is
 	// clobbered. A write operation; UI-gated behind confirmation.
 	SetMonitorMute(ctx context.Context, id string, mute bool) error
+	// CancelDowntime cancels a scheduled/active downtime. Write; UI-gated.
+	CancelDowntime(ctx context.Context, id string) error
 	// Budget reports the last-seen API rate-limit state, one line per
 	// endpoint family (from X-RateLimit-* response headers).
 	Budget() []string
