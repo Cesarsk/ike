@@ -119,6 +119,7 @@ type App struct {
 	stack      []navEntry // navigation history, k9s-style: esc pops
 	pendingSel int        // row to re-select once restored rows arrive
 	flashTimer *time.Timer
+	ctrlCAt    time.Time // last ctrl-c press, for double-press-to-quit
 }
 
 // navEntry is one step of navigation history. Like k9s's page stack, every
@@ -378,47 +379,49 @@ func (a *App) buildHelp() tview.Primitive {
 	tv.SetBorder(true).SetTitle(" Help ").SetTitleColor(tcell.ColorOrange)
 	fmt.Fprint(tv, `
  [orange]NAVIGATION
-   [aqua]:<resource>[white]   switch view (monitors, incidents, slos, logs, traces, events, dashboards)
-   [aqua]:ctx[white]          list Datadog org contexts; enter switches org (cache, budget and
-                 history are dropped — a context is a hard boundary)
-   [aqua]a[white]             (in :ctx) add a context: name, site, paste API/APP keys or an
-                 access token — stored in the OS keychain, never in the config file
-   [aqua]e[white]             (in :ctx) edit the config file in $EDITOR (vi by default),
-                 then reload and re-validate it
-   [aqua]ctrl-d[white]        (in :ctx) delete the selected context (asks first)
-   [aqua]/<text>[white]       filter rows; in Logs this is a Datadog search query sent to the API
-   [aqua]↑/↓ j/k[white]       move selection
-   [aqua]enter[white]         open detail view — fetches the full object on demand where the
-                 list is only a summary (monitors, incidents). On a dashboard,
-                 renders its widgets with sparklines (ctrl-r refreshes)
-   [aqua]esc[white]           go back to the previous view (navigation history, like k9s);
-                 clears the active filter on the way out
+   [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces events dashboards
+                 (aliases: mon inc s l tr ev d) — or :ctx for org contexts
+   [aqua]enter[white]         detail — full object on demand; SLO error budget; monitor metric
+                 sparkline; on a dashboard its widget grid; on logs/traces a row
+   [aqua]esc[white]           go back (navigation history, k9s-style); clears the active filter
+   [aqua]↑/↓ j/k[white]       move selection / scroll (↑/↓ in the / prompt = query history)
+   [aqua]o[white]             open the selected item in the Datadog web UI (works in detail too)
 
- [orange]SORT & FILTER
-   [aqua]s[white]             cycle the sort column; [aqua]S[white] reverses direction
-   [aqua]0-4[white]           (monitors) quick filter by state: all/alert/warn/nodata/ok
+ [orange]SEARCH, SORT & FILTER
+   [aqua]/<text>[white]       filter rows; in Logs/Traces/Events it is a Datadog query (server-side,
+                 tab-completes facets/values; ↑ recalls previous queries)
+   [aqua]s / S[white]         cycle the sort column / reverse the direction (any table)
+   [aqua]0-4[white]           quick filter by status — monitors: alert/warn/nodata/ok/all;
+                 incidents: active/stable/resolved/all
+   [aqua]1-5[white]           (logs/traces/events) time window: 15m / 1h / 4h / 1d / 7d
    [aqua]t[white]             (SLOs) cycle the Type filter: metric / monitor / time_slice / all
+   [aqua]P[white]             (logs) cluster the loaded lines into patterns — flood triage
 
- [orange]ACTIONS & CORRELATION
+ [orange]CORRELATION (the debugging loop)
    [aqua]l[white]             drill to logs — (monitor) its log query; (trace) that trace's logs
    [aqua]t[white]             drill to the trace waterfall — (logs/traces) the row's trace_id;
-                 needs APM log-injection, else "no trace_id" (SLOs: t = type filter)
-   [aqua]P[white]             (logs) cluster the loaded lines into patterns — flood triage
+                 needs APM log-injection, else a clear "no trace_id"
+
+ [orange]ACTIONS
    [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
    [aqua]r[white]             (incident) change state (active/stable/resolved) — behind a confirm
    [aqua]c[white]             copy the row's URL / query / id to the clipboard
-   [aqua]o[white]             open the selected item in the Datadog web UI (also works in detail view)
    [aqua]ctrl-r[white]        force refresh (bypasses cache — spends API budget)
-   [aqua]p[white]             pause / resume auto-refresh
+   [aqua]p[white]             pause / resume auto-refresh (header shows auto:on/off)
+
+ [orange]CONTEXTS (:ctx)
+   [aqua]enter[white]         switch org (cache, budget and history are dropped — a hard boundary)
+   [aqua]a[white]             add a context (name, site, API/APP keys or access token → OS keychain)
+   [aqua]e[white]             edit the config file in $EDITOR, then reload + re-validate
+   [aqua]ctrl-d[white]        delete the selected context (asks first)
 
  [orange]OTHER
    [aqua]?[white]             this help (from any view)
    [aqua]q[white]             back in detail/help; quit from a table view
-   [aqua]ctrl-c[white]        quit (also :q :quit :exit)
+   [aqua]ctrl-c[white]        quit — press twice to confirm (also :q :quit :exit)
 
- [gray]Views auto-refresh only where it is cheap (monitors, incidents) and are
- [gray]otherwise cached per TTL. The Budget header shows Datadog rate-limit
- [gray]headroom as reported by X-RateLimit response headers.
+ [gray]Views auto-refresh only where cheap (monitors, incidents), else cached per TTL.
+ [gray]The Budget header shows Datadog X-RateLimit headroom; a 429 auto-pauses refresh.
 `)
 	return tv
 }
@@ -426,6 +429,18 @@ func (a *App) buildHelp() tview.Primitive {
 // ---- input ----------------------------------------------------------------
 
 func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
+	// ctrl-c anywhere: quit, but require a second press within 2s so it's a
+	// deliberate exit (tview would otherwise quit on the first press). 'c'
+	// stays copy; this is the only ctrl-c path.
+	if ev.Key() == tcell.KeyCtrlC {
+		if time.Since(a.ctrlCAt) < 2*time.Second {
+			a.Stop()
+			return nil
+		}
+		a.ctrlCAt = time.Now()
+		a.flash("press ctrl-c again to quit", false)
+		return nil
+	}
 	if a.GetFocus() == a.prompt {
 		// ↑/↓ recall previously submitted queries/filters for this resource.
 		if a.promptM == promptFilter && (ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown) {
@@ -1135,6 +1150,27 @@ func renderTrace(v *data.TraceView) string {
 	}
 	if v.Truncated {
 		fmt.Fprintf(&b, "\n [yellow]trace truncated at %d spans[-]\n", 100)
+	}
+
+	// Unified request timeline: every service's logs for this trace, oldest
+	// first — read the request story top-to-bottom across services.
+	b.WriteString("\n [orange::b]logs in this trace (chronological, all services)[-:-:-]\n")
+	if len(v.Logs) == 0 {
+		b.WriteString(" [gray]no correlated logs — logs in this window may not carry trace_id[-]\n")
+	}
+	for _, lg := range v.Logs {
+		statusColor := "[gray]"
+		switch strings.ToLower(lg.Status) {
+		case "error", "critical", "emergency":
+			statusColor = "[red]"
+		case "warn", "warning":
+			statusColor = "[yellow]"
+		case "info":
+			statusColor = "[green]"
+		}
+		fmt.Fprintf(&b, " [gray]%s[-] %s%-5s[-] [aqua]%s[-] %s\n",
+			lg.Time.Local().Format("15:04:05.000"), statusColor, clip(lg.Status, 5),
+			tview.Escape(clip(lg.Service, 20)), tview.Escape(clip(lg.Message, 80)))
 	}
 	return b.String()
 }

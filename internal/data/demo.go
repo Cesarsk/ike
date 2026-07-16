@@ -464,7 +464,27 @@ func (d *Demo) Trace(_ context.Context, traceID string) (*TraceView, error) {
 		parent = id
 		offset += int64(4000 + d.rnd.Intn(8000)) // each child starts a bit later
 	}
-	return buildTrace(traceID, nodes), nil
+	view := buildTrace(traceID, nodes)
+	// Synthesize one log per hop, chronological, so the unified timeline is
+	// demoable — the deepest hop logs the error.
+	t0 := time.Now().Add(-2 * time.Minute)
+	msgs := []string{
+		"request received GET /api/v1/orders",
+		"handling order lookup id=91422",
+		"SELECT * FROM orders WHERE id=91422 (48ms)",
+		"quote fetch failed: upstream deadline exceeded",
+	}
+	for i, hop := range demoTraceChain {
+		status := "info"
+		if i == len(demoTraceChain)-1 {
+			status = "error"
+		}
+		view.Logs = append(view.Logs, TraceLog{
+			Time:    t0.Add(time.Duration(i*40) * time.Millisecond),
+			Service: hop.svc, Status: status, Message: msgs[i%len(msgs)],
+		})
+	}
+	return view, nil
 }
 
 func (d *Demo) events() []Row {

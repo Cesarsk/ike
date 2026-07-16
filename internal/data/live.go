@@ -890,7 +890,42 @@ func (l *Live) Trace(ctx context.Context, traceID string) (*TraceView, error) {
 	}
 	view := buildTrace(traceID, nodes)
 	view.Truncated = len(raw) >= maxTraceSpans
+	view.Logs = l.traceLogs(ctx, traceID) // best-effort; empty if uncorrelated
 	return view, nil
+}
+
+// traceLogs fetches this trace's logs across all services, oldest-first, so
+// the trace view can show a unified request timeline. Best-effort: any error
+// (or logs without trace_id) just yields no timeline, never fails the trace.
+func (l *Live) traceLogs(ctx context.Context, traceID string) []TraceLog {
+	body := datadogV2.LogsListRequest{
+		Filter: &datadogV2.LogsQueryFilter{
+			Query: datadog.PtrString("trace_id:" + traceID),
+			From:  datadog.PtrString("now-4h"),
+			To:    datadog.PtrString("now"),
+		},
+		Sort: datadogV2.LOGSSORT_TIMESTAMP_ASCENDING.Ptr(),
+		Page: &datadogV2.LogsListRequestPage{Limit: datadog.PtrInt32(100)},
+	}
+	resp, httpresp, err := datadogV2.NewLogsApi(l.client).ListLogs(ctx,
+		*datadogV2.NewListLogsOptionalParameters().WithBody(body))
+	l.track(httpresp)
+	if err != nil {
+		slog.Debug("trace logs fetch failed", "trace", traceID, "err", err)
+		return nil
+	}
+	data := resp.GetData()
+	out := make([]TraceLog, 0, len(data))
+	for _, lg := range data {
+		a := lg.GetAttributes()
+		out = append(out, TraceLog{
+			Time:    a.GetTimestamp(),
+			Service: a.GetService(),
+			Status:  a.GetStatus(),
+			Message: firstLine(a.GetMessage()),
+		})
+	}
+	return out
 }
 
 // MonitorMetric fetches a monitor's evaluated metric over the last hour.

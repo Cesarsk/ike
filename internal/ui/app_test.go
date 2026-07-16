@@ -111,11 +111,12 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape) // close detail, stay on logs
 	waitFor(t, sim, "Logs(status:error · 15m)")
 	typeRunes(sim, "t")
-	waitFor(t, sim, "spans · total")  // trace waterfall header
-	waitFor(t, sim, "kong-proxy")     // first hop of the demo trace chain
-	typeRunes(sim, "l")               // trace → its logs
-	waitFor(t, sim, "Logs(trace_id:") // logs filtered to the trace
-	press(sim, tcell.KeyEscape)       // back to the trace
+	waitFor(t, sim, "spans · total")                     // trace waterfall header
+	waitFor(t, sim, "kong-proxy")                        // first hop of the demo trace chain
+	waitFor(t, sim, "logs in this trace (chronological") // unified timeline below the waterfall
+	typeRunes(sim, "l")                                  // trace → its logs (full view)
+	waitFor(t, sim, "Logs(trace_id:")                    // logs filtered to the trace
+	press(sim, tcell.KeyEscape)                          // back to the trace
 	waitFor(t, sim, "spans · total")
 	press(sim, tcell.KeyEscape) // back to logs
 	waitFor(t, sim, "Logs(status:error · 15m)")

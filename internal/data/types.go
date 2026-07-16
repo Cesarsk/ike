@@ -77,13 +77,24 @@ type Span struct {
 	Error      bool
 }
 
-// TraceView is a reconstructed trace: its spans in tree (DFS) order with a
-// total span so the UI can draw a proportional waterfall.
+// TraceLog is one log line correlated to a trace (by trace_id), across all
+// services, for the unified request timeline.
+type TraceLog struct {
+	Time    time.Time
+	Service string
+	Status  string
+	Message string
+}
+
+// TraceView is a reconstructed trace: its spans in tree (DFS) order plus the
+// trace's logs from every service in chronological order, so the UI can draw
+// a proportional waterfall and a unified request-timeline below it.
 type TraceView struct {
 	TraceID   string
 	Spans     []Span
 	TotalUs   int64
-	Truncated bool // more spans than the fetch cap
+	Logs      []TraceLog // all services' logs for this trace, ascending by time
+	Truncated bool       // more spans than the fetch cap
 }
 
 // IncidentStates are the states an incident can be moved to via 'r'.
