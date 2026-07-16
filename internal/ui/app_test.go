@@ -115,6 +115,13 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Traces(")
 
+	// Events feed: the "what changed" stream (deploys, alerts).
+	typeCmd(sim, ":events")
+	waitFor(t, sim, "Events(")
+	waitFor(t, sim, "Deployed payments-api")
+	press(sim, tcell.KeyEscape) // back to traces (nav stack)
+	waitFor(t, sim, "Traces(")
+
 	// Back to monitors, then esc must pop the navigation stack back to the
 	// previous page (traces) — k9s-style history.
 	typeCmd(sim, ":monitors")

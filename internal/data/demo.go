@@ -94,6 +94,8 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.dashboards(), nil
 	case "traces":
 		return d.spans(query), nil
+	case "events":
+		return d.events(), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
@@ -448,6 +450,36 @@ func (d *Demo) Trace(_ context.Context, traceID string) (*TraceView, error) {
 		offset += int64(4000 + d.rnd.Intn(8000)) // each child starts a bit later
 	}
 	return buildTrace(traceID, nodes), nil
+}
+
+func (d *Demo) events() []Row {
+	evs := []struct {
+		typ, source, title string
+		age                time.Duration
+	}{
+		{"deploy", "gitlab", "Deployed payments-api v2.31.0 to prod", 8 * time.Minute},
+		{"error", "monitor", "[Triggered] Kong data plane 5xx rate", 42 * time.Minute},
+		{"deploy", "argocd", "Synced sygnum-workloads → rev f3a9c1", 55 * time.Minute},
+		{"info", "user", "@oncall acknowledged IR-142", time.Hour + 3*time.Minute},
+		{"warning", "monitor", "[Warn] Payments API p99 latency > 800ms", 90 * time.Minute},
+		{"success", "monitor", "[Recovered] RDS failover completed in stage", 2 * time.Hour},
+		{"deploy", "gitlab", "Rollback trading-engine to v1.9.4", 3 * time.Hour},
+		{"info", "terraform", "Applied 3 changes to kong-dataplane", 4 * time.Hour},
+	}
+	rows := make([]Row, 0, len(evs))
+	for i, e := range evs {
+		ts := time.Now().Add(-e.age)
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("ev-%d", i),
+			Cells: []string{ts.Format("2006-01-02 15:04"), e.typ, e.source, e.title, "env:prod,team:sre"},
+			Raw: map[string]any{
+				"timestamp": ts.Format(time.RFC3339), "type": e.typ,
+				"source": e.source, "title": e.title,
+			},
+			URL: WebBase(d.site) + "/event/explorer",
+		})
+	}
+	return rows
 }
 
 func (d *Demo) dashboards() []Row {
