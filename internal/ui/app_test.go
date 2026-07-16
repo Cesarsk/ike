@@ -106,6 +106,13 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape) // back to logs
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
+	// Log patterns: P clusters the loaded lines; esc pops back to logs.
+	typeRunes(sim, "P")
+	waitFor(t, sim, "patterns")
+	waitFor(t, sim, "loaded log lines")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Logs(status:error · 15m)")
+
 	// Traces view: server query + t opens the waterfall for a span's trace.
 	typeCmd(sim, ":traces")
 	waitFor(t, sim, "Traces(")

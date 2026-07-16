@@ -79,19 +79,20 @@ type App struct {
 	current      string // active context name
 	refreshEvery time.Duration
 
-	content *tview.Pages // "table" | "detail" | "help" | "ctxform" (+ "confirm" overlay)
-	infoTV  *tview.TextView
-	hintTV  *tview.TextView
-	table   *tview.Table
-	prompt  *tview.InputField
-	status  *tview.TextView
-	footer  *tview.Pages
-	detail  *tview.TextView
-	dash    *tview.TextView
-	trace   *tview.TextView
-	ctxForm *tview.Form
-	formErr *tview.TextView
-	confirm *tview.Modal
+	content  *tview.Pages // "table" | "detail" | "help" | "ctxform" (+ "confirm" overlay)
+	infoTV   *tview.TextView
+	hintTV   *tview.TextView
+	table    *tview.Table
+	prompt   *tview.InputField
+	status   *tview.TextView
+	footer   *tview.Pages
+	detail   *tview.TextView
+	dash     *tview.TextView
+	trace    *tview.TextView
+	patterns *tview.TextView
+	ctxForm  *tview.Form
+	formErr  *tview.TextView
+	confirm  *tview.Modal
 
 	res      data.Resource
 	rows     []data.Row
@@ -250,6 +251,11 @@ func (a *App) build() {
 	a.trace.SetBorderColor(tcell.ColorDodgerBlue)
 	a.trace.SetTitleColor(tcell.ColorOrange)
 
+	a.patterns = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.patterns.SetBorder(true)
+	a.patterns.SetBorderColor(tcell.ColorDodgerBlue)
+	a.patterns.SetTitleColor(tcell.ColorOrange)
+
 	a.ctxForm = tview.NewForm()
 	a.ctxForm.SetBorder(true)
 	a.ctxForm.SetTitle(" Add context ")
@@ -283,6 +289,7 @@ func (a *App) build() {
 		AddPage("detail", a.detail, true, false).
 		AddPage("dashboard", a.dash, true, false).
 		AddPage("trace", a.trace, true, false).
+		AddPage("patterns", a.patterns, true, false).
 		AddPage("help", a.buildHelp(), true, false).
 		AddPage("ctxform", ctxFormFlex, true, false).
 		AddPage("confirm", a.confirm, true, false)
@@ -317,6 +324,10 @@ func (a *App) setHints() {
 			"[aqua]<esc>[white]back  [aqua]<l>[white]logs for this trace  [aqua]<o>[white]open in Datadog",
 			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help  [aqua]<q>[white]back",
 		}
+	case "patterns":
+		lines = []string{
+			"[aqua]<esc>[white]back to logs  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help",
+		}
 	case "help":
 		lines = []string{
 			"[aqua]<esc>[white]back  [aqua]<q>[white]back",
@@ -345,7 +356,7 @@ func (a *App) setHints() {
 		case "incidents":
 			lines = append(lines, "[gray]<r>change state  quick: <1>active <2>stable <3>resolved <0>all  <s>sort")
 		case "logs":
-			lines = append(lines, "[gray]</>query (tab=complete)  <t>trace  window: <1>15m..<5>7d  <s>sort")
+			lines = append(lines, "[gray]</>query (tab=complete)  <t>trace  <P>patterns  window: <1>15m..<5>7d")
 		case "traces":
 			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  window: <1>15m..<5>7d  <s>sort")
 		case "events":
@@ -389,6 +400,7 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]l[white]             drill to logs — (monitor) its log query; (trace) that trace's logs
    [aqua]t[white]             drill to the trace waterfall — (logs/traces) the row's trace_id;
                  needs APM log-injection, else "no trace_id" (SLOs: t = type filter)
+   [aqua]P[white]             (logs) cluster the loaded lines into patterns — flood triage
    [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
    [aqua]r[white]             (incident) change state (active/stable/resolved) — behind a confirm
    [aqua]c[white]             copy the row's URL / query / id to the clipboard
@@ -472,6 +484,23 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == 'c':
 			a.copyRow(a.detailRow)
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	case "patterns":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -606,6 +635,11 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 'S':
 		if a.res.Key != ctxResource.Key {
 			a.toggleSortDir()
+			return nil
+		}
+	case 'P':
+		if a.res.Key == "logs" {
+			a.showPatterns()
 			return nil
 		}
 	case 'r':
@@ -960,6 +994,40 @@ func (a *App) drillToTrace(r data.Row) {
 	a.loadTrace(r.TraceID)
 }
 
+// showPatterns clusters the currently-loaded log messages into templates
+// (zero-API — over the loaded sample, not the full window) as a triage aid.
+func (a *App) showPatterns() {
+	msgs := make([]string, 0, len(a.rows))
+	for _, r := range a.rows {
+		if len(r.Cells) > 4 { // MESSAGE column
+			msgs = append(msgs, r.Cells[4])
+		}
+	}
+	pats := data.ClusterLogs(msgs)
+	a.pushNav()
+	a.patterns.SetText(renderPatterns(pats, len(msgs))).ScrollToBeginning()
+	a.patterns.SetTitle(fmt.Sprintf(" Log patterns [%d] ", len(pats)))
+	a.showPage("patterns")
+}
+
+// renderPatterns lists clusters most-frequent first: count, template, example.
+func renderPatterns(pats []data.LogPattern, sampled int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, " [orange::b]%d patterns[-:-:-] [gray]over %d loaded log lines · <esc> back[-]\n", len(pats), sampled)
+	b.WriteString(" [gray]patterns are computed over the loaded sample, not the full window[-]\n\n")
+	if len(pats) == 0 {
+		b.WriteString(" [gray]no log lines loaded — run a query in the Logs view first[-]\n")
+		return b.String()
+	}
+	maxN := pats[0].Count
+	for _, p := range pats {
+		bar := strings.Repeat("█", 1+p.Count*18/max(1, maxN))
+		fmt.Fprintf(&b, " [white::b]%4d[-:-:-] [green]%s[-]\n      %s\n",
+			p.Count, bar, tview.Escape(clip(p.Template, 110)))
+	}
+	return b.String()
+}
+
 // loadTrace fetches and renders the trace waterfall (on-demand, bounded).
 func (a *App) loadTrace(traceID string) {
 	a.trace.SetTitle(fmt.Sprintf(" Trace/%s ", traceID))
@@ -1177,6 +1245,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("dashboard")
 	case "trace":
 		a.showPage("trace") // pane still holds the rendered waterfall
+	case "patterns":
+		a.showPage("patterns") // pane still holds the rendered clusters
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -1197,6 +1267,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.dash)
 	case "trace":
 		a.SetFocus(a.trace)
+	case "patterns":
+		a.SetFocus(a.patterns)
 	case "ctxform":
 		a.SetFocus(a.ctxForm)
 	default:
