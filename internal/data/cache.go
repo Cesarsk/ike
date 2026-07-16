@@ -47,6 +47,11 @@ func (c *Cached) Trace(ctx context.Context, traceID string) (*TraceView, error) 
 	return c.p.Trace(ctx, traceID)
 }
 
+// MonitorMetric is an on-demand detail fetch, uncached.
+func (c *Cached) MonitorMetric(ctx context.Context, id string) (*MetricSeries, error) {
+	return c.p.MonitorMetric(ctx, id)
+}
+
 // SetIncidentState writes through and drops the incidents cache so the next
 // fetch reflects the change.
 func (c *Cached) SetIncidentState(ctx context.Context, id, state string) error {

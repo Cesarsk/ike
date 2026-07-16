@@ -893,6 +893,71 @@ func (l *Live) Trace(ctx context.Context, traceID string) (*TraceView, error) {
 	return view, nil
 }
 
+// MonitorMetric fetches a monitor's evaluated metric over the last hour.
+// The runnable metric query is extracted best-effort from the monitor's
+// alert query; non-metric monitors (service checks, log/query alerts that
+// don't map to a single timeseries) return a Note instead of points.
+func (l *Live) MonitorMetric(ctx context.Context, id string) (*MetricSeries, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	mid, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("monitor id %q: %w", id, err)
+	}
+	m, resp, err := datadogV1.NewMonitorsApi(l.client).GetMonitor(ctx, mid,
+		*datadogV1.NewGetMonitorOptionalParameters())
+	l.track(resp)
+	if err != nil {
+		return nil, apiErr("monitor metric", err)
+	}
+	mq := extractMonitorMetricQuery(m.GetQuery())
+	if mq == "" {
+		return &MetricSeries{Note: "no single metric query to chart (service check / log / composite monitor)"}, nil
+	}
+	from := time.Now().Add(-time.Hour).Unix()
+	to := time.Now().Unix()
+	res, mresp, err := datadogV1.NewMetricsApi(l.client).QueryMetrics(ctx, from, to, mq)
+	l.track(mresp)
+	if err != nil {
+		return &MetricSeries{Query: mq, Note: "query failed: " + err.Error()}, nil
+	}
+	pts := firstSeriesPoints(res)
+	ms := &MetricSeries{Query: mq, Points: pts}
+	if len(pts) == 0 {
+		ms.Note = "no data in the last 1h"
+	} else {
+		ms.Last = pts[len(pts)-1]
+	}
+	return ms, nil
+}
+
+// extractMonitorMetricQuery pulls the runnable metric query out of a monitor
+// alert query like "avg(last_5m):avg:system.cpu.user{*} > 90" → the middle
+// "avg:system.cpu.user{*}". Returns "" when there's no "):"-delimited metric
+// body (service checks, log alerts, event alerts, etc.).
+func extractMonitorMetricQuery(q string) string {
+	i := strings.Index(q, "):")
+	if i < 0 {
+		return ""
+	}
+	body := q[i+2:]
+	// Trim a trailing comparison "... > 90" / ">= 0.9" etc.
+	for _, op := range []string{" >= ", " <= ", " > ", " < ", " == ", " != "} {
+		if j := strings.LastIndex(body, op); j >= 0 {
+			body = body[:j]
+			break
+		}
+	}
+	body = strings.TrimSpace(body)
+	// A metric query needs a scope; bail on anything that doesn't look like one.
+	if body == "" || !strings.ContainsAny(body, "{:") {
+		return ""
+	}
+	return body
+}
+
 // spanDurationUs returns a span's duration in microseconds (end - start).
 func spanDurationUs(a datadogV2.SpansAttributes) int64 {
 	d := a.GetEndTimestamp().Sub(a.GetStartTimestamp()).Microseconds()

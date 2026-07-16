@@ -174,8 +174,9 @@ func TestAppSmoke(t *testing.T) {
 	// '?' must open help, and esc must go back step by step.
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "Monitor/")
-	waitFor(t, sim, "<esc>back")   // context hints visible in detail view
-	waitFor(t, sim, "full_object") // detail upgraded to the on-demand fetch
+	waitFor(t, sim, "<esc>back")        // context hints visible in detail view
+	waitFor(t, sim, "metric (last 1h)") // monitor detail shows the metric sparkline
+	waitFor(t, sim, "full_object")      // and the on-demand full object below it
 	typeRunes(sim, "?")
 	waitFor(t, sim, "NAVIGATION")
 	press(sim, tcell.KeyEscape) // help → back to detail, not to table
