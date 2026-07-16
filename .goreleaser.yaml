@@ -19,8 +19,12 @@ checksum:
 changelog:
   use: github
 
+# Homebrew *formula*, not homebrew_casks: casks are macOS-only and ike ships
+# Linux binaries too, so a formula is the only cross-platform option — which is
+# why we keep the deprecated `brews` key. Revisit only if goreleaser removes it.
 brews:
   - name: ike
+    directory: Formula # land at Formula/ike.rb, not the tap root (v2 default)
     homepage: https://github.com/Cesarsk/ike
     description: "k9s-style terminal UI for Datadog — monitors, incidents, SLOs, logs and dashboards with k9s muscle memory"
     license: Apache-2.0
