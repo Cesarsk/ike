@@ -180,8 +180,17 @@ func main() {
 				return fmt.Errorf("unknown context %q", name)
 			}
 			delete(cfg.Contexts, name)
+			// Keep current-context consistent: if it pointed at the deleted
+			// context, repoint it to a remaining one before saving.
+			prevCurrent := cfg.CurrentContext
+			if cfg.CurrentContext == name {
+				if names := cfg.Names(); len(names) > 0 {
+					cfg.CurrentContext = names[0]
+				}
+			}
 			if err := cfg.Save(config.Path()); err != nil {
-				cfg.Contexts[name] = c
+				cfg.Contexts[name] = c // roll back
+				cfg.CurrentContext = prevCurrent
 				return err
 			}
 			if c.Keychain {

@@ -62,14 +62,28 @@ contexts:
 	}
 }
 
-func TestUnknownCurrentContext(t *testing.T) {
+func TestDanglingCurrentContextFallsBack(t *testing.T) {
+	// Deleting the context current-context pointed at must not brick the
+	// app: Load falls back to the first remaining context.
 	p := write(t, `
-current-context: nope
+current-context: default
 contexts:
-  dev: {api-key-env: A, app-key-env: B}
+  dev: {site: datadoghq.eu, api-key-env: A, app-key-env: B}
+  prod: {site: datadoghq.com, api-key-env: C, app-key-env: D}
 `)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("dangling current-context must not error, got %v", err)
+	}
+	if c.CurrentContext != "dev" { // sorted-first of {dev, prod}
+		t.Errorf("fallback current-context = %q, want dev", c.CurrentContext)
+	}
+}
+
+func TestNoContextsIsError(t *testing.T) {
+	p := write(t, "current-context: x\ncontexts: {}\n")
 	if _, err := Load(p); err == nil {
-		t.Fatal("unknown current-context must be rejected")
+		t.Fatal("a config with zero contexts must still error")
 	}
 }
 

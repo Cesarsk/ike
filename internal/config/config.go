@@ -164,8 +164,11 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("%s: context %q needs credentials: api-key-env + app-key-env, token-env, or keychain: true", path, name)
 		}
 	}
+	// A dangling or empty current-context is not fatal — e.g. the user
+	// deleted the context it pointed at. Fall back to the first remaining
+	// context (deterministic) so the app still starts.
 	if _, ok := c.Contexts[c.CurrentContext]; !ok {
-		return nil, fmt.Errorf("%s: current-context %q is not a defined context", path, c.CurrentContext)
+		c.CurrentContext = c.Names()[0] // len(Contexts) > 0 checked above
 	}
 	return &c, nil
 }
