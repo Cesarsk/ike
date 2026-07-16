@@ -426,6 +426,21 @@ func (d *Demo) spans(query string) []Row {
 	return rows
 }
 
+// MonitorMetric synthesizes a sine-ish series so the monitor detail
+// sparkline is demoable offline.
+func (d *Demo) MonitorMetric(_ context.Context, id string) (*MetricSeries, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	pts := make([]float64, 30)
+	for i := range pts {
+		pts[i] = 55 + 30*math.Sin(float64(i)/4) + float64(d.rnd.Intn(10))
+	}
+	return &MetricSeries{
+		Query:  "avg:system.cpu.user{monitor_id:" + id + "}",
+		Points: pts, Last: pts[len(pts)-1],
+	}, nil
+}
+
 // Trace synthesizes a plausible multi-service trace for any id so the
 // waterfall drill-down is demoable offline.
 func (d *Demo) Trace(_ context.Context, traceID string) (*TraceView, error) {

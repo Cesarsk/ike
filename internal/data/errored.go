@@ -25,6 +25,9 @@ func (e *Errored) Dashboard(context.Context, string) (*DashboardView, error) {
 func (e *Errored) Trace(context.Context, string) (*TraceView, error) {
 	return nil, e.err
 }
+func (e *Errored) MonitorMetric(context.Context, string) (*MetricSeries, error) {
+	return nil, e.err
+}
 func (e *Errored) SetIncidentState(context.Context, string, string) error { return e.err }
 func (e *Errored) SetMonitorMute(context.Context, string, bool) error     { return e.err }
 func (e *Errored) Budget() []string                                       { return nil }

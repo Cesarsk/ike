@@ -89,6 +89,16 @@ type TraceView struct {
 // IncidentStates are the states an incident can be moved to via 'r'.
 var IncidentStates = []string{"active", "stable", "resolved"}
 
+// MetricSeries is a monitor's evaluated metric over a recent window — the
+// data behind the alert, for the monitor detail view. Note explains why
+// there's no sparkline (non-metric monitor, unparseable query, no data).
+type MetricSeries struct {
+	Query  string
+	Points []float64
+	Last   float64
+	Note   string
+}
+
 // Provider serves rows for resources — live API or built-in demo data.
 type Provider interface {
 	// Fetch lists rows for a resource. timeRange is a Datadog "from" value
@@ -105,6 +115,9 @@ type Provider interface {
 	// Trace reconstructs a distributed trace from its spans (searched by
 	// trace_id) into a tree for waterfall rendering. Bounded/on-demand.
 	Trace(ctx context.Context, traceID string) (*TraceView, error)
+	// MonitorMetric evaluates a monitor's metric query over a recent window
+	// so the detail view can show the data behind the alert. On-demand.
+	MonitorMetric(ctx context.Context, id string) (*MetricSeries, error)
 	// SetIncidentState changes an incident's state (e.g. active → resolved).
 	// A write operation; the UI gates it behind a confirmation modal.
 	SetIncidentState(ctx context.Context, id, state string) error

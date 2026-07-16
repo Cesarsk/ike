@@ -1930,20 +1930,46 @@ func (a *App) openDetail(tableRow int) {
 			return // the row already was the complete object
 		}
 		slog.Debug("detail fetched", "resource", res.Key, "id", r.ID)
+		b, err := json.MarshalIndent(full, "", "  ")
+		if err != nil {
+			return
+		}
+		body := string(b)
+		// Monitors: prepend the evaluated metric as a sparkline — the data
+		// behind the alert, so the detail answers "why is it firing?".
+		if res.Key == "monitors" {
+			if ms, mErr := a.provider.MonitorMetric(context.Background(), r.ID); mErr == nil {
+				body = monitorMetricHeader(ms) + body
+			}
+		}
 		a.QueueUpdateDraw(func() {
 			if a.page != "detail" || a.detailRow.ID != r.ID {
 				return // user navigated away meanwhile
 			}
-			b, err := json.MarshalIndent(full, "", "  ")
-			if err != nil {
-				return
-			}
 			row, col := a.detail.GetScrollOffset()
-			a.detail.SetText(string(b))
+			a.detail.SetText(body)
 			a.detail.ScrollTo(row, col)
 			a.flash("full object loaded", false)
 		})
 	}()
+}
+
+// monitorMetricHeader renders the metric sparkline block shown above a
+// monitor's JSON. The detail view has dynamic colours OFF (so raw JSON
+// renders safely), hence this is plain text — no colour tags.
+func monitorMetricHeader(ms *data.MetricSeries) string {
+	var b strings.Builder
+	b.WriteString("── metric (last 1h) ──\n")
+	if ms.Query != "" {
+		b.WriteString(ms.Query + "\n")
+	}
+	if len(ms.Points) > 0 {
+		fmt.Fprintf(&b, "%s  last %s\n", data.Sparkline(ms.Points), data.FormatValue(ms.Last))
+	} else if ms.Note != "" {
+		b.WriteString(ms.Note + "\n")
+	}
+	b.WriteString("──────────────────────\n\n")
+	return b.String()
 }
 
 func (a *App) renderDetail(r data.Row) {
