@@ -48,17 +48,33 @@ AI agents and scripting — 200+ commands, JSON out. It is `kubectl`. Nothing in
 the ecosystem is `k9s`: an interactive, keyboard-driven cockpit for a human
 running incident response. ike is that tool.
 
+## Install
+
+**Homebrew** (macOS & Linux):
+
+```sh
+brew install cesarsk/tap/ike
+```
+
+**Prebuilt binaries** — grab a tarball for your OS/arch from the
+[latest release](https://github.com/Cesarsk/ike/releases/latest) (darwin &
+linux, amd64 & arm64), extract, and put `ike` on your `PATH`.
+
+**From source** (Go 1.25+):
+
+```sh
+go install github.com/Cesarsk/ike@latest
+```
+
 ## Quick start
 
 ```sh
-go build -o ike .
-
 # No credentials? Explore with demo data (ships two fake orgs — try :ctx):
-./ike --demo
+ike --demo
 
 # Live mode, single org — same env vars as dogshell/terraform:
 export DD_API_KEY=... DD_APP_KEY=... DD_SITE=datadoghq.eu
-./ike
+ike
 ```
 
 Flags: `--context` (start on a named context), `--refresh` (auto-refresh
