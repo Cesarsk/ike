@@ -96,6 +96,8 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.spans(query), nil
 	case "events":
 		return d.events(), nil
+	case "downtimes":
+		return d.downtimes(), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
@@ -485,6 +487,29 @@ func (d *Demo) Trace(_ context.Context, traceID string) (*TraceView, error) {
 		})
 	}
 	return view, nil
+}
+
+func (d *Demo) downtimes() []Row {
+	dts := []struct {
+		status, scope, msg string
+		age                time.Duration
+	}{
+		{"active", "service:payments-api", "Muted during v2.31 rollout", 20 * time.Minute},
+		{"active", "*", "Maintenance window — RDS failover drill", 90 * time.Minute},
+		{"scheduled", "env:stage", "Nightly batch window", -3 * time.Hour},
+		{"ended", "service:kong-proxy", "Post-deploy soak", 26 * time.Hour},
+	}
+	rows := make([]Row, 0, len(dts))
+	for i, dt := range dts {
+		created := time.Now().Add(-dt.age)
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("dt-%d", i),
+			Cells: []string{dt.status, dt.scope, dt.msg, created.Format("2006-01-02 15:04")},
+			Raw:   map[string]any{"status": dt.status, "scope": dt.scope, "message": dt.msg},
+			URL:   WebBase(d.site) + "/monitors/downtimes",
+		})
+	}
+	return rows
 }
 
 func (d *Demo) events() []Row {

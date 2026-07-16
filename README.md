@@ -26,11 +26,11 @@ drill down, `esc` to go back.
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-> **Status: proof of concept.** Six resource views (monitors, incidents,
-> SLOs, logs, traces, dashboards), log⇄trace correlation, multi-org
-> contexts, a few confirm-gated writes (mute, incident state), demo mode.
-> See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and
-> [docs/DESIGN.md](docs/DESIGN.md) for design decisions and roadmap.
+> **Status: real-org validated.** Eight views (monitors, incidents, SLOs,
+> logs, traces, events, downtimes, dashboards), log⇄trace correlation with a
+> unified request timeline, multi-org contexts, confirm-gated writes (mute,
+> incident state), demo mode. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+> for diagrams and [docs/DESIGN.md](docs/DESIGN.md) for decisions and roadmap.
 
 ## The debugging loop
 
@@ -114,7 +114,7 @@ contexts:
 
 | Key | Action |
 |-----|--------|
-| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:traces` `:dashboards` (or `mon`, `inc`, `s`, `l`, `tr`, `d`) |
+| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:traces` `:events` `:downtimes` `:dashboards` |
 | `:ctx` | list org contexts; `enter` switches, `a` adds (keys/token → OS keychain), `e` edits the config in `$EDITOR`, `ctrl-d` deletes |
 | `/` | filter rows; in **Logs** this is a Datadog search query sent to the API, with **autocomplete** for facet keys, operators, and values seen in the current results (`tab`/`enter` accepts, then keep typing; a second `enter` submits) |
 | `enter` | detail — full object on demand for monitors/incidents; on an **SLO**, its live **attainment + error budget**; on a **dashboard**, its widgets rendered as a **grid** of sparklines matching the Datadog layout (`ctrl-r` refreshes) |
@@ -135,7 +135,7 @@ contexts:
 | `1`–`5` | in **Logs**: time window — 15m / 1h / 4h / 1d / 7d (shown in the title) |
 | `j`/`k`, `↑`/`↓` | move selection / scroll detail |
 | `?` | help (from any view) |
-| `q` | back in detail/help; quit from a table view (`ctrl-c`, `:q`, `:quit`, `:exit` always quit) |
+| `q` | back in detail/help; quit from a table view. `ctrl-c` quits too but asks for a second press to confirm (`:q`/`:quit`/`:exit` also quit) |
 
 Auto-refresh interval is configurable: `--refresh 45s` (or `0` to disable), or
 `refresh-interval: 45s` in the config file; `p` pauses/resumes at runtime.
