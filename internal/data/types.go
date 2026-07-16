@@ -16,6 +16,10 @@ type Row struct {
 	// (monitors: the log monitor's own query, or service:/env: tags).
 	// Empty = no drill-down available for this row.
 	LogQuery string
+	// Muted reports whether a monitor is currently silenced. It is the
+	// authoritative source for the mute/unmute toggle — mute is independent
+	// of overall_state, so it cannot be read off the STATE column.
+	Muted bool
 }
 
 // Resource describes a navigable Datadog resource type.
@@ -91,7 +95,7 @@ func Resources() []Resource {
 		{
 			Key: "monitors", Title: "Monitors",
 			Aliases: []string{"monitors", "monitor", "mon", "m"},
-			Columns: []string{"STATE", "NAME", "TYPE", "PRIO", "TAGS"},
+			Columns: []string{"STATE", "MUTED", "NAME", "TYPE", "PRIO", "TAGS"},
 			TTL:     30 * time.Second, AutoRefresh: true,
 		},
 		{

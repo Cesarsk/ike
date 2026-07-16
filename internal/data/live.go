@@ -491,12 +491,14 @@ func (l *Live) monitors(ctx context.Context) ([]Row, error) {
 			if p, ok := m.GetPriorityOk(); ok && p != nil {
 				prio = fmt.Sprintf("P%d", *p)
 			}
+			muted := monitorMuted(m.GetOptions())
 			rows = append(rows, Row{
 				ID:       fmt.Sprintf("%d", m.GetId()),
-				Cells:    []string{string(m.GetOverallState()), m.GetName(), string(m.GetType()), prio, strings.Join(m.GetTags(), ",")},
+				Cells:    []string{string(m.GetOverallState()), mutedCell(muted), m.GetName(), string(m.GetType()), prio, strings.Join(m.GetTags(), ",")},
 				Raw:      m,
 				URL:      fmt.Sprintf("%s/monitors/%d", l.web, m.GetId()),
 				LogQuery: monitorLogQuery(m),
+				Muted:    muted,
 			})
 		}
 		if len(mons) < monitorPageSize {
@@ -507,6 +509,28 @@ func (l *Live) monitors(ctx context.Context) ([]Row, error) {
 	slog.Warn("monitor list truncated", "cap", maxMonitorPages*monitorPageSize)
 	SortMonitors(rows)
 	return rows, nil
+}
+
+// monitorMuted reports whether a monitor is currently silenced. Datadog's
+// options.silenced maps a scope ("*" or a tag scope) to an end timestamp:
+// 0 means muted with no end, a future unix time means muted until then, a
+// past time is an expired (ineffective) entry. Muted iff any entry is 0 or
+// in the future.
+func monitorMuted(opts datadogV1.MonitorOptions) bool {
+	now := time.Now().Unix()
+	for _, end := range opts.GetSilenced() {
+		if end == 0 || end > now {
+			return true
+		}
+	}
+	return false
+}
+
+func mutedCell(muted bool) string {
+	if muted {
+		return "muted"
+	}
+	return ""
 }
 
 // monitorLogQuery derives a Datadog logs search query for the monitor →

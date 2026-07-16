@@ -637,16 +637,16 @@ func (a *App) copyRow(r data.Row) {
 }
 
 // confirmMuteMonitor asks before muting/unmuting the selected monitor. Mute
-// state is inferred from the STATE column ("Ignored" == currently muted).
+// state comes from Row.Muted (the monitor's silenced option), which is
+// independent of overall_state.
 func (a *App) confirmMuteMonitor(r data.Row) {
-	muted := len(r.Cells) > 0 && strings.EqualFold(r.Cells[0], "Ignored")
 	verb := "Mute"
-	if muted {
+	if r.Muted {
 		verb = "Unmute"
 	}
 	name := ""
-	if len(r.Cells) > 1 {
-		name = r.Cells[1]
+	if len(r.Cells) > 2 {
+		name = r.Cells[2] // NAME column (after STATE, MUTED)
 	}
 	a.showConfirm(
 		fmt.Sprintf("%s monitor in [%s]?\n\n%s\n\nMuting stops notifications (unmute resumes them); the monitor definition itself is unchanged.",
@@ -657,7 +657,7 @@ func (a *App) confirmMuteMonitor(r data.Row) {
 				return
 			}
 			go func() {
-				err := a.provider.SetMonitorMute(context.Background(), r.ID, !muted)
+				err := a.provider.SetMonitorMute(context.Background(), r.ID, !r.Muted)
 				a.QueueUpdateDraw(func() {
 					if err != nil {
 						a.flash("✗ "+err.Error(), true)

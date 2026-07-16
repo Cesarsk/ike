@@ -29,6 +29,7 @@ type demoMonitor struct {
 	state string
 	prio  string
 	tags  string
+	muted bool
 }
 
 func NewDemo(site string) *Demo {
@@ -171,11 +172,7 @@ func (d *Demo) SetMonitorMute(_ context.Context, id string, mute bool) error {
 	defer d.mu.Unlock()
 	for i := range d.mons {
 		if fmt.Sprintf("%d", d.mons[i].id) == id {
-			if mute {
-				d.mons[i].state = "Ignored"
-			} else {
-				d.mons[i].state = "OK"
-			}
+			d.mons[i].muted = mute
 		}
 	}
 	return nil
@@ -183,15 +180,12 @@ func (d *Demo) SetMonitorMute(_ context.Context, id string, mute bool) error {
 
 func (d *Demo) monitors() []Row {
 	// Jitter: occasionally flip a monitor state so refreshes are visible.
-	// Muted ("Ignored") monitors are sticky — a mute isn't undone by jitter.
 	if i := d.rnd.Intn(len(d.mons) * 3); i < len(d.mons) {
 		switch d.mons[i].state {
 		case "OK":
 			d.mons[i].state = "Warn"
 		case "Warn":
 			d.mons[i].state = "Alert"
-		case "Ignored":
-			// leave muted monitors muted
 		default:
 			d.mons[i].state = "OK"
 		}
@@ -207,10 +201,11 @@ func (d *Demo) monitors() []Row {
 		rows = append(rows, Row{
 			ID:       fmt.Sprintf("%d", m.id),
 			LogQuery: strings.Join(logQ, " "),
-			Cells:    []string{m.state, m.name, m.typ, m.prio, m.tags},
+			Muted:    m.muted,
+			Cells:    []string{m.state, mutedCell(m.muted), m.name, m.typ, m.prio, m.tags},
 			Raw: map[string]any{
 				"id": m.id, "name": m.name, "type": m.typ, "overall_state": m.state,
-				"priority": m.prio, "tags": strings.Split(m.tags, ","),
+				"priority": m.prio, "tags": strings.Split(m.tags, ","), "muted": m.muted,
 				"query":   "avg(last_5m):avg:system.cpu.user{...} > 90",
 				"message": "Runbook: https://wiki.example.com/runbooks/" + strings.ReplaceAll(strings.ToLower(m.name), " ", "-"),
 			},
