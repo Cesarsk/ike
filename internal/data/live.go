@@ -129,6 +129,8 @@ func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, 
 		return l.logs(ctx, query, timeRange)
 	case "dashboards":
 		return l.dashboards(ctx)
+	case "traces":
+		return l.spans(ctx, query, timeRange)
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
@@ -677,13 +679,51 @@ func (l *Live) logs(ctx context.Context, query, timeRange string) ([]Row, error)
 			msg = msg[:i]
 		}
 		rows = append(rows, Row{
-			ID:    lg.GetId(),
-			Cells: []string{a.GetTimestamp().Local().Format("15:04:05"), a.GetStatus(), a.GetService(), a.GetHost(), msg},
-			Raw:   lg,
-			URL:   l.web + "/logs?query=" + url.QueryEscape(query),
+			ID:      lg.GetId(),
+			Cells:   []string{a.GetTimestamp().Local().Format("15:04:05"), a.GetStatus(), a.GetService(), a.GetHost(), msg},
+			Raw:     lg,
+			URL:     l.web + "/logs?query=" + url.QueryEscape(query),
+			TraceID: traceIDFromAttrs(a.GetAttributes()),
 		})
 	}
 	return rows, nil
+}
+
+// traceIDFromAttrs digs the trace id out of a log's nested attribute map.
+// Datadog APM log-injection puts it at "trace_id", "dd.trace_id", or nested
+// under "dd":{"trace_id"} depending on the tracer/config. Returns "" if the
+// log isn't correlated to a trace.
+func traceIDFromAttrs(attrs map[string]interface{}) string {
+	if attrs == nil {
+		return ""
+	}
+	for _, k := range []string{"trace_id", "dd.trace_id"} {
+		if v, ok := attrs[k]; ok {
+			if s := stringifyID(v); s != "" {
+				return s
+			}
+		}
+	}
+	if dd, ok := attrs["dd"].(map[string]interface{}); ok {
+		if s := stringifyID(dd["trace_id"]); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// stringifyID renders a trace/span id that may arrive as a string or a
+// JSON number (float64) without scientific-notation mangling.
+func stringifyID(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case float64:
+		return strconv.FormatInt(int64(t), 10)
+	case int64:
+		return strconv.FormatInt(t, 10)
+	}
+	return ""
 }
 
 func (l *Live) dashboards(ctx context.Context) ([]Row, error) {
@@ -716,6 +756,134 @@ func (l *Live) dashboards(ctx context.Context) ([]Row, error) {
 		})
 	}
 	return rows, nil
+}
+
+const spansPageLimit = 100 // one page of spans per search (bounded budget)
+
+// spans searches APM span events (the Traces view). Server-side query like
+// logs; each row links to its trace for the waterfall drill-down.
+func (l *Live) spans(ctx context.Context, query, timeRange string) ([]Row, error) {
+	if strings.TrimSpace(query) == "" {
+		query = "*"
+	}
+	if timeRange == "" {
+		timeRange = "now-15m"
+	}
+	api := datadogV2.NewSpansApi(l.client)
+	resp, httpresp, err := api.ListSpansGet(ctx,
+		*datadogV2.NewListSpansGetOptionalParameters().
+			WithFilterQuery(query).WithFilterFrom(timeRange).WithFilterTo("now").
+			WithSort(datadogV2.SPANSSORT_TIMESTAMP_DESCENDING).
+			WithPageLimit(spansPageLimit))
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("spans", err)
+	}
+	data := resp.GetData()
+	rows := make([]Row, 0, len(data))
+	for _, s := range data {
+		a := s.GetAttributes()
+		errMark := ""
+		if spanIsError(a) {
+			errMark = "error"
+		}
+		rows = append(rows, Row{
+			ID:       s.GetId(),
+			TraceID:  a.GetTraceId(),
+			LogQuery: "trace_id:" + a.GetTraceId(), // l → logs for this trace
+			Cells: []string{
+				a.GetStartTimestamp().Local().Format("15:04:05"),
+				a.GetService(), a.GetResourceName(),
+				FormatDuration(spanDurationUs(a)), errMark, a.GetTraceId(),
+			},
+			Raw: s,
+			URL: l.web + "/apm/trace/" + a.GetTraceId(),
+		})
+	}
+	return rows, nil
+}
+
+// Trace reconstructs a trace by searching all spans with its trace_id and
+// linking them via parent_id into a DFS-ordered tree for the waterfall.
+func (l *Live) Trace(ctx context.Context, traceID string) (*TraceView, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	api := datadogV2.NewSpansApi(l.client)
+	resp, httpresp, err := api.ListSpansGet(ctx,
+		*datadogV2.NewListSpansGetOptionalParameters().
+			WithFilterQuery("trace_id:" + traceID).
+			WithFilterFrom("now-4h").WithFilterTo("now").
+			WithSort(datadogV2.SPANSSORT_TIMESTAMP_ASCENDING).
+			WithPageLimit(maxTraceSpans))
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("trace", err)
+	}
+	raw := resp.GetData()
+	nodes := make([]Span, 0, len(raw))
+	for _, s := range raw {
+		a := s.GetAttributes()
+		nodes = append(nodes, Span{
+			ID:         a.GetSpanId(),
+			ParentID:   a.GetParentId(),
+			Service:    a.GetService(),
+			Resource:   a.GetResourceName(),
+			OffsetUs:   a.GetStartTimestamp().UnixMicro(),
+			DurationUs: spanDurationUs(a),
+			Error:      spanIsError(a),
+		})
+	}
+	view := buildTrace(traceID, nodes)
+	view.Truncated = len(raw) >= maxTraceSpans
+	return view, nil
+}
+
+// spanDurationUs returns a span's duration in microseconds (end - start).
+func spanDurationUs(a datadogV2.SpansAttributes) int64 {
+	d := a.GetEndTimestamp().Sub(a.GetStartTimestamp()).Microseconds()
+	if d < 0 {
+		return 0
+	}
+	return d
+}
+
+// spanIsError checks the span's custom/attribute maps for an error marker
+// (error flag or an HTTP status >= 500).
+func spanIsError(a datadogV2.SpansAttributes) bool {
+	for _, m := range []map[string]interface{}{a.GetCustom(), a.GetAttributes()} {
+		if truthy(m["error"]) {
+			return true
+		}
+		if code := toInt(m["http.status_code"]); code >= 500 {
+			return true
+		}
+	}
+	return false
+}
+
+func truthy(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case float64:
+		return t != 0
+	case string:
+		return t == "true" || t == "1" || t == "error"
+	}
+	return false
+}
+
+func toInt(v any) int {
+	switch t := v.(type) {
+	case float64:
+		return int(t)
+	case string:
+		n, _ := strconv.Atoi(t)
+		return n
+	}
+	return 0
 }
 
 func apiErr(what string, err error) error {

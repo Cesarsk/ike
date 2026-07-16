@@ -103,7 +103,8 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
    rotation (access tokens expire ~1h) and keychain-service-rename recovery;
    today the only path is delete + re-add.
 2. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
-3. Incident → linked monitors/logs drill-down (monitor → logs shipped as `l`).
+3. Incident → linked monitors/logs drill-down (monitor→logs `l`, log/span↔trace
+   `t`/`l` shipped).
 4. Richer incident actions: add timeline note, change severity, assign
    commander (beyond the state change already shipped).
 5. Bulk select + act (mute N monitors / resolve N incidents) behind one
@@ -130,7 +131,22 @@ fetch~~, ~~org web subdomains~~, ~~in-terminal dashboard rendering~~
 read-modify-write on `silenced`), ~~SLO attainment + error budget~~ (on
 `enter`), ~~clipboard copy~~ (`c`), ~~configurable auto-refresh~~
 (`refresh-interval` / `--refresh` / `p` toggle), ~~log-query autocomplete~~,
-~~log time-range~~ (`1`–`5`), ~~glanceable budget header~~.
+~~log time-range~~ (`1`–`5`), ~~glanceable budget header~~, ~~monitor MUTED
+column~~, ~~traces view + APM span search~~ (`:traces`), ~~log⇄trace
+correlation~~ (`t` → trace waterfall reconstructed from spans; `l` → the
+trace's logs).
+
+## Traces & correlation
+
+`:traces` searches APM spans (v2 spans API), same server-query + time-window
+shape as Logs. The **waterfall** (`t` from a log or span) reconstructs a
+trace by searching `trace_id:<id>` and linking spans via `parent_id` into a
+DFS tree with proportional duration bars — Datadog has no "get trace by id"
+endpoint, so we assemble it from span search (bounded at 100 spans). The
+whole feature hinges on `trace_id` being injected into logs (APM
+log-correlation); a log without one degrades to a clear message rather than
+a broken jump. Span-search retention/indexing limits what's findable — an
+honest constraint, surfaced when a trace comes back empty.
 
 ## Project policy (decided 2026-07-14)
 

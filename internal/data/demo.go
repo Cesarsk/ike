@@ -92,6 +92,8 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.logs(query, timeRange), nil
 	case "dashboards":
 		return d.dashboards(), nil
+	case "traces":
+		return d.spans(query), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
@@ -354,19 +356,98 @@ func (d *Demo) logs(query, timeRange string) []Row {
 		if windowSec > 24*3600 {
 			stamp = ts.Format("01-02 15:04") // multi-day window: show the date
 		}
+		// Error logs carry a trace id so the log → trace drill-down (t) is
+		// demoable; info/warn logs deliberately have none (degrade path).
+		traceID := ""
+		if m.status == "error" {
+			traceID = fmt.Sprintf("demo-trace-%d", 1000+i)
+		}
 		rows = append(rows, Row{
-			ID:    fmt.Sprintf("log-%d", i),
-			Cells: []string{stamp, m.status, s.svc, s.host, m.msg},
+			ID:      fmt.Sprintf("log-%d", i),
+			TraceID: traceID,
+			Cells:   []string{stamp, m.status, s.svc, s.host, m.msg},
 			Raw: map[string]any{
 				"timestamp": ts.Format(time.RFC3339), "status": m.status,
 				"service": s.svc, "host": s.host, "message": m.msg,
-				"tags": []string{"env:prod", "team:sre"},
+				"trace_id": traceID, "tags": []string{"env:prod", "team:sre"},
 			},
 			URL: WebBase(d.site) + "/logs?query=service:" + s.svc,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Cells[0] > rows[j].Cells[0] }) // newest first
 	return rows
+}
+
+// demoTraceChain is the service hop path a synthesized trace walks — the
+// "where the request comes from" story: ingress → gateway → service → db.
+var demoTraceChain = []struct{ svc, res string }{
+	{"kong-proxy", "GET /api/v1/orders"},
+	{"payments-api", "handler.orders.get"},
+	{"payments-api", "postgres.query orders"},
+	{"trading-engine", "grpc quote.Get"},
+}
+
+func (d *Demo) spans(query string) []Row {
+	svcFilter := ""
+	for _, tok := range strings.Fields(strings.ToLower(query)) {
+		if strings.HasPrefix(tok, "service:") {
+			svcFilter = strings.TrimPrefix(tok, "service:")
+		}
+	}
+	var rows []Row
+	for i := 0; i < 30; i++ {
+		hop := demoTraceChain[d.rnd.Intn(len(demoTraceChain))]
+		if svcFilter != "" && hop.svc != svcFilter {
+			continue
+		}
+		isErr := d.rnd.Intn(6) == 0
+		errMark := ""
+		if isErr {
+			errMark = "error"
+		}
+		durUs := int64(500 + d.rnd.Intn(400000))
+		ts := time.Now().Add(-time.Duration(d.rnd.Intn(900)) * time.Second)
+		tid := fmt.Sprintf("demo-trace-%d", 2000+i)
+		rows = append(rows, Row{
+			ID:       fmt.Sprintf("span-%d", i),
+			TraceID:  tid,
+			LogQuery: "trace_id:" + tid,
+			Cells:    []string{ts.Format("15:04:05"), hop.svc, hop.res, FormatDuration(durUs), errMark, tid},
+			Raw: map[string]any{
+				"service": hop.svc, "resource_name": hop.res,
+				"trace_id": tid, "duration_us": durUs, "error": isErr,
+			},
+			URL: WebBase(d.site) + "/apm/trace/" + tid,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Cells[0] > rows[j].Cells[0] })
+	return rows
+}
+
+// Trace synthesizes a plausible multi-service trace for any id so the
+// waterfall drill-down is demoable offline.
+func (d *Demo) Trace(_ context.Context, traceID string) (*TraceView, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	base := time.Now().UnixMicro()
+	var nodes []Span
+	offset := int64(0)
+	parent := ""
+	for i, hop := range demoTraceChain {
+		id := fmt.Sprintf("%s-span-%d", traceID, i)
+		dur := int64(120000 - i*22000 + d.rnd.Intn(15000)) // outer spans longer
+		if dur < 3000 {
+			dur = 3000
+		}
+		nodes = append(nodes, Span{
+			ID: id, ParentID: parent, Service: hop.svc, Resource: hop.res,
+			OffsetUs: base + offset, DurationUs: dur,
+			Error: i == len(demoTraceChain)-1, // deepest hop errored
+		})
+		parent = id
+		offset += int64(4000 + d.rnd.Intn(8000)) // each child starts a bit later
+	}
+	return buildTrace(traceID, nodes), nil
 }
 
 func (d *Demo) dashboards() []Row {

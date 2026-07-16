@@ -90,11 +90,38 @@ func TestAppSmoke(t *testing.T) {
 	typeRunes(sim, "1")
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
+	// Correlation: 't' on an error log (which carries a trace_id in demo)
+	// opens the trace waterfall; 'l' from the trace jumps to that trace's
+	// logs; esc pops back to the logs view. This is the debugging loop.
+	press(sim, tcell.KeyEnter)  // ensure a row is selected (top error log)
+	press(sim, tcell.KeyEscape) // close detail, stay on logs
+	waitFor(t, sim, "Logs(status:error · 15m)")
+	typeRunes(sim, "t")
+	waitFor(t, sim, "spans · total")  // trace waterfall header
+	waitFor(t, sim, "kong-proxy")     // first hop of the demo trace chain
+	typeRunes(sim, "l")               // trace → its logs
+	waitFor(t, sim, "Logs(trace_id:") // logs filtered to the trace
+	press(sim, tcell.KeyEscape)       // back to the trace
+	waitFor(t, sim, "spans · total")
+	press(sim, tcell.KeyEscape) // back to logs
+	waitFor(t, sim, "Logs(status:error · 15m)")
+
+	// Traces view: server query + t opens the waterfall for a span's trace.
+	typeCmd(sim, ":traces")
+	waitFor(t, sim, "Traces(")
+	waitFor(t, sim, "kong-proxy")
+	typeRunes(sim, "t")
+	waitFor(t, sim, "spans · total")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Traces(")
+
 	// Back to monitors, then esc must pop the navigation stack back to the
-	// previous page (logs, with its query intact) — k9s-style history.
+	// previous page (traces) — k9s-style history.
 	typeCmd(sim, ":monitors")
 	waitFor(t, sim, "Monitors(all)")
 	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Traces(")
+	press(sim, tcell.KeyEscape) // traces → logs (earlier in the stack)
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
 	// Quick filter + client-side filter on monitors.

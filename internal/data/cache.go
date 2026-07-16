@@ -42,6 +42,11 @@ func (c *Cached) Dashboard(ctx context.Context, id string) (*DashboardView, erro
 	return c.p.Dashboard(ctx, id)
 }
 
+// Trace is an explicit drill-down, deliberately uncached.
+func (c *Cached) Trace(ctx context.Context, traceID string) (*TraceView, error) {
+	return c.p.Trace(ctx, traceID)
+}
+
 // SetIncidentState writes through and drops the incidents cache so the next
 // fetch reflects the change.
 func (c *Cached) SetIncidentState(ctx context.Context, id, state string) error {

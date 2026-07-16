@@ -20,6 +20,10 @@ type Row struct {
 	// authoritative source for the mute/unmute toggle — mute is independent
 	// of overall_state, so it cannot be read off the STATE column.
 	Muted bool
+	// TraceID links a row to a distributed trace: set on log rows (from the
+	// injected trace_id attribute) and span rows. Empty = no trace to jump
+	// to. Drives the log/span → trace waterfall drill-down ('t').
+	TraceID string
 }
 
 // Resource describes a navigable Datadog resource type.
@@ -59,6 +63,29 @@ type DashboardView struct {
 	Truncated bool // more metric widgets existed than the fetch budget allowed
 }
 
+// Span is one span of a distributed trace, with its depth in the span tree
+// and offset/duration for waterfall rendering (all times in microseconds
+// relative to the trace start).
+type Span struct {
+	ID         string
+	ParentID   string
+	Service    string
+	Resource   string
+	Depth      int
+	OffsetUs   int64 // start, relative to the trace's earliest span
+	DurationUs int64
+	Error      bool
+}
+
+// TraceView is a reconstructed trace: its spans in tree (DFS) order with a
+// total span so the UI can draw a proportional waterfall.
+type TraceView struct {
+	TraceID   string
+	Spans     []Span
+	TotalUs   int64
+	Truncated bool // more spans than the fetch cap
+}
+
 // IncidentStates are the states an incident can be moved to via 'r'.
 var IncidentStates = []string{"active", "stable", "resolved"}
 
@@ -75,6 +102,9 @@ type Provider interface {
 	// Dashboard renders a dashboard's widgets for the TUI, fetching metric
 	// sparklines on demand (bounded — the timeseries API is rate-limited).
 	Dashboard(ctx context.Context, id string) (*DashboardView, error)
+	// Trace reconstructs a distributed trace from its spans (searched by
+	// trace_id) into a tree for waterfall rendering. Bounded/on-demand.
+	Trace(ctx context.Context, traceID string) (*TraceView, error)
 	// SetIncidentState changes an incident's state (e.g. active → resolved).
 	// A write operation; the UI gates it behind a confirmation modal.
 	SetIncidentState(ctx context.Context, id, state string) error
@@ -121,6 +151,12 @@ func Resources() []Resource {
 			Aliases: []string{"dashboards", "dashboard", "dash", "d"},
 			Columns: []string{"TITLE", "LAYOUT", "AUTHOR", "MODIFIED"},
 			TTL:     10 * time.Minute,
+		},
+		{
+			Key: "traces", Title: "Traces",
+			Aliases: []string{"traces", "trace", "tr", "apm", "spans"},
+			Columns: []string{"TIME", "SERVICE", "RESOURCE", "DURATION", "ERR", "TRACE_ID"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 		},
 	}
 }

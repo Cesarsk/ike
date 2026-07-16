@@ -88,6 +88,7 @@ type App struct {
 	footer  *tview.Pages
 	detail  *tview.TextView
 	dash    *tview.TextView
+	trace   *tview.TextView
 	ctxForm *tview.Form
 	formErr *tview.TextView
 	confirm *tview.Modal
@@ -128,6 +129,7 @@ type navEntry struct {
 	colFilterVal string
 	sortCol      int
 	sortAsc      bool
+	query        string // server query (a.queries[res.Key]) at push time
 	detailRow    data.Row
 	selRow       int
 }
@@ -243,6 +245,11 @@ func (a *App) build() {
 	a.dash.SetBorderColor(tcell.ColorDodgerBlue)
 	a.dash.SetTitleColor(tcell.ColorOrange)
 
+	a.trace = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.trace.SetBorder(true)
+	a.trace.SetBorderColor(tcell.ColorDodgerBlue)
+	a.trace.SetTitleColor(tcell.ColorOrange)
+
 	a.ctxForm = tview.NewForm()
 	a.ctxForm.SetBorder(true)
 	a.ctxForm.SetTitle(" Add context ")
@@ -275,6 +282,7 @@ func (a *App) build() {
 		AddPage("table", a.table, true, true).
 		AddPage("detail", a.detail, true, false).
 		AddPage("dashboard", a.dash, true, false).
+		AddPage("trace", a.trace, true, false).
 		AddPage("help", a.buildHelp(), true, false).
 		AddPage("ctxform", ctxFormFlex, true, false).
 		AddPage("confirm", a.confirm, true, false)
@@ -304,6 +312,11 @@ func (a *App) setHints() {
 			"[aqua]<esc>[white]back  [aqua]<ctrl-r>[white]refresh sparklines  [aqua]<o>[white]open in Datadog",
 			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help  [aqua]<q>[white]back",
 		}
+	case "trace":
+		lines = []string{
+			"[aqua]<esc>[white]back  [aqua]<l>[white]logs for this trace  [aqua]<o>[white]open in Datadog",
+			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help  [aqua]<q>[white]back",
+		}
 	case "help":
 		lines = []string{
 			"[aqua]<esc>[white]back  [aqua]<q>[white]back",
@@ -322,7 +335,7 @@ func (a *App) setHints() {
 			"[aqua]<:>[white]cmd  [aqua]</>[white]filter  [aqua]<enter>[white]details  [aqua]<o>[white]open  [aqua]<c>[white]copy",
 			fmt.Sprintf("[aqua]<ctrl-r>[white]refresh  [aqua]<p>[white]auto:%s  [aqua]<esc>[white]back  [aqua]<?>[white]help  [aqua]<q>[white]quit", refresh),
 			"",
-			"[orange]:monitors  :incidents  :slos  :logs  :dashboards  :ctx",
+			"[orange]:monitors  :incidents  :slos  :logs  :traces  :dashboards  :ctx",
 		}
 		switch a.res.Key {
 		case "monitors":
@@ -332,7 +345,9 @@ func (a *App) setHints() {
 		case "incidents":
 			lines = append(lines, "[gray]<r>change state  quick: <1>active <2>stable <3>resolved <0>all  <s>sort")
 		case "logs":
-			lines = append(lines, "[gray]</>query (tab=complete)  window: <1>15m <2>1h <3>4h <4>1d <5>7d  <s>sort")
+			lines = append(lines, "[gray]</>query (tab=complete)  <t>trace  window: <1>15m..<5>7d  <s>sort")
+		case "traces":
+			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  window: <1>15m..<5>7d  <s>sort")
 		case ctxResource.Key:
 			lines = append(lines, "[gray]<enter>switch org  <a>add  <e>edit config  <ctrl-d>delete")
 		default:
@@ -347,7 +362,7 @@ func (a *App) buildHelp() tview.Primitive {
 	tv.SetBorder(true).SetTitle(" Help ").SetTitleColor(tcell.ColorOrange)
 	fmt.Fprint(tv, `
  [orange]NAVIGATION
-   [aqua]:<resource>[white]   switch view (monitors, incidents, slos, logs, dashboards — or mon, inc, s, l, d)
+   [aqua]:<resource>[white]   switch view (monitors, incidents, slos, logs, traces, dashboards)
    [aqua]:ctx[white]          list Datadog org contexts; enter switches org (cache, budget and
                  history are dropped — a context is a hard boundary)
    [aqua]a[white]             (in :ctx) add a context: name, site, paste API/APP keys or an
@@ -368,14 +383,16 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]0-4[white]           (monitors) quick filter by state: all/alert/warn/nodata/ok
    [aqua]t[white]             (SLOs) cycle the Type filter: metric / monitor / time_slice / all
 
- [orange]ACTIONS
-   [aqua]l[white]             (on a monitor) drill down to its logs: jumps to the Logs view
-                 with the monitor's log query, or its service:/env: tags.
-                 esc returns to the monitors view
-   [aqua]r[white]             (on an incident) change its state (active/stable/resolved) —
-                 the only write ike performs, always behind a confirmation
+ [orange]ACTIONS & CORRELATION
+   [aqua]l[white]             drill to logs — (monitor) its log query; (trace) that trace's logs
+   [aqua]t[white]             drill to the trace waterfall — (logs/traces) the row's trace_id;
+                 needs APM log-injection, else "no trace_id" (SLOs: t = type filter)
+   [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
+   [aqua]r[white]             (incident) change state (active/stable/resolved) — behind a confirm
+   [aqua]c[white]             copy the row's URL / query / id to the clipboard
    [aqua]o[white]             open the selected item in the Datadog web UI (also works in detail view)
    [aqua]ctrl-r[white]        force refresh (bypasses cache — spends API budget)
+   [aqua]p[white]             pause / resume auto-refresh
 
  [orange]OTHER
    [aqua]?[white]             this help (from any view)
@@ -466,6 +483,29 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 		}
 		return ev
+	case "trace":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == 'o':
+			a.openURL(a.detailRow.URL)
+			return nil
+		case ev.Rune() == 'l':
+			a.drillToLogs(a.detailRow) // trace → its logs (trace_id query)
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
 	}
 	switch ev.Key() {
 	case tcell.KeyCtrlR:
@@ -506,7 +546,8 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case 'l':
-		if a.res.Key == "monitors" {
+		// monitors → its logs; traces → the trace's logs (trace_id query)
+		if a.res.Key == "monitors" || a.res.Key == "traces" {
 			if r, ok := a.selectedRow(); ok {
 				a.drillToLogs(r)
 			}
@@ -517,7 +558,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.quickFilter(ev.Rune())
 			return nil
 		}
-		if a.res.Key == "logs" {
+		if a.res.Key == "logs" || a.res.Key == "traces" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -526,7 +567,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case '5':
-		if a.res.Key == "logs" {
+		if a.res.Key == "logs" || a.res.Key == "traces" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -546,6 +587,13 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 't':
 		if a.res.Key == "slos" {
 			a.cycleSLOType()
+			return nil
+		}
+		// logs/traces → the distributed trace waterfall for this row.
+		if a.res.Key == "logs" || a.res.Key == "traces" {
+			if r, ok := a.selectedRow(); ok {
+				a.drillToTrace(r)
+			}
 			return nil
 		}
 	case 's':
@@ -879,8 +927,12 @@ func (a *App) execCommand(cmd string) {
 // its logs — the monitor's own query for log monitors, service:/env: tags
 // otherwise. Esc pops back to the monitors view via the navigation stack.
 func (a *App) drillToLogs(r data.Row) {
-	if r.LogQuery == "" {
-		a.flash("no log query derivable from this monitor (no log query or service:/env: tags)", true)
+	query := r.LogQuery
+	if query == "" && r.TraceID != "" {
+		query = "trace_id:" + r.TraceID // from a trace/span with no derived query
+	}
+	if query == "" {
+		a.flash("no log query derivable (no monitor scope / service tags / trace_id)", true)
 		return
 	}
 	var logsRes data.Resource
@@ -889,9 +941,103 @@ func (a *App) drillToLogs(r data.Row) {
 			logsRes = res
 		}
 	}
-	slog.Info("drill-down monitor→logs", "monitor", r.ID, "query", r.LogQuery)
-	a.queries["logs"] = r.LogQuery
+	slog.Info("drill-down →logs", "from", a.res.Key, "id", r.ID, "query", query)
+	a.queries["logs"] = query
 	a.switchResource(logsRes) // pushes the current view; esc returns here
+}
+
+// drillToTrace opens the distributed-trace waterfall for a log or span row.
+// The correlation hinges on trace_id: a log with none can't be correlated.
+func (a *App) drillToTrace(r data.Row) {
+	if r.TraceID == "" {
+		a.flash("no trace_id on this row — is APM log-injection enabled for this service?", true)
+		return
+	}
+	a.pushNav()
+	a.detailRow = r
+	a.loadTrace(r.TraceID)
+}
+
+// loadTrace fetches and renders the trace waterfall (on-demand, bounded).
+func (a *App) loadTrace(traceID string) {
+	a.trace.SetTitle(fmt.Sprintf(" Trace/%s ", traceID))
+	a.trace.SetText("\n  [gray]reconstructing trace…").ScrollToBeginning()
+	a.showPage("trace")
+	go func() {
+		start := time.Now()
+		v, err := a.provider.Trace(context.Background(), traceID)
+		slog.Debug("trace render", "id", traceID, "took", time.Since(start).Round(time.Millisecond), "err", err)
+		a.QueueUpdateDraw(func() {
+			if a.page != "trace" || a.detailRow.TraceID != traceID {
+				return // navigated away
+			}
+			if err != nil {
+				a.trace.SetText("\n  [red]✗ " + tview.Escape(err.Error()))
+				return
+			}
+			a.trace.SetText(renderTrace(v))
+		})
+	}()
+}
+
+// renderTrace draws a span waterfall: each span indented by tree depth, with
+// a proportional offset+duration bar, service:resource, and error marker.
+func renderTrace(v *data.TraceView) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, " [orange::b]trace %s[-:-:-]\n", tview.Escape(v.TraceID))
+	fmt.Fprintf(&b, " [gray]%d spans · total %s · <l> logs for this trace · <esc> back[-]\n\n",
+		len(v.Spans), data.FormatDuration(v.TotalUs))
+	if len(v.Spans) == 0 {
+		b.WriteString(" [gray]no spans found for this trace (retention/indexing, or wrong window)[-]\n")
+		return b.String()
+	}
+	const barW, labelW = 40, 44
+	for _, s := range v.Spans {
+		indent := strings.Repeat("  ", s.Depth)
+		// Compose the label from escaped user text + intentional color tags,
+		// clipping the resource to fit; width is measured tag-free.
+		label := tview.Escape(clip(indent+s.Service, labelW))
+		if s.Resource != "" && visibleLen(label) < labelW-2 {
+			room := labelW - visibleLen(label) - 1
+			label += " [gray]" + tview.Escape(clip(s.Resource, room)) + "[-]"
+		}
+		bar := "[green]"
+		if s.Error {
+			bar = "[red]"
+		}
+		bar += traceBar(s.OffsetUs, s.DurationUs, v.TotalUs, barW) + "[-]"
+		errTag := ""
+		if s.Error {
+			errTag = " [red]✗[-]"
+		}
+		fmt.Fprintf(&b, " %s%s %s [white]%s[-]%s\n",
+			label, padVisible("", max(0, labelW-visibleLen(label))),
+			bar, data.FormatDuration(s.DurationUs), errTag)
+	}
+	if v.Truncated {
+		fmt.Fprintf(&b, "\n [yellow]trace truncated at %d spans[-]\n", 100)
+	}
+	return b.String()
+}
+
+// traceBar renders a span's position/length within the trace as leading
+// spaces (offset) + block glyphs (duration), scaled to width w.
+func traceBar(offsetUs, durUs, totalUs int64, w int) string {
+	if totalUs <= 0 {
+		return strings.Repeat("█", 1)
+	}
+	lead := int(offsetUs * int64(w) / totalUs)
+	length := int(durUs * int64(w) / totalUs)
+	if length < 1 {
+		length = 1
+	}
+	if lead+length > w {
+		lead = w - length
+	}
+	if lead < 0 {
+		lead = 0
+	}
+	return strings.Repeat("·", lead) + strings.Repeat("█", length)
 }
 
 // showContexts opens the :ctx view listing the configured Datadog orgs.
@@ -965,6 +1111,7 @@ func (a *App) pushNav() {
 		colFilterVal: a.colFilterVal,
 		sortCol:      a.sortCol,
 		sortAsc:      a.sortAsc,
+		query:        a.queries[a.res.Key],
 		detailRow:    a.detailRow,
 		selRow:       sel,
 	})
@@ -1013,6 +1160,11 @@ func (a *App) restore(e navEntry) {
 	a.colFilterCol, a.colFilterVal = e.colFilterCol, e.colFilterVal
 	a.sortCol, a.sortAsc = e.sortCol, e.sortAsc
 	a.detailRow = e.detailRow
+	// Restore the server query too — a drill-down (monitor/trace → logs)
+	// overwrote a.queries[res.Key], so popping back must put it back.
+	if e.res.ServerQuery {
+		a.queries[e.res.Key] = e.query
+	}
 	switch e.page {
 	case "detail":
 		a.renderDetail(e.detailRow)
@@ -1021,6 +1173,8 @@ func (a *App) restore(e navEntry) {
 		// The dashboard pane still holds its rendered text — just re-show
 		// it (don't re-fetch and re-spend metric budget on a back-nav).
 		a.showPage("dashboard")
+	case "trace":
+		a.showPage("trace") // pane still holds the rendered waterfall
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -1039,6 +1193,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.detail) // focus so ↑/↓ scroll the JSON
 	case "dashboard":
 		a.SetFocus(a.dash)
+	case "trace":
+		a.SetFocus(a.trace)
 	case "ctxform":
 		a.SetFocus(a.ctxForm)
 	default:

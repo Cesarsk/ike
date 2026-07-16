@@ -26,10 +26,19 @@ drill down, `esc` to go back.
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-> **Status: proof of concept.** Read-only, five resource views, multi-org
-> contexts, demo mode. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for
-> diagrams of how it works and [docs/DESIGN.md](docs/DESIGN.md) for the
-> design decisions and roadmap.
+> **Status: proof of concept.** Six resource views (monitors, incidents,
+> SLOs, logs, traces, dashboards), log⇄trace correlation, multi-org
+> contexts, a few confirm-gated writes (mute, incident state), demo mode.
+> See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and
+> [docs/DESIGN.md](docs/DESIGN.md) for design decisions and roadmap.
+
+## The debugging loop
+
+The point of ike is the loop your on-call actually runs: a monitor fires →
+its **logs** (`l`) → the failing request's **trace** (`t`, the span
+waterfall showing every service hop and where the error is) → back to the
+**logs** for that whole trace (`l`). Monitors ⇄ logs ⇄ traces all
+interconnect by `trace_id`, in the terminal, without a browser tab.
 
 ## Why
 
@@ -105,12 +114,13 @@ contexts:
 
 | Key | Action |
 |-----|--------|
-| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:dashboards` (or `mon`, `inc`, `s`, `l`, `d`) |
+| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:traces` `:dashboards` (or `mon`, `inc`, `s`, `l`, `tr`, `d`) |
 | `:ctx` | list org contexts; `enter` switches, `a` adds (keys/token → OS keychain), `e` edits the config in `$EDITOR`, `ctrl-d` deletes |
 | `/` | filter rows; in **Logs** this is a Datadog search query sent to the API, with **autocomplete** for facet keys, operators, and values seen in the current results (`tab`/`enter` accepts, then keep typing; a second `enter` submits) |
 | `enter` | detail — full object on demand for monitors/incidents; on an **SLO**, its live **attainment + error budget**; on a **dashboard**, its widgets rendered as a **grid** of sparklines matching the Datadog layout (`ctrl-r` refreshes) |
 | `esc` | go back to the previous view (k9s-style navigation history); clears the active filter |
-| `l` | on a monitor: **drill down to its logs** — jumps to the Logs view pre-filtered with the monitor's log query (log monitors) or its `service:`/`env:` tags; `esc` returns |
+| `l` | **drill down to logs** — from a monitor (its log query / `service:`,`env:` tags) or from a trace/span (that trace's logs); `esc` returns |
+| `t` | **drill down to the trace waterfall** — from a log or span, opens the distributed trace (span tree with duration bars) for that row's `trace_id`; needs APM log-injection, else a clear "no trace_id" (on SLOs, `t` is the type filter) |
 | `r` | on an incident: **change its state** (active/stable/resolved) — behind a confirmation |
 | `m` | on a monitor: **mute / unmute** (toggles based on current state, via the monitor's `silenced` option, read-modify-write) — behind a confirmation. Mute status shows in the **MUTED** column, independent of alert state |
 | `c` | **copy** the selected row's web URL (or log query / id) to the clipboard |
