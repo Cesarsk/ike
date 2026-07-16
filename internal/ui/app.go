@@ -335,7 +335,7 @@ func (a *App) setHints() {
 			"[aqua]<:>[white]cmd  [aqua]</>[white]filter  [aqua]<enter>[white]details  [aqua]<o>[white]open  [aqua]<c>[white]copy",
 			fmt.Sprintf("[aqua]<ctrl-r>[white]refresh  [aqua]<p>[white]auto:%s  [aqua]<esc>[white]back  [aqua]<?>[white]help  [aqua]<q>[white]quit", refresh),
 			"",
-			"[orange]:monitors  :incidents  :slos  :logs  :traces  :dashboards  :ctx",
+			"[orange]:monitors :incidents :slos :logs :traces :events :dashboards :ctx",
 		}
 		switch a.res.Key {
 		case "monitors":
@@ -348,6 +348,8 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]</>query (tab=complete)  <t>trace  window: <1>15m..<5>7d  <s>sort")
 		case "traces":
 			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  window: <1>15m..<5>7d  <s>sort")
+		case "events":
+			lines = append(lines, "[gray]</>query  window: <1>15m..<5>7d  <s>sort   (deploys, alerts, changes)")
 		case ctxResource.Key:
 			lines = append(lines, "[gray]<enter>switch org  <a>add  <e>edit config  <ctrl-d>delete")
 		default:
@@ -362,7 +364,7 @@ func (a *App) buildHelp() tview.Primitive {
 	tv.SetBorder(true).SetTitle(" Help ").SetTitleColor(tcell.ColorOrange)
 	fmt.Fprint(tv, `
  [orange]NAVIGATION
-   [aqua]:<resource>[white]   switch view (monitors, incidents, slos, logs, traces, dashboards)
+   [aqua]:<resource>[white]   switch view (monitors, incidents, slos, logs, traces, events, dashboards)
    [aqua]:ctx[white]          list Datadog org contexts; enter switches org (cache, budget and
                  history are dropped — a context is a hard boundary)
    [aqua]a[white]             (in :ctx) add a context: name, site, paste API/APP keys or an
@@ -558,7 +560,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.quickFilter(ev.Rune())
 			return nil
 		}
-		if a.res.Key == "logs" || a.res.Key == "traces" {
+		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -567,7 +569,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case '5':
-		if a.res.Key == "logs" || a.res.Key == "traces" {
+		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -1772,6 +1774,17 @@ func rowColor(resKey string, r data.Row) tcell.Color {
 	case "contexts":
 		if r.Cells[0] == "*" {
 			return tcell.ColorLightGreen
+		}
+	case "events":
+		switch strings.ToLower(r.Cells[1]) { // TYPE column
+		case "error":
+			return tcell.ColorRed
+		case "warning", "warn":
+			return tcell.ColorYellow
+		case "success":
+			return tcell.ColorLightGreen
+		case "deploy":
+			return tcell.ColorOrange
 		}
 	}
 	return tcell.ColorLightSkyBlue
