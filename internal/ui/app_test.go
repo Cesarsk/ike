@@ -141,6 +141,13 @@ func TestAppSmoke(t *testing.T) {
 	typeCmd(sim, ":events")
 	waitFor(t, sim, "Events(")
 	waitFor(t, sim, "Deployed payments-api")
+
+	// Downtimes: org-wide mute visibility.
+	typeCmd(sim, ":downtimes")
+	waitFor(t, sim, "Downtimes(")
+	waitFor(t, sim, "Maintenance window")
+	press(sim, tcell.KeyEscape) // back to events
+	waitFor(t, sim, "Events(")
 	press(sim, tcell.KeyEscape) // back to traces (nav stack)
 	waitFor(t, sim, "Traces(")
 

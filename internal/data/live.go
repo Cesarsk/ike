@@ -133,6 +133,8 @@ func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, 
 		return l.spans(ctx, query, timeRange)
 	case "events":
 		return l.events(ctx, query, timeRange)
+	case "downtimes":
+		return l.downtimes(ctx)
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
@@ -809,6 +811,29 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// downtimes lists scheduled/active mutes org-wide — the visibility partner
+// to the per-monitor MUTED column and the m mute action.
+func (l *Live) downtimes(ctx context.Context) ([]Row, error) {
+	resp, httpresp, err := datadogV2.NewDowntimesApi(l.client).ListDowntimes(ctx,
+		*datadogV2.NewListDowntimesOptionalParameters().WithPageLimit(100))
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("downtimes", err)
+	}
+	data := resp.GetData()
+	rows := make([]Row, 0, len(data))
+	for _, d := range data {
+		a := d.GetAttributes()
+		rows = append(rows, Row{
+			ID:    d.GetId(),
+			Cells: []string{string(a.GetStatus()), a.GetScope(), firstLine(a.GetMessage()), a.GetCreated().Local().Format("2006-01-02 15:04")},
+			Raw:   d,
+			URL:   l.web + "/monitors/downtimes",
+		})
+	}
+	return rows, nil
 }
 
 const spansPageLimit = 100 // one page of spans per search (bounded budget)

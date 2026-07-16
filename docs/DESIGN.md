@@ -99,21 +99,34 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
 
 ## Roadmap
 
-Near-term (Tier 2 — deferred from the 2026-07-16 push, next up):
-1. **APM services** view (`:services`) — health/latency/error-rate; enter → traces.
-2. **Downtimes** view — see/cancel scheduled mutes (completes `m`).
-3. Live log tail (bounded polling) + log → surrounding-context (±N min, same host).
-4. Richer incident verbs: timeline note, change severity, assign commander.
+Auth (its own milestone — the biggest single feature):
+1. **OAuth2 login**, pup-style: `ike auth login --site --subdomain --org`.
+   Native OAuth2 + PKCE with dynamic client registration, a local callback
+   server, token refresh, and OS-keychain storage — mirroring how pup does
+   it. (Checked: pup has no non-interactive "print token" command, so ike
+   can't cleanly borrow pup's tokens; native is the honest path.) Interim
+   that already works: paste a token via `token-env`/keychain token auth,
+   but access tokens expire ~1h → rotation pain. Spike first: confirm
+   Datadog's DCR endpoint is usable from a Go client.
 
-UX polish (rest of Tier 3 — deferred as bigger / config-schema changes):
-5. Saved queries per context; column customization (choose/reorder). A
-   dedicated command palette is largely covered by `:`-autocomplete already.
+Near-term (rest of Tier 2):
+2. **APM services** view (`:services`) — needs metrics for health/latency/
+   error-rate to be worth it (service-definitions alone is thin); enter → traces.
+3. **Downtimes cancel** — the list ships now (read-only); add cancel behind a
+   confirm (CancelDowntime) next.
+4. Live log tail (bounded polling) + log → surrounding-context (±N min, same host).
+5. Richer incident verbs: timeline note, change severity, assign commander.
+
+UX polish (rest of Tier 3 — bigger / config-schema changes):
+6. Saved queries per context; column customization. A dedicated command
+   palette is largely covered by `:`-autocomplete already.
 
 Longer-term:
-6. `x` = set/replace credentials on an existing context (token rotation ~1h).
-7. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
+7. `x` = set/replace credentials on an existing context (token rotation ~1h).
 8. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
 9. Hardened incidents field mapping (union types; verify against live org).
+10. First Homebrew release: create `Cesarsk/homebrew-tap` + `TAP_GITHUB_TOKEN`
+    secret, then `git tag v0.1.0` (goreleaser + release workflow already built).
 8. Per-resource TTL overrides and skins in the config file.
 
 Deferred deliberately (unverifiable-write-heavy or lower ROI than the above):
@@ -137,7 +150,9 @@ column~~, ~~traces view + APM span search~~ (`:traces`), ~~log⇄trace
 correlation~~ (`t` → trace waterfall reconstructed from spans; `l` → the
 trace's logs), ~~events feed~~ (`:events`), ~~metric-behind-a-monitor~~ (detail
 sparkline), ~~log patterns~~ (`P`, zero-API clustering), ~~query history~~ (↑
-in the prompt), ~~429 rate-limit backoff~~ (auto-pauses auto-refresh).
+in the prompt), ~~429 rate-limit backoff~~ (auto-pauses auto-refresh),
+~~double-ctrl-c quit~~, ~~unified trace timeline~~ (waterfall + all-services
+logs chronological), ~~downtimes list~~ (`:downtimes`).
 trace's logs).
 
 ## Traces & correlation
