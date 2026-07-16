@@ -107,13 +107,13 @@ func TestAppSmoke(t *testing.T) {
 	typeRunes(sim, "p")
 	waitFor(t, sim, "auto:on")
 
-	// Mute: 'm' opens a confirm modal; confirming mutes (demo flips state to
-	// Ignored) and the view reloads.
+	// Mute: 'm' opens a confirm modal; confirming mutes and the view reloads
+	// with the MUTED column showing "muted" (state is unaffected).
 	typeRunes(sim, "m")
 	waitFor(t, sim, "Mute monitor")
 	press(sim, tcell.KeyRight) // Cancel → Mute
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "Ignored")
+	waitFor(t, sim, "muted")
 
 	typeRunes(sim, "1")
 	waitFor(t, sim, "Monitors(state:Alert)")

@@ -112,7 +112,7 @@ contexts:
 | `esc` | go back to the previous view (k9s-style navigation history); clears the active filter |
 | `l` | on a monitor: **drill down to its logs** — jumps to the Logs view pre-filtered with the monitor's log query (log monitors) or its `service:`/`env:` tags; `esc` returns |
 | `r` | on an incident: **change its state** (active/stable/resolved) — behind a confirmation |
-| `m` | on a monitor: **mute / unmute** (via the monitor's `silenced` option, read-modify-write) — behind a confirmation |
+| `m` | on a monitor: **mute / unmute** (toggles based on current state, via the monitor's `silenced` option, read-modify-write) — behind a confirmation. Mute status shows in the **MUTED** column, independent of alert state |
 | `c` | **copy** the selected row's web URL (or log query / id) to the clipboard |
 | `s` / `S` | cycle the sort column / reverse the direction (any table view) |
 | `t` | on SLOs: cycle the **Type** filter (metric / monitor / time_slice / all) |
