@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, content string) string {
@@ -235,5 +236,21 @@ func TestResolve(t *testing.T) {
 	}
 	if _, _, err := (Context{APIKeyEnv: "T_API", AppKeyEnv: "T_UNSET"}).Resolve(); err == nil {
 		t.Fatal("missing env var must error")
+	}
+}
+
+func TestRefreshInterval(t *testing.T) {
+	c := &Config{RefreshInterval: "45s"}
+	if got := c.Refresh(30 * time.Second); got != 45*time.Second {
+		t.Errorf("Refresh = %v, want 45s", got)
+	}
+	if got := (&Config{}).Refresh(30 * time.Second); got != 30*time.Second {
+		t.Errorf("unset Refresh = %v, want default 30s", got)
+	}
+	if got := (&Config{RefreshInterval: "garbage"}).Refresh(30 * time.Second); got != 30*time.Second {
+		t.Errorf("bad Refresh = %v, want default 30s", got)
+	}
+	if got := (&Config{RefreshInterval: "0"}).Refresh(30 * time.Second); got != 0 {
+		t.Errorf("zero Refresh = %v, want 0 (disabled)", got)
 	}
 }

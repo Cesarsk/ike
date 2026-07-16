@@ -46,6 +46,12 @@ func TestAppSmoke(t *testing.T) {
 	// and the incidents view reloaded.
 	waitFor(t, sim, "IR-142 SEV-1 resolved")
 
+	// Incident quick filter: digit 3 = resolved only (STATE column).
+	typeRunes(sim, "3")
+	waitFor(t, sim, "Incidents(state:resolved)")
+	typeRunes(sim, "0") // back to all
+	waitFor(t, sim, "Incidents(all)")
+
 	typeCmd(sim, ":slos")
 	waitFor(t, sim, "SLOs(all)")
 	// SLO type filter (t cycles metric → monitor → time_slice → all) and
@@ -94,6 +100,21 @@ func TestAppSmoke(t *testing.T) {
 	// Quick filter + client-side filter on monitors.
 	typeCmd(sim, ":monitors")
 	waitFor(t, sim, "Monitors(all)")
+
+	// Auto-refresh toggle: 'p' pauses (header shows auto:off), 'p' resumes.
+	typeRunes(sim, "p")
+	waitFor(t, sim, "auto:off")
+	typeRunes(sim, "p")
+	waitFor(t, sim, "auto:on")
+
+	// Mute: 'm' opens a confirm modal; confirming mutes (demo flips state to
+	// Ignored) and the view reloads.
+	typeRunes(sim, "m")
+	waitFor(t, sim, "Mute monitor")
+	press(sim, tcell.KeyRight) // Cancel → Mute
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Ignored")
+
 	typeRunes(sim, "1")
 	waitFor(t, sim, "Monitors(state:Alert)")
 	typeRunes(sim, "0")
@@ -173,20 +194,26 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "added")
 
 	// Switch to it, then away again (can't delete the active context).
-	press(sim, tcell.KeyDown)
-	press(sim, tcell.KeyDown) // demo-dev → demo-prod → staging
+	// Filter to the single "staging" row so selection is unambiguous (row
+	// counting races with async re-renders from background load()s).
+	typeRunes(sim, "/staging")
 	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Contexts(/staging)")
+	press(sim, tcell.KeyEnter) // only row = staging → switch to it
 	waitFor(t, sim, "demo [staging]")
 	typeCmd(sim, ":ctx")
 	waitFor(t, sim, "Contexts(all)")
-	press(sim, tcell.KeyEnter) // row 1 = demo-dev → switch back
+	typeRunes(sim, "/demo-dev")
+	press(sim, tcell.KeyEnter)
+	press(sim, tcell.KeyEnter) // only row = demo-dev → switch back
 	waitFor(t, sim, "demo [demo-dev]")
 
-	// Delete the added context: ctrl-d → confirm modal → Delete.
+	// Delete the added context: filter to staging, ctrl-d → confirm → Delete.
 	typeCmd(sim, ":ctx")
 	waitFor(t, sim, "Contexts(all)")
-	press(sim, tcell.KeyDown)
-	press(sim, tcell.KeyDown) // select staging
+	typeRunes(sim, "/staging")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Contexts(/staging)")
 	press(sim, tcell.KeyCtrlD)
 	waitFor(t, sim, "Delete context")
 	press(sim, tcell.KeyRight) // Cancel → Delete button

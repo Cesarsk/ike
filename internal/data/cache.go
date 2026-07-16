@@ -48,14 +48,29 @@ func (c *Cached) SetIncidentState(ctx context.Context, id, state string) error {
 	if err := c.p.SetIncidentState(ctx, id, state); err != nil {
 		return err
 	}
+	c.dropResource("incidents")
+	return nil
+}
+
+// SetMonitorMute writes through and drops the monitors cache so the next
+// fetch reflects the new mute state.
+func (c *Cached) SetMonitorMute(ctx context.Context, id string, mute bool) error {
+	if err := c.p.SetMonitorMute(ctx, id, mute); err != nil {
+		return err
+	}
+	c.dropResource("monitors")
+	return nil
+}
+
+// dropResource evicts all cache entries for a resource key.
+func (c *Cached) dropResource(key string) {
 	c.mu.Lock()
 	for k := range c.entries {
-		if strings.HasPrefix(k, "incidents|") {
+		if strings.HasPrefix(k, key+"|") {
 			delete(c.entries, k)
 		}
 	}
 	c.mu.Unlock()
-	return nil
 }
 
 // Fetch returns rows for a resource, from cache when fresh.

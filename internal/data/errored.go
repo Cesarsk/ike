@@ -23,6 +23,7 @@ func (e *Errored) Dashboard(context.Context, string) (*DashboardView, error) {
 	return nil, e.err
 }
 func (e *Errored) SetIncidentState(context.Context, string, string) error { return e.err }
+func (e *Errored) SetMonitorMute(context.Context, string, bool) error     { return e.err }
 func (e *Errored) Budget() []string                                       { return nil }
 func (e *Errored) Mode() string                                           { return "live" }
 func (e *Errored) Site() string                                           { return e.site }

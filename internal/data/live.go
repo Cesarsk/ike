@@ -169,8 +169,64 @@ func (l *Live) FetchDetail(ctx context.Context, key, id string) (any, error) {
 			return nil, apiErr("incident detail", err)
 		}
 		return in, nil
+	case "slos":
+		return l.sloStatus(ctx, id)
 	}
 	return nil, nil // the list row is already the full object
+}
+
+// sloStatus fetches an SLO's recent history and computes its live attainment
+// and error budget — the numbers the list can't show. One API call per open
+// (bounded), so it's a detail action, never a per-row list fetch.
+func (l *Live) sloStatus(ctx context.Context, id string) (any, error) {
+	api := datadogV1.NewServiceLevelObjectivesApi(l.client)
+	slo, resp, err := api.GetSLO(ctx, id, *datadogV1.NewGetSLOOptionalParameters())
+	l.track(resp)
+	if err != nil {
+		return nil, apiErr("slo detail", err)
+	}
+	data := slo.GetData()
+	// Window: the first threshold's timeframe (7d/30d/90d), default 30d.
+	days := 30
+	var target float64
+	if th := data.GetThresholds(); len(th) > 0 {
+		target = th[0].GetTarget()
+		switch th[0].GetTimeframe() {
+		case datadogV1.SLOTIMEFRAME_SEVEN_DAYS:
+			days = 7
+		case datadogV1.SLOTIMEFRAME_NINETY_DAYS:
+			days = 90
+		}
+	}
+	to := time.Now().Unix()
+	from := to - int64(days*86400)
+	hist, hresp, err := api.GetSLOHistory(ctx, id, from, to,
+		*datadogV1.NewGetSLOHistoryOptionalParameters())
+	l.track(hresp)
+	out := map[string]any{
+		"name": data.GetName(), "type": string(data.GetType()),
+		"target_pct": target, "timeframe_days": days,
+	}
+	if err != nil {
+		// Config still worth showing even if history is unavailable.
+		out["status"] = "history unavailable: " + err.Error()
+		return out, nil
+	}
+	hd := hist.GetData()
+	overall := hd.GetOverall()
+	attained := overall.GetSliValue()
+	out["attainment_pct"] = attained
+	if target > 0 {
+		// Error budget consumed = (target-attained)/(100-target); >100% = breached.
+		if attained >= target {
+			out["error_budget_remaining_pct"] = 100.0
+		} else {
+			consumed := (target - attained) / (100 - target) * 100
+			out["error_budget_remaining_pct"] = 100 - consumed
+		}
+		out["meeting_target"] = attained >= target
+	}
+	return out, nil
 }
 
 // SetIncidentState moves an incident to a new state (active/stable/resolved)
@@ -196,6 +252,42 @@ func (l *Live) SetIncidentState(ctx context.Context, id, state string) error {
 		return apiErr("set incident state", err)
 	}
 	slog.Info("incident state changed", "id", id, "state", state)
+	return nil
+}
+
+// SetMonitorMute mutes (indefinitely) or unmutes a monitor. It is a
+// read-modify-write on the monitor's options so muting never clobbers
+// thresholds, renotify, or any other option: fetch the monitor, flip only
+// options.silenced ({"*":0} = mute all scopes; {} = unmute), write back.
+func (l *Live) SetMonitorMute(ctx context.Context, id string, mute bool) error {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	mid, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return fmt.Errorf("monitor id %q: %w", id, err)
+	}
+	api := datadogV1.NewMonitorsApi(l.client)
+	mon, resp, err := api.GetMonitor(ctx, mid, *datadogV1.NewGetMonitorOptionalParameters())
+	l.track(resp)
+	if err != nil {
+		return apiErr("mute: read monitor", err)
+	}
+	opts := mon.GetOptions()
+	if mute {
+		opts.Silenced = map[string]int64{"*": 0} // 0 = mute with no end time
+	} else {
+		opts.Silenced = map[string]int64{}
+	}
+	body := datadogV1.NewMonitorUpdateRequest()
+	body.SetOptions(opts)
+	_, resp2, err := api.UpdateMonitor(ctx, mid, *body)
+	l.track(resp2)
+	if err != nil {
+		return apiErr("mute: update monitor", err)
+	}
+	slog.Info("monitor mute changed", "id", id, "muted", mute)
 	return nil
 }
 
@@ -293,8 +385,28 @@ func collectWidgets(node any, out *[]Widget) {
 		if title == "" {
 			title = "(untitled)"
 		}
-		*out = append(*out, Widget{Title: title, Type: typ, Query: widgetQuery(def)})
+		w := Widget{Title: title, Type: typ, Query: widgetQuery(def)}
+		// Layout (free/grid dashboards): x/y/width/height in grid units;
+		// absent for ordered layouts (W stays 0 → renderer falls back to flow).
+		if lay, ok := wobj["layout"].(map[string]any); ok {
+			w.X = jsonInt(lay["x"])
+			w.Y = jsonInt(lay["y"])
+			w.W = jsonInt(lay["width"])
+			w.H = jsonInt(lay["height"])
+		}
+		*out = append(*out, w)
 	}
+}
+
+// jsonInt coerces a JSON number (float64) or numeric string to int.
+func jsonInt(v any) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	}
+	return 0
 }
 
 // widgetQuery extracts a single runnable metric query from a widget

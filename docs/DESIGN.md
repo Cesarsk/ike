@@ -99,24 +99,38 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
 
 ## Roadmap
 
-1. `c` = set/replace credentials on an existing context — needed for token
+1. `x` = set/replace credentials on an existing context — needed for token
    rotation (access tokens expire ~1h) and keychain-service-rename recovery;
    today the only path is delete + re-add.
-2. Incident → linked monitors/logs drill-down (monitor → logs shipped as `l`).
-3. Monitor mute/unmute via Downtimes API behind a confirm modal.
-4. Hardened incidents field mapping (union types; verify against live org).
-5. Sparkline metric previews in the detail view (braille rendering).
-6. Live tail emulation for logs: bounded polling loop with visible budget
+2. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
+3. Incident → linked monitors/logs drill-down (monitor → logs shipped as `l`).
+4. Richer incident actions: add timeline note, change severity, assign
+   commander (beyond the state change already shipped).
+5. Bulk select + act (mute N monitors / resolve N incidents) behind one
+   confirm; logs "load more" beyond the 100-row cap and surrounding-context
+   from a selected line.
+6. Hardened incidents field mapping (union types; verify against live org).
+7. Live tail emulation for logs: bounded polling loop with visible budget
    spend (there is no public streaming API).
-7. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
 8. Per-resource TTL overrides and skins in the config file.
+
+Deferred deliberately (unverifiable-write-heavy or lower ROI than the above):
+richer incident write verbs and bulk actions above are **write** paths that
+cannot be tested from the authoring sandbox — they wait on live dev-org
+validation of the mute and incident-state writes already shipped.
 
 Done: ~~multi-org contexts + config file~~ (`:ctx`, env-indirected secrets),
 ~~esc navigation stack~~, ~~in-app context add/delete with OS-keychain
 storage~~ (`:ctx` → `a` / `ctrl-d`), ~~monitor → logs drill-down~~ (`l`),
 ~~pagination~~ (bounded, truncation logged), ~~on-demand full-object detail
 fetch~~, ~~org web subdomains~~, ~~in-terminal dashboard rendering~~
-(widget sparklines).
+(grid of widget sparklines matching the DD layout), ~~column sorting~~
+(`s`/`S`), ~~SLO type filter~~ (`t`) + ~~incident state quick-filters~~,
+~~incident state change~~ (`r`), ~~monitor mute/unmute~~ (`m`,
+read-modify-write on `silenced`), ~~SLO attainment + error budget~~ (on
+`enter`), ~~clipboard copy~~ (`c`), ~~configurable auto-refresh~~
+(`refresh-interval` / `--refresh` / `p` toggle), ~~log-query autocomplete~~,
+~~log time-range~~ (`1`–`5`), ~~glanceable budget header~~.
 
 ## Project policy (decided 2026-07-14)
 

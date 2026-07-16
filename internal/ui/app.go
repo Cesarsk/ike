@@ -108,6 +108,7 @@ type App struct {
 	logRangeIx int               // index into logRanges for the Logs time window
 	fetchedAt  time.Time
 	loading    bool
+	paused     bool // auto-refresh paused (toggled with 'p')
 	promptM    promptMode
 	page       string // current content page: "table", "help", "detail"
 	detailRow  data.Row
@@ -295,7 +296,7 @@ func (a *App) setHints() {
 	switch a.page {
 	case "detail":
 		lines = []string{
-			"[aqua]<esc>[white]back  [aqua]<o>[white]open in Datadog  [aqua]<?>[white]help",
+			"[aqua]<esc>[white]back  [aqua]<o>[white]open in Datadog  [aqua]<c>[white]copy  [aqua]<?>[white]help",
 			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<q>[white]back",
 		}
 	case "dashboard":
@@ -313,19 +314,23 @@ func (a *App) setHints() {
 			"[aqua]<esc>[white]cancel  [aqua]<enter>[white]on Save to store",
 		}
 	default:
+		refresh := "on"
+		if a.paused {
+			refresh = "off"
+		}
 		lines = []string{
-			"[aqua]<:>[white]cmd  [aqua]</>[white]filter  [aqua]<enter>[white]details  [aqua]<o>[white]open in Datadog",
-			"[aqua]<ctrl-r>[white]refresh  [aqua]<esc>[white]back  [aqua]<?>[white]help  [aqua]<q>[white]quit",
+			"[aqua]<:>[white]cmd  [aqua]</>[white]filter  [aqua]<enter>[white]details  [aqua]<o>[white]open  [aqua]<c>[white]copy",
+			fmt.Sprintf("[aqua]<ctrl-r>[white]refresh  [aqua]<p>[white]auto:%s  [aqua]<esc>[white]back  [aqua]<?>[white]help  [aqua]<q>[white]quit", refresh),
 			"",
 			"[orange]:monitors  :incidents  :slos  :logs  :dashboards  :ctx",
 		}
 		switch a.res.Key {
 		case "monitors":
-			lines = append(lines, "[gray]<l>logs  <s>sort <S>reverse   quick: <1>alert <2>warn <3>nodata <4>ok <0>all")
+			lines = append(lines, "[gray]<l>logs  <m>mute  <s>sort <S>rev   quick: <1>alert <2>warn <3>nodata <4>ok <0>all")
 		case "slos":
-			lines = append(lines, "[gray]<t>cycle type filter  <s>sort <S>reverse")
+			lines = append(lines, "[gray]<enter>error budget  <t>cycle type filter  <s>sort <S>reverse")
 		case "incidents":
-			lines = append(lines, "[gray]<r>change state  <s>sort <S>reverse")
+			lines = append(lines, "[gray]<r>change state  quick: <1>active <2>stable <3>resolved <0>all  <s>sort")
 		case "logs":
 			lines = append(lines, "[gray]</>query (tab=complete)  window: <1>15m <2>1h <3>4h <4>1d <5>7d  <s>sort")
 		case ctxResource.Key:
@@ -417,6 +422,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		case ev.Rune() == 'o':
 			a.openURL(a.detailRow.URL)
 			return nil
+		case ev.Rune() == 'c':
+			a.copyRow(a.detailRow)
+			return nil
 		case ev.Rune() == 'l' && a.res.Key == "monitors":
 			a.drillToLogs(a.detailRow)
 			return nil
@@ -442,6 +450,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == 'o':
 			a.openURL(a.detailRow.URL)
+			return nil
+		case ev.Rune() == 'c':
+			a.copyRow(a.detailRow)
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -510,11 +521,28 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
+		if a.res.Key == "incidents" {
+			a.incidentQuickFilter(ev.Rune())
+			return nil
+		}
 	case '5':
 		if a.res.Key == "logs" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
+	case 'c':
+		a.copySelected()
+		return nil
+	case 'm':
+		if a.res.Key == "monitors" {
+			if row, ok := a.selectedRow(); ok {
+				a.confirmMuteMonitor(row)
+			}
+			return nil
+		}
+	case 'p':
+		a.toggleAutoRefresh()
+		return nil
 	case 't':
 		if a.res.Key == "slos" {
 			a.cycleSLOType()
@@ -560,6 +588,86 @@ func (a *App) quickFilter(r rune) {
 		val = "OK"
 	}
 	a.setColFilter(0, val)
+}
+
+// incidentQuickFilter filters incidents by STATE (column 2): 1 active,
+// 2 stable, 3 resolved, 0 all.
+func (a *App) incidentQuickFilter(r rune) {
+	val := ""
+	switch r {
+	case '1':
+		val = "active"
+	case '2':
+		val = "stable"
+	case '3':
+		val = "resolved"
+	}
+	a.setColFilter(2, val)
+}
+
+// copySelected copies the selected table row to the clipboard.
+func (a *App) copySelected() {
+	if r, ok := a.selectedRow(); ok {
+		a.copyRow(r)
+	} else {
+		a.flash("nothing to copy", true)
+	}
+}
+
+// copyRow copies a row's most useful identifier to the OS clipboard: the
+// Datadog web URL if present, else the log query, else the ID.
+func (a *App) copyRow(r data.Row) {
+	val, what := r.URL, "URL"
+	if val == "" && r.LogQuery != "" {
+		val, what = r.LogQuery, "log query"
+	}
+	if val == "" {
+		val, what = r.ID, "id"
+	}
+	if val == "" {
+		a.flash("nothing to copy", true)
+		return
+	}
+	if err := copyClipboard(val); err != nil {
+		a.flash("✗ copy: "+err.Error(), true)
+		return
+	}
+	slog.Debug("copied to clipboard", "what", what)
+	a.flash("copied "+what+" to clipboard", false)
+}
+
+// confirmMuteMonitor asks before muting/unmuting the selected monitor. Mute
+// state is inferred from the STATE column ("Ignored" == currently muted).
+func (a *App) confirmMuteMonitor(r data.Row) {
+	muted := len(r.Cells) > 0 && strings.EqualFold(r.Cells[0], "Ignored")
+	verb := "Mute"
+	if muted {
+		verb = "Unmute"
+	}
+	name := ""
+	if len(r.Cells) > 1 {
+		name = r.Cells[1]
+	}
+	a.showConfirm(
+		fmt.Sprintf("%s monitor in [%s]?\n\n%s\n\nMuting stops notifications (unmute resumes them); the monitor definition itself is unchanged.",
+			verb, a.current, name),
+		[]string{"Cancel", verb},
+		func(label string) {
+			if label != verb {
+				return
+			}
+			go func() {
+				err := a.provider.SetMonitorMute(context.Background(), r.ID, !muted)
+				a.QueueUpdateDraw(func() {
+					if err != nil {
+						a.flash("✗ "+err.Error(), true)
+						return
+					}
+					a.flash(verb+"d "+name, false)
+					a.load(true)
+				})
+			}()
+		})
 }
 
 // logRanges are the selectable Logs time windows (digit keys 1-5 in Logs).
@@ -1120,12 +1228,10 @@ func (a *App) confirmDeleteContext() {
 		a.flash("✗ cannot delete the active context — switch away first", true)
 		return
 	}
-	a.confirm.
-		SetText(fmt.Sprintf("Delete context %q?\nIts credentials are removed from the OS keychain;\nthe Datadog org itself is untouched.", name)).
-		ClearButtons().
-		AddButtons([]string{"Cancel", "Delete"}).
-		SetDoneFunc(func(_ int, label string) {
-			a.closeConfirm()
+	a.showConfirm(
+		fmt.Sprintf("Delete context %q?\nIts credentials are removed from the OS keychain;\nthe Datadog org itself is untouched.", name),
+		[]string{"Cancel", "Delete"},
+		func(label string) {
 			if label != "Delete" {
 				return
 			}
@@ -1144,16 +1250,30 @@ func (a *App) confirmDeleteContext() {
 			a.load(false) // re-render the contexts table
 			a.flash("context "+name+" deleted", false)
 		})
-	a.page = "confirm"
-	a.content.ShowPage("confirm") // overlay on top of the table
-	a.SetFocus(a.confirm)
-	a.setHints()
 }
 
 func (a *App) closeConfirm() {
 	a.content.HidePage("confirm")
 	a.page = "table"
 	a.SetFocus(a.table)
+	a.setHints()
+}
+
+// showConfirm displays a confirmation modal with the given buttons and calls
+// onDone(label) with the chosen button after closing. A FRESH modal is built
+// each time: a reused tview.Modal retains stale button focus across
+// ClearButtons/AddButtons, which silently lands Enter on the wrong button.
+func (a *App) showConfirm(text string, buttons []string, onDone func(label string)) {
+	m := tview.NewModal().SetText(text).AddButtons(buttons)
+	m.SetDoneFunc(func(_ int, label string) {
+		a.closeConfirm()
+		onDone(label)
+	})
+	a.confirm = m
+	a.content.RemovePage("confirm").AddPage("confirm", m, true, false)
+	a.page = "confirm"
+	a.content.ShowPage("confirm")
+	a.SetFocus(m)
 	a.setHints()
 }
 
@@ -1171,22 +1291,16 @@ func (a *App) confirmIncidentAction(r data.Row) {
 		}
 	}
 	buttons := append([]string{"Cancel"}, targetLabels(targets)...)
-	a.confirm.
-		SetText(fmt.Sprintf("Change %s (currently %s) to:\nThis writes to Datadog.", r.ID, cur)).
-		ClearButtons().
-		AddButtons(buttons).
-		SetDoneFunc(func(_ int, label string) {
-			a.closeConfirm()
+	a.showConfirm(
+		fmt.Sprintf("Change %s (currently %s) to:\nThis writes to Datadog.", r.ID, cur),
+		buttons,
+		func(label string) {
 			state := strings.TrimPrefix(label, "→ ")
 			if label == "Cancel" || state == "" {
 				return
 			}
 			a.applyIncidentState(r, state)
 		})
-	a.page = "confirm"
-	a.content.ShowPage("confirm")
-	a.SetFocus(a.confirm)
-	a.setHints()
 }
 
 func targetLabels(states []string) []string {
@@ -1362,15 +1476,30 @@ func parseNum(s string) (float64, bool) {
 }
 
 func (a *App) ticker() {
+	if a.refreshEvery <= 0 {
+		return // auto-refresh disabled entirely (refresh interval 0)
+	}
 	t := time.NewTicker(a.refreshEvery)
 	defer t.Stop()
 	for range t.C {
-		if a.res.AutoRefresh && !a.loading {
+		if a.res.AutoRefresh && !a.loading && !a.paused {
 			a.QueueUpdateDraw(func() { a.load(false) })
 		} else {
 			a.QueueUpdateDraw(a.updateInfo) // keep the Age counter moving
 		}
 	}
+}
+
+// toggleAutoRefresh pauses/resumes timer-driven refresh (ctrl-r still works).
+func (a *App) toggleAutoRefresh() {
+	a.paused = !a.paused
+	if a.paused {
+		a.flash("auto-refresh paused (ctrl-r to refresh manually, p to resume)", false)
+	} else {
+		a.flash("auto-refresh resumed", false)
+	}
+	a.setHints() // the hint line shows auto:on/off
+	a.updateInfo()
 }
 
 // ---- rendering -------------------------------------------------------------
@@ -1687,29 +1816,151 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 	}()
 }
 
-// renderDashboard turns a DashboardView into the terminal panel: one block
-// per widget with a sparkline, last value, type and query.
+// dashGridCols is Datadog's dashboard grid width in layout units; widgets
+// pack into terminal rows until their widths sum past it, approximating the
+// real 2-D arrangement (a width-12 widget fills a row; two width-6 share one).
+const dashGridCols = 12
+
+// renderDashboard turns a DashboardView into the terminal panel. When the
+// dashboard has layout coordinates it renders a grid (widgets side by side,
+// in Datadog reading order); otherwise it falls back to a one-per-line list.
 func renderDashboard(v *data.DashboardView) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, " [orange::b]%s[-:-:-]\n", tview.Escape(v.Title))
 	fmt.Fprintf(&b, " [gray]%d widgets · sparklines cover the last 1h · <ctrl-r> to refresh[-]\n\n", len(v.Widgets))
+
+	hasCoords := false
 	for _, w := range v.Widgets {
-		fmt.Fprintf(&b, " [aqua::b]%s[-:-:-]  [gray]%s[-]\n", tview.Escape(w.Title), tview.Escape(w.Type))
-		if w.HasData {
-			fmt.Fprintf(&b, "   [green]%s[-]  [white::b]%s[-:-:-]\n",
-				data.Sparkline(w.Spark), data.FormatValue(w.Last))
-		} else if w.Note != "" {
-			fmt.Fprintf(&b, "   [gray]· %s[-]\n", tview.Escape(w.Note))
+		if w.W > 0 {
+			hasCoords = true
+			break
 		}
-		if w.Query != "" {
-			fmt.Fprintf(&b, "   [darkcyan]%s[-]\n", tview.Escape(w.Query))
-		}
-		b.WriteString("\n")
 	}
+
+	if !hasCoords {
+		for _, w := range v.Widgets {
+			b.WriteString(widgetLines(w, 0))
+			b.WriteString("\n")
+		}
+	} else {
+		ws := make([]data.Widget, len(v.Widgets))
+		copy(ws, v.Widgets)
+		sort.SliceStable(ws, func(i, j int) bool {
+			if ws[i].Y != ws[j].Y {
+				return ws[i].Y < ws[j].Y
+			}
+			return ws[i].X < ws[j].X
+		})
+		// Greedily pack widgets into rows by the 12-unit grid width.
+		var row []data.Widget
+		units := 0
+		flush := func() {
+			if len(row) > 0 {
+				b.WriteString(renderWidgetRow(row))
+				row, units = nil, 0
+			}
+		}
+		for _, w := range ws {
+			wu := w.W
+			if wu <= 0 {
+				wu = dashGridCols
+			}
+			if units+wu > dashGridCols {
+				flush()
+			}
+			row = append(row, w)
+			units += wu
+		}
+		flush()
+	}
+
 	if v.Truncated {
 		fmt.Fprintf(&b, " [yellow]Note: only the first %d metric widgets were charted to protect the API budget.[-]\n", data.MaxDashWidgets)
 	}
 	return b.String()
+}
+
+// renderWidgetRow lays out a row of widgets side by side in equal-width
+// terminal columns, zipping their lines together with tag-aware padding.
+func renderWidgetRow(row []data.Widget) string {
+	const rowWidth = 96
+	cellW := rowWidth/len(row) - 2
+	if cellW < 18 {
+		cellW = 18
+	}
+	cells := make([][]string, len(row))
+	maxLines := 0
+	for i, w := range row {
+		cells[i] = strings.Split(strings.TrimRight(widgetLines(w, cellW), "\n"), "\n")
+		if len(cells[i]) > maxLines {
+			maxLines = len(cells[i])
+		}
+	}
+	var b strings.Builder
+	for ln := 0; ln < maxLines; ln++ {
+		b.WriteString(" ")
+		for i := range cells {
+			cell := ""
+			if ln < len(cells[i]) {
+				cell = cells[i][ln]
+			}
+			b.WriteString(padVisible(cell, cellW))
+			b.WriteString("  ")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// widgetLines renders one widget as title / sparkline+value (or note) /
+// query. width>0 truncates the sparkline and query to fit a grid cell.
+func widgetLines(w data.Widget, width int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "[aqua::b]%s[-:-:-] [gray]%s[-]\n", tview.Escape(clip(w.Title, width)), tview.Escape(w.Type))
+	switch {
+	case w.HasData:
+		spark := data.Sparkline(w.Spark)
+		if width > 10 && len(spark) > width-10 {
+			spark = spark[len(spark)-(width-10):] // keep the most recent points
+		}
+		fmt.Fprintf(&b, "[green]%s[-] [white::b]%s[-:-:-]\n", spark, data.FormatValue(w.Last))
+	case w.Note != "":
+		fmt.Fprintf(&b, "[gray]· %s[-]\n", tview.Escape(clip(w.Note, width)))
+	}
+	if w.Query != "" {
+		fmt.Fprintf(&b, "[darkcyan]%s[-]\n", tview.Escape(clip(w.Query, width)))
+	}
+	return b.String()
+}
+
+var tagRe = regexp.MustCompile(`\[[a-zA-Z0-9_,:;.#-]*\]`)
+
+// visibleLen is the on-screen width of a string, ignoring tview color tags.
+func visibleLen(s string) int { return len([]rune(tagRe.ReplaceAllString(s, ""))) }
+
+// padVisible right-pads s with spaces to visible width w (no truncation —
+// widgetLines already clipped content to the cell width).
+func padVisible(s string, w int) string {
+	if n := w - visibleLen(s); n > 0 {
+		return s + strings.Repeat(" ", n)
+	}
+	return s
+}
+
+// clip truncates plain text to max visible runes (max<=0 = no limit).
+func clip(s string, max int) string {
+	if max <= 0 {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	if max <= 1 {
+		return string(r[:max])
+	}
+	return string(r[:max-1]) + "…"
 }
 
 func (a *App) openSelected() {
@@ -1750,4 +2001,25 @@ func openBrowser(u string) error {
 	default:
 		return fmt.Errorf("open not supported on %s — %s", runtime.GOOS, u)
 	}
+}
+
+// copyClipboard writes s to the OS clipboard via the platform tool (pbcopy
+// on macOS; wl-copy or xclip on Linux). The value is piped on stdin, never
+// passed as an argument, so it can't leak via the process list.
+func copyClipboard(s string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "linux":
+		if _, err := exec.LookPath("wl-copy"); err == nil {
+			cmd = exec.Command("wl-copy")
+		} else {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		}
+	default:
+		return fmt.Errorf("clipboard not supported on %s", runtime.GOOS)
+	}
+	cmd.Stdin = strings.NewReader(s)
+	return cmd.Run()
 }

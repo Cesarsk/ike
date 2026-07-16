@@ -33,15 +33,18 @@ type Resource struct {
 }
 
 // Widget is one panel of a rendered dashboard: its title, type, primary
-// metric query, and a fetched sparkline where the query resolved to data.
+// metric query, a fetched sparkline where the query resolved to data, and
+// the widget's dashboard layout (x/y/width/height in Datadog grid units)
+// so the TUI can approximate the real dashboard arrangement.
 type Widget struct {
-	Title   string
-	Type    string
-	Query   string
-	Spark   []float64
-	Last    float64
-	HasData bool
-	Note    string // why there's no sparkline (unsupported widget / query type)
+	Title      string
+	Type       string
+	Query      string
+	Spark      []float64
+	Last       float64
+	HasData    bool
+	Note       string // why there's no sparkline (unsupported widget / query type)
+	X, Y, W, H int    // dashboard grid coords; W==0 → unknown (ordered layout)
 }
 
 // DashboardView is a dashboard rendered for the terminal: metadata plus a
@@ -69,9 +72,12 @@ type Provider interface {
 	// sparklines on demand (bounded — the timeseries API is rate-limited).
 	Dashboard(ctx context.Context, id string) (*DashboardView, error)
 	// SetIncidentState changes an incident's state (e.g. active → resolved).
-	// This is the only write operation in the tool; the UI gates it behind a
-	// confirmation modal.
+	// A write operation; the UI gates it behind a confirmation modal.
 	SetIncidentState(ctx context.Context, id, state string) error
+	// SetMonitorMute mutes or unmutes a monitor. Implemented as a
+	// read-modify-write on the monitor's options so no other option is
+	// clobbered. A write operation; UI-gated behind confirmation.
+	SetMonitorMute(ctx context.Context, id string, mute bool) error
 	// Budget reports the last-seen API rate-limit state, one line per
 	// endpoint family (from X-RateLimit-* response headers).
 	Budget() []string

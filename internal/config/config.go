@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -88,6 +89,22 @@ type Context struct {
 type Config struct {
 	CurrentContext string             `yaml:"current-context"`
 	Contexts       map[string]Context `yaml:"contexts"`
+	// RefreshInterval configures auto-refresh, e.g. "30s", "1m", or "0" to
+	// disable. The --refresh flag overrides it when explicitly passed.
+	RefreshInterval string `yaml:"refresh-interval,omitempty"`
+}
+
+// Refresh returns the configured auto-refresh interval, or def if unset or
+// unparseable. "0" (or any zero duration) disables auto-refresh.
+func (c *Config) Refresh(def time.Duration) time.Duration {
+	if c.RefreshInterval == "" {
+		return def
+	}
+	d, err := time.ParseDuration(c.RefreshInterval)
+	if err != nil {
+		return def
+	}
+	return d
 }
 
 // Path returns the config file location: $IKE_CONFIG if set, otherwise

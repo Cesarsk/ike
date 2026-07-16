@@ -100,21 +100,24 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 func (d *Demo) Dashboard(_ context.Context, id string) (*DashboardView, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	// Layout coords (x,y,width,height) mirror a real Datadog grid so the
+	// TUI grid renderer has something to arrange: two columns × three rows.
 	widgets := []struct {
 		title, typ, query string
 		base, amp         float64
 		data              bool
+		x, y, w, h        int
 	}{
-		{"Request rate", "timeseries", "sum:kong.requests{*}.as_rate()", 1200, 300, true},
-		{"5xx rate", "timeseries", "sum:kong.http.5xx{*}.as_rate()", 12, 20, true},
-		{"p99 latency (ms)", "query_value", "p99:trace.http.request.duration{*}", 640, 120, true},
-		{"CPU %", "timeseries", "avg:system.cpu.user{*}", 55, 30, true},
-		{"Pod restarts", "toplist", "sum:kubernetes.containers.restarts{*}", 3, 4, true},
-		{"Deploy notes", "note", "", 0, 0, false},
+		{"Request rate", "timeseries", "sum:kong.requests{*}.as_rate()", 1200, 300, true, 0, 0, 6, 2},
+		{"5xx rate", "timeseries", "sum:kong.http.5xx{*}.as_rate()", 12, 20, true, 6, 0, 6, 2},
+		{"p99 latency (ms)", "query_value", "p99:trace.http.request.duration{*}", 640, 120, true, 0, 2, 4, 2},
+		{"CPU %", "timeseries", "avg:system.cpu.user{*}", 55, 30, true, 4, 2, 8, 2},
+		{"Pod restarts", "toplist", "sum:kubernetes.containers.restarts{*}", 3, 4, true, 0, 4, 6, 2},
+		{"Deploy notes", "note", "", 0, 0, false, 6, 4, 6, 2},
 	}
 	view := &DashboardView{Title: "SRE Overview (" + id + ")"}
 	for _, w := range widgets {
-		wd := Widget{Title: w.title, Type: w.typ, Query: w.query}
+		wd := Widget{Title: w.title, Type: w.typ, Query: w.query, X: w.x, Y: w.y, W: w.w, H: w.h}
 		if w.data {
 			pts := make([]float64, 30)
 			for i := range pts {
@@ -143,18 +146,52 @@ func (d *Demo) FetchDetail(_ context.Context, key, id string) (any, error) {
 			"full_object": true,
 			"note":        "demo: in live mode this is the complete object fetched on demand (widgets, options, timeline …)",
 		}, nil
+	case "slos":
+		// Deterministic-ish fake attainment so the error-budget detail is
+		// demoable: derive from the id so it's stable across refreshes.
+		att := 99.0 + float64(len(id)%10)/10.0 // 99.0–99.9
+		target := 99.5
+		remaining := 100.0
+		if att < target {
+			remaining = 100 - (target-att)/(100-target)*100
+		}
+		return map[string]any{
+			"name": id, "type": "metric", "target_pct": target,
+			"timeframe_days": 30, "attainment_pct": att,
+			"error_budget_remaining_pct": remaining, "meeting_target": att >= target,
+		}, nil
 	}
 	return nil, nil
 }
 
+// SetMonitorMute is a no-op success in demo mode (state flips locally so the
+// mute/unmute flow is exercisable offline).
+func (d *Demo) SetMonitorMute(_ context.Context, id string, mute bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for i := range d.mons {
+		if fmt.Sprintf("%d", d.mons[i].id) == id {
+			if mute {
+				d.mons[i].state = "Ignored"
+			} else {
+				d.mons[i].state = "OK"
+			}
+		}
+	}
+	return nil
+}
+
 func (d *Demo) monitors() []Row {
 	// Jitter: occasionally flip a monitor state so refreshes are visible.
+	// Muted ("Ignored") monitors are sticky — a mute isn't undone by jitter.
 	if i := d.rnd.Intn(len(d.mons) * 3); i < len(d.mons) {
 		switch d.mons[i].state {
 		case "OK":
 			d.mons[i].state = "Warn"
 		case "Warn":
 			d.mons[i].state = "Alert"
+		case "Ignored":
+			// leave muted monitors muted
 		default:
 			d.mons[i].state = "OK"
 		}

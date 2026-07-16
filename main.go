@@ -70,6 +70,17 @@ func main() {
 		if err != nil {
 			fatal(err.Error())
 		}
+		// The config file can set refresh-interval; an explicit --refresh
+		// flag still wins.
+		refreshSet := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "refresh" {
+				refreshSet = true
+			}
+		})
+		if !refreshSet {
+			opts.Refresh = cfg.Refresh(*refresh)
+		}
 		if *site != "" {
 			if c, ok := cfg.Contexts["default"]; ok && len(cfg.Contexts) == 1 {
 				c.Site = *site
