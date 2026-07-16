@@ -19,7 +19,11 @@ jobs:
           go-version: stable
       - uses: goreleaser/goreleaser-action@v6
         with:
-          args: release --clean
+          # --parallelism 1: build the four cross targets one at a time. The
+          # datadog-api-client-go dependency is huge; compiling all four in
+          # parallel spikes memory enough to wedge the 7GB hosted runner
+          # (fails as "runner received a shutdown signal", not a clean OOM).
+          args: release --clean --parallelism 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
