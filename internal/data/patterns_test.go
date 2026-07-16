@@ -45,3 +45,16 @@ func TestNormalizeLog(t *testing.T) {
 		}
 	}
 }
+
+func TestErrorIsRateLimit(t *testing.T) {
+	if !ErrorIsRateLimit(apiErr("logs", errString("429 Too Many Requests"))) {
+		t.Error("429 error should be detected as rate limit")
+	}
+	if ErrorIsRateLimit(apiErr("logs", errString("500 Internal Server Error"))) {
+		t.Error("500 should not be a rate limit")
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }

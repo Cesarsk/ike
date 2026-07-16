@@ -1004,13 +1004,37 @@ func toInt(v any) int {
 	return 0
 }
 
+// ErrRateLimited marks a 429 so the UI can back off (pause auto-refresh)
+// instead of hammering the org's shared budget. Detected via ErrorIsRateLimit.
+const rateLimitPhrase = "rate limit exceeded"
+
 func apiErr(what string, err error) error {
 	if oe, ok := err.(datadog.GenericOpenAPIError); ok && len(oe.Body()) > 0 {
 		body := string(oe.Body())
 		if len(body) > 200 {
 			body = body[:200]
 		}
+		if is429(err.Error(), body) {
+			return fmt.Errorf("%s: %s — Datadog is throttling this org (shared budget); ike auto-pauses auto-refresh, use ctrl-r sparingly", what, rateLimitPhrase)
+		}
 		return fmt.Errorf("%s: %s — %s", what, err.Error(), body)
 	}
+	if is429(err.Error(), "") {
+		return fmt.Errorf("%s: %s", what, rateLimitPhrase)
+	}
 	return fmt.Errorf("%s: %w", what, err)
+}
+
+func is429(msgs ...string) bool {
+	for _, m := range msgs {
+		if strings.Contains(m, "429") || strings.Contains(strings.ToLower(m), "too many requests") {
+			return true
+		}
+	}
+	return false
+}
+
+// ErrorIsRateLimit reports whether an error came from a 429 throttle.
+func ErrorIsRateLimit(err error) bool {
+	return err != nil && strings.Contains(err.Error(), rateLimitPhrase)
 }

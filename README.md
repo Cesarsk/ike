@@ -121,6 +121,8 @@ contexts:
 | `esc` | go back to the previous view (k9s-style navigation history); clears the active filter |
 | `l` | **drill down to logs** — from a monitor (its log query / `service:`,`env:` tags) or from a trace/span (that trace's logs); `esc` returns |
 | `t` | **drill down to the trace waterfall** — from a log or span, opens the distributed trace (span tree with duration bars) for that row's `trace_id`; needs APM log-injection, else a clear "no trace_id" (on SLOs, `t` is the type filter) |
+| `P` | (logs) **cluster the loaded lines into patterns** — flood triage, zero extra API |
+| `↑`/`↓` | (in the `/` prompt) recall previous queries for this view |
 | `r` | on an incident: **change its state** (active/stable/resolved) — behind a confirmation |
 | `m` | on a monitor: **mute / unmute** (toggles based on current state, via the monitor's `silenced` option, read-modify-write) — behind a confirmation. Mute status shows in the **MUTED** column, independent of alert state |
 | `c` | **copy** the selected row's web URL (or log query / id) to the clipboard |

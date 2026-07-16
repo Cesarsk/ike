@@ -90,6 +90,20 @@ func TestAppSmoke(t *testing.T) {
 	typeRunes(sim, "1")
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
+	// Query history: submit a second query, then ↑ in the prompt recalls the
+	// previous one and re-submitting it restores that view. ctrl-u clears the
+	// prefilled current query before typing a fresh one.
+	typeRunes(sim, "/")
+	press(sim, tcell.KeyCtrlU) // clear prefilled "status:error"
+	typeRunes(sim, "service:vault")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Logs(service:vault · 15m)")
+	typeRunes(sim, "/")     // reopen prompt (prefilled with current "service:vault")
+	press(sim, tcell.KeyUp) // ↑ → most-recent history entry ("service:vault")
+	press(sim, tcell.KeyUp) // ↑ → older entry ("status:error")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Logs(status:error · 15m)")
+
 	// Correlation: 't' on an error log (which carries a trace_id in demo)
 	// opens the trace waterfall; 'l' from the trace jumps to that trace's
 	// logs; esc pops back to the logs view. This is the debugging loop.

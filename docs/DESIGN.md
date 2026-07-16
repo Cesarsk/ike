@@ -99,20 +99,21 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
 
 ## Roadmap
 
-1. `x` = set/replace credentials on an existing context — needed for token
-   rotation (access tokens expire ~1h) and keychain-service-rename recovery;
-   today the only path is delete + re-add.
-2. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
-3. Incident → linked monitors/logs drill-down (monitor→logs `l`, log/span↔trace
-   `t`/`l` shipped).
-4. Richer incident actions: add timeline note, change severity, assign
-   commander (beyond the state change already shipped).
-5. Bulk select + act (mute N monitors / resolve N incidents) behind one
-   confirm; logs "load more" beyond the 100-row cap and surrounding-context
-   from a selected line.
-6. Hardened incidents field mapping (union types; verify against live org).
-7. Live tail emulation for logs: bounded polling loop with visible budget
-   spend (there is no public streaming API).
+Near-term (Tier 2 — deferred from the 2026-07-16 push, next up):
+1. **APM services** view (`:services`) — health/latency/error-rate; enter → traces.
+2. **Downtimes** view — see/cancel scheduled mutes (completes `m`).
+3. Live log tail (bounded polling) + log → surrounding-context (±N min, same host).
+4. Richer incident verbs: timeline note, change severity, assign commander.
+
+UX polish (rest of Tier 3 — deferred as bigger / config-schema changes):
+5. Saved queries per context; column customization (choose/reorder). A
+   dedicated command palette is largely covered by `:`-autocomplete already.
+
+Longer-term:
+6. `x` = set/replace credentials on an existing context (token rotation ~1h).
+7. OAuth2 + PKCE device flow (the pup approach) as a keys-free alternative.
+8. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
+9. Hardened incidents field mapping (union types; verify against live org).
 8. Per-resource TTL overrides and skins in the config file.
 
 Deferred deliberately (unverifiable-write-heavy or lower ROI than the above):
@@ -134,6 +135,9 @@ read-modify-write on `silenced`), ~~SLO attainment + error budget~~ (on
 ~~log time-range~~ (`1`–`5`), ~~glanceable budget header~~, ~~monitor MUTED
 column~~, ~~traces view + APM span search~~ (`:traces`), ~~log⇄trace
 correlation~~ (`t` → trace waterfall reconstructed from spans; `l` → the
+trace's logs), ~~events feed~~ (`:events`), ~~metric-behind-a-monitor~~ (detail
+sparkline), ~~log patterns~~ (`P`, zero-API clustering), ~~query history~~ (↑
+in the prompt), ~~429 rate-limit backoff~~ (auto-pauses auto-refresh).
 trace's logs).
 
 ## Traces & correlation

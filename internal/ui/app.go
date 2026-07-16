@@ -106,8 +106,10 @@ type App struct {
 	// filtered rows by that column, direction sortAsc.
 	sortCol    int
 	sortAsc    bool
-	queries    map[string]string // per-resource server-side query (logs)
-	logRangeIx int               // index into logRanges for the Logs time window
+	queries    map[string]string   // per-resource server-side query (logs)
+	history    map[string][]string // per-resource submitted-query history (↑/↓ recall)
+	histIdx    int                 // cursor into the current resource's history
+	logRangeIx int                 // index into logRanges for the Logs time window
 	fetchedAt  time.Time
 	loading    bool
 	paused     bool // auto-refresh paused (toggled with 'p')
@@ -156,6 +158,7 @@ func New(o Options) (*App, error) {
 		current:      o.Current,
 		refreshEvery: o.Refresh,
 		queries:      map[string]string{},
+		history:      map[string][]string{},
 	}
 	a.build()
 	if startErr != nil {
@@ -356,7 +359,7 @@ func (a *App) setHints() {
 		case "incidents":
 			lines = append(lines, "[gray]<r>change state  quick: <1>active <2>stable <3>resolved <0>all  <s>sort")
 		case "logs":
-			lines = append(lines, "[gray]</>query (tab=complete)  <t>trace  <P>patterns  window: <1>15m..<5>7d")
+			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <P>patterns  window: <1>15m..<5>7d")
 		case "traces":
 			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  window: <1>15m..<5>7d  <s>sort")
 		case "events":
@@ -424,6 +427,11 @@ func (a *App) buildHelp() tview.Primitive {
 
 func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	if a.GetFocus() == a.prompt {
+		// ↑/↓ recall previously submitted queries/filters for this resource.
+		if a.promptM == promptFilter && (ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown) {
+			a.recallHistory(ev.Key() == tcell.KeyUp)
+			return nil
+		}
 		return ev
 	}
 	switch a.page {
@@ -891,6 +899,7 @@ func (a *App) openPrompt(m promptMode) {
 		a.prompt.SetLabel(" /")
 	}
 	a.prompt.SetText(prefill)
+	a.histIdx = len(a.history[a.res.Key]) // ↑ starts at the most recent entry
 	a.footer.SwitchToPage("prompt")
 	a.SetFocus(a.prompt)
 }
@@ -926,6 +935,7 @@ func (a *App) promptDone(key tcell.Key) {
 	case promptCmd:
 		a.execCommand(text)
 	case promptFilter:
+		a.recordHistory(text)
 		if a.res.ServerQuery {
 			a.queries[a.res.Key] = text
 			a.load(true)
@@ -934,6 +944,45 @@ func (a *App) promptDone(key tcell.Key) {
 			a.applyFilter()
 		}
 	}
+}
+
+// recordHistory appends a submitted query/filter to this resource's history
+// (skipping empties and consecutive duplicates), capped to the last 50.
+func (a *App) recordHistory(text string) {
+	if text == "" {
+		return
+	}
+	h := a.history[a.res.Key]
+	if len(h) > 0 && h[len(h)-1] == text {
+		return
+	}
+	h = append(h, text)
+	if len(h) > 50 {
+		h = h[len(h)-50:]
+	}
+	a.history[a.res.Key] = h
+}
+
+// recallHistory moves the history cursor and puts that entry in the prompt.
+func (a *App) recallHistory(up bool) {
+	h := a.history[a.res.Key]
+	if len(h) == 0 {
+		return
+	}
+	if up {
+		a.histIdx--
+	} else {
+		a.histIdx++
+	}
+	switch {
+	case a.histIdx < 0:
+		a.histIdx = 0
+	case a.histIdx >= len(h): // past the newest → empty draft line
+		a.histIdx = len(h)
+		a.prompt.SetText("")
+		return
+	}
+	a.prompt.SetText(h[a.histIdx])
 }
 
 func (a *App) execCommand(cmd string) {
@@ -1607,6 +1656,13 @@ func (a *App) load(force bool) {
 			}
 			if err != nil {
 				a.flash("✗ "+err.Error(), true)
+				// A 429 means the org's shared budget is exhausted — stop the
+				// auto-refresh timer from making it worse.
+				if data.ErrorIsRateLimit(err) && !a.paused {
+					a.paused = true
+					a.setHints()
+					slog.Warn("auto-refresh paused: rate limited")
+				}
 				if rows == nil {
 					return
 				}
