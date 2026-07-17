@@ -132,7 +132,7 @@ contexts:
 
 | Key | Action |
 |-----|--------|
-| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:traces` `:events` `:downtimes` `:dashboards` |
+| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:traces` `:events` `:downtimes` `:dashboards` `:ctx` `:settings` |
 | `:ctx` | list org contexts; `enter` switches, `a` adds (keys/token → OS keychain), `e` edits the config in `$EDITOR`, `ctrl-d` deletes |
 | `/` | filter rows; in **Logs** this is a Datadog search query sent to the API, with **autocomplete** for facet keys, operators, and values seen in the current results (`tab`/`enter` accepts, then keep typing; a second `enter` submits) |
 | `enter` | detail — full object on demand for monitors/incidents; on an **SLO**, its live **attainment + error budget**; on a **dashboard**, its widgets rendered as a **grid** of sparklines matching the Datadog layout (`ctrl-r` refreshes) |
@@ -140,6 +140,7 @@ contexts:
 | `l` | **drill down to logs** — from a monitor (its log query / `service:`,`env:` tags) or from a trace/span (that trace's logs); `esc` returns |
 | `t` | **drill down to the trace waterfall** — from a log or span, opens the distributed trace (span tree with duration bars) for that row's `trace_id`; needs APM log-injection, else a clear "no trace_id" (on SLOs, `t` is the type filter) |
 | `P` | (logs) **cluster the loaded lines into patterns** — flood triage, zero extra API |
+| `Q` | (logs/traces/events) **saved-query picker** — `enter` applies, `a` saves the current query, `d` deletes; per-context, persisted |
 | `↑`/`↓` | (in the `/` prompt) recall previous queries for this view |
 | `r` | on an incident: **change its state** (active/stable/resolved) — behind a confirmation |
 | `v` | on an incident: **change its severity** (SEV-1…SEV-5) — behind a confirmation |
@@ -159,6 +160,12 @@ contexts:
 
 Auto-refresh interval is configurable: `--refresh 45s` (or `0` to disable), or
 `refresh-interval: 45s` in the config file; `p` pauses/resumes at runtime.
+
+**Customization** — `:settings` edits the theme (`default`/`mono`/`nord`/
+`solarized`), per-view cache TTLs, and per-view columns; changes apply live and
+save to the config file. The same keys live under `theme:`, `ttl-overrides:`
+and `columns:` in the config if you'd rather hand-edit. See the
+[User Manual](docs/MANUAL.md#settings-view).
 
 ## Rate limits are a feature, not a footnote
 

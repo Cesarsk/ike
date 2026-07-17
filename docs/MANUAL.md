@@ -127,6 +127,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Downtimes** | `:downtimes` `:dt` `:mutes` | Scheduled/active monitor mutes: status, scope, message, created. |
 | **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified. |
 | **Contexts** | `:ctx` | Your Datadog orgs — switch, add, edit, delete (see [contexts](#multiple-orgs-contexts--auth)). |
+| **Settings** | `:settings` | Theme, per-view cache TTLs and columns — edited live (see [settings](#settings-view)). |
 
 ### Per-view keys
 
@@ -297,6 +298,25 @@ the error rather than blanking mid-incident.
 | `↑` `↓` | `/` prompt | query history |
 
 **Contexts (`:ctx`)** — `enter` switch · `a` add · `e` edit config · `ctrl-d` delete.
+
+---
+
+## Settings view
+
+`:settings` opens an in-app editor for the customizations that would otherwise
+live in the config file. Every change **applies live and is saved back to the
+config** — no restart:
+
+- **Theme** — `enter` on the Theme row cycles `default → mono → nord →
+  solarized`; the whole UI recolours immediately.
+- **TTL · `<view>`** — `enter` prompts for a cache TTL (a Go duration like
+  `120s`; blank clears back to the built-in default).
+- **Columns · `<view>`** — `enter` prompts for a comma-separated column list
+  (e.g. `STATE,NAME,TAGS`; blank shows all). See the column names table below.
+
+`esc` returns to where you were. These same settings can still be hand-edited
+in the config file (below) — `:settings` is just the interactive front end.
+Saved queries are managed separately, per view, with the `Q` picker.
 
 ---
 

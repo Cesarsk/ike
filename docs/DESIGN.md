@@ -182,7 +182,9 @@ cesarsk/tap/ike`; goreleaser builds serialized to avoid runner OOM, formula in
 polish~~: ~~per-resource TTL overrides~~ (`ttl-overrides`), ~~column
 customization~~ (`columns`, display-only projection), ~~themes/skins~~ (`theme`:
 default/mono/nord/solarized), ~~saved queries per context~~ (`Q` picker —
-save/apply/delete, persisted per context).
+save/apply/delete, persisted per context), ~~`:settings` editor~~ (theme +
+per-view TTL + columns edited live and saved to config; theme re-applied at
+runtime via `applyTheme`).
 
 ## Traces & correlation
 

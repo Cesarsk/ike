@@ -30,6 +30,17 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "Monitors(all)")
 	waitFor(t, sim, "Kong data plane 5xx")
 
+	// Settings editor: :settings lists settings; the Theme row is selected on
+	// open and enter cycles the theme live (default → mono → nord); esc returns.
+	typeCmd(sim, ":settings")
+	waitFor(t, sim, "enter cycles") // settings-only text: the page is open
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "theme: mono")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "theme: nord")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Monitors(all)")
+
 	// Command mode: switch to every registered resource.
 	typeCmd(sim, ":incidents")
 	waitFor(t, sim, "Incidents(all)")

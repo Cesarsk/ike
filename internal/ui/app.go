@@ -28,6 +28,7 @@ const (
 	promptCmd
 	promptFilter
 	promptSaveQuery // naming the current query for the 'Q' picker
+	promptSettings  // typing a TTL/columns value in the :settings editor
 )
 
 // ContextInfo describes one selectable Datadog org context for the :ctx view.
@@ -80,6 +81,9 @@ type Options struct {
 	SavedQueries func(context string) []SavedQuery
 	SaveQuery    func(context, name, view, query string) error
 	DeleteQuery  func(context, name, view string) error
+	// SaveSettings persists the theme + per-view TTL overrides + columns edited
+	// in :settings back to the config file (nil = don't persist, e.g. demo).
+	SaveSettings func(theme string, ttl map[string]string, columns map[string][]string) error
 }
 
 // ctxResource is the :ctx pseudo-resource. It is rendered like any table but
@@ -120,6 +124,10 @@ type App struct {
 	savedQV   string       // view the open picker is scoped to
 	savedQIt  []SavedQuery // items backing the picker, by list index
 	pendSaveQ string       // query pending a name (save prompt in flight)
+
+	settingsTbl *tview.Table // the :settings editor
+	settingRows []settingRow // editable settings, indexed by table data row
+	editingSet  int          // settingRows index being edited (prompt in flight)
 
 	res      data.Resource
 	rows     []data.Row
@@ -199,6 +207,35 @@ func New(o Options) (*App, error) {
 	return a, nil
 }
 
+// applyTheme (re)applies the current palette's structural colours to every
+// long-lived widget. Called from build() and whenever the theme changes at
+// runtime (via :settings), so a theme switch takes effect without a restart.
+func (a *App) applyTheme() {
+	sel := tcell.StyleDefault.Background(a.theme.SelectBg).Foreground(a.theme.SelectFg)
+	a.table.SetBorderColor(a.theme.Border)
+	a.table.SetTitleColor(a.theme.Title)
+	a.table.SetSelectedStyle(sel)
+	a.prompt.SetLabelColor(a.theme.Label)
+	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
+	a.prompt.SetFieldTextColor(a.theme.FieldFg)
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns} {
+		tv.SetBorderColor(a.theme.Border)
+		tv.SetTitleColor(a.theme.Title)
+	}
+	a.savedQL.SetBorderColor(a.theme.Border)
+	a.savedQL.SetTitleColor(a.theme.Title)
+	a.ctxForm.SetTitleColor(a.theme.Title)
+	a.ctxForm.SetBorderColor(a.theme.Border)
+	a.ctxForm.SetFieldBackgroundColor(a.theme.FieldBg)
+	a.ctxForm.SetButtonBackgroundColor(a.theme.Button)
+	a.ctxForm.SetLabelColor(a.theme.Label)
+	if a.settingsTbl != nil {
+		a.settingsTbl.SetBorderColor(a.theme.Border)
+		a.settingsTbl.SetTitleColor(a.theme.Title)
+		a.settingsTbl.SetSelectedStyle(sel)
+	}
+}
+
 func (a *App) build() {
 	a.theme = ResolveTheme(a.opts.Theme)
 	a.infoTV = tview.NewTextView().SetDynamicColors(true)
@@ -212,15 +249,9 @@ func (a *App) build() {
 		SetFixed(1, 0).
 		SetSelectable(true, false)
 	a.table.SetBorder(true)
-	a.table.SetBorderColor(a.theme.Border)
-	a.table.SetTitleColor(a.theme.Title)
-	a.table.SetSelectedStyle(tcell.StyleDefault.Background(a.theme.SelectBg).Foreground(a.theme.SelectFg))
 	a.table.SetSelectedFunc(func(row, _ int) { a.openDetail(row) })
 
-	a.prompt = tview.NewInputField().
-		SetLabelColor(a.theme.Label).
-		SetFieldBackgroundColor(a.theme.FieldBg).
-		SetFieldTextColor(a.theme.FieldFg)
+	a.prompt = tview.NewInputField()
 	a.prompt.SetDoneFunc(a.promptDone)
 	a.prompt.SetChangedFunc(func(text string) {
 		if a.promptM == promptFilter && !a.res.ServerQuery {
@@ -270,40 +301,29 @@ func (a *App) build() {
 
 	a.detail = tview.NewTextView().SetWrap(false)
 	a.detail.SetBorder(true)
-	a.detail.SetBorderColor(a.theme.Border)
-	a.detail.SetTitleColor(a.theme.Title)
 
 	a.dash = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.dash.SetBorder(true)
-	a.dash.SetBorderColor(a.theme.Border)
-	a.dash.SetTitleColor(a.theme.Title)
 
 	a.trace = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.trace.SetBorder(true)
-	a.trace.SetBorderColor(a.theme.Border)
-	a.trace.SetTitleColor(a.theme.Title)
 
 	a.patterns = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.patterns.SetBorder(true)
-	a.patterns.SetBorderColor(a.theme.Border)
-	a.patterns.SetTitleColor(a.theme.Title)
 
 	a.savedQL = tview.NewList().ShowSecondaryText(true)
 	a.savedQL.SetBorder(true)
-	a.savedQL.SetBorderColor(a.theme.Border)
-	a.savedQL.SetTitleColor(a.theme.Title)
 	a.savedQL.SetMainTextColor(tcell.ColorWhite)
 	a.savedQL.SetSecondaryTextColor(tcell.ColorGray)
 	a.savedQL.SetSelectedFunc(func(i int, _, _ string, _ rune) { a.applySavedQuery(i) })
 
+	a.settingsTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
+	a.settingsTbl.SetBorder(true)
+	a.settingsTbl.SetSelectedFunc(func(row, _ int) { a.editSetting(row) })
+
 	a.ctxForm = tview.NewForm()
 	a.ctxForm.SetBorder(true)
 	a.ctxForm.SetTitle(" Add context ")
-	a.ctxForm.SetTitleColor(a.theme.Title)
-	a.ctxForm.SetBorderColor(a.theme.Border)
-	a.ctxForm.SetFieldBackgroundColor(a.theme.FieldBg)
-	a.ctxForm.SetButtonBackgroundColor(a.theme.Button)
-	a.ctxForm.SetLabelColor(a.theme.Label)
 
 	a.confirm = tview.NewModal()
 
@@ -331,6 +351,7 @@ func (a *App) build() {
 		AddPage("trace", a.trace, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("savedq", a.savedQL, true, false).
+		AddPage("settings", a.settingsTbl, true, false).
 		AddPage("help", a.buildHelp(), true, false).
 		AddPage("ctxform", ctxFormFlex, true, false).
 		AddPage("confirm", a.confirm, true, false)
@@ -341,6 +362,7 @@ func (a *App) build() {
 		AddItem(a.content, 0, 1, true).
 		AddItem(a.footer, 1, 0, false)
 
+	a.applyTheme() // single-source the palette onto every widget
 	a.SetInputCapture(a.keys)
 	a.SetRoot(main, true).EnableMouse(true)
 	a.setHints()
@@ -387,7 +409,7 @@ func (a *App) setHints() {
 			"[aqua]<:>[white]cmd  [aqua]</>[white]filter  [aqua]<enter>[white]details  [aqua]<o>[white]open  [aqua]<c>[white]copy",
 			fmt.Sprintf("[aqua]<ctrl-r>[white]refresh  [aqua]<p>[white]auto:%s  [aqua]<esc>[white]back  [aqua]<?>[white]help  [aqua]<q>[white]quit", refresh),
 			"",
-			"[orange]:monitors :incidents :slos :logs :traces :events :downtimes :dashboards :ctx",
+			"[orange]:monitors :incidents :slos :logs :traces :events :downtimes :dashboards :ctx :settings",
 		}
 		switch a.res.Key {
 		case "monitors":
@@ -419,7 +441,7 @@ func (a *App) buildHelp() tview.Primitive {
 	fmt.Fprint(tv, a.theme.recolor(`
  [orange]NAVIGATION
    [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces events
-                 downtimes dashboards (aliases: mon inc s l tr ev dt d) — or :ctx
+                 downtimes dashboards (aliases: mon inc s l tr ev dt d) — or :ctx / :settings
    [aqua]enter[white]         detail — full object on demand; SLO error budget; monitor metric
                  sparkline; on a dashboard its widget grid; on logs/traces a row
    [aqua]esc[white]           go back (navigation history, k9s-style); clears the active filter
@@ -458,6 +480,7 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]ctrl-d[white]        delete the selected context (asks first)
 
  [orange]OTHER
+   [aqua]:settings[white]     theme, per-view cache TTLs and columns — applies live + saved to config
    [aqua]?[white]             this help (from any view)
    [aqua]q[white]             back in detail/help; quit from a table view
    [aqua]ctrl-c[white]        quit — press twice to confirm (also :q :quit :exit)
@@ -595,6 +618,16 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		return ev // the List handles ↑/↓ and enter (apply)
+	case "settings":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		}
+		return ev // the table handles ↑/↓ and enter (edit)
 	case "trace":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
@@ -984,6 +1017,12 @@ func (a *App) openPrompt(m promptMode) {
 		a.prompt.SetLabel(" 🐶 > ")
 	case m == promptSaveQuery:
 		a.prompt.SetLabel(" save query as> ") // empty field: type a name
+	case m == promptSettings:
+		if a.editingSet >= 0 && a.editingSet < len(a.settingRows) {
+			s := a.settingRows[a.editingSet]
+			a.prompt.SetLabel(" " + s.label + "> ")
+			prefill = a.settingRawValue(s)
+		}
 	case a.res.ServerQuery:
 		a.prompt.SetLabel(" query> ")
 		prefill = a.queries[a.res.Key] // edit the current query, don't retype
@@ -1007,6 +1046,8 @@ func (a *App) closePrompt() {
 		a.SetFocus(a.detail)
 	case "savedq":
 		a.SetFocus(a.savedQL)
+	case "settings":
+		a.SetFocus(a.settingsTbl)
 	default:
 		a.SetFocus(a.table)
 	}
@@ -1053,6 +1094,8 @@ func (a *App) promptDone(key tcell.Key) {
 		if a.page == "savedq" {
 			a.refreshSavedQueries()
 		}
+	case promptSettings:
+		a.applySettingInput(text)
 	}
 }
 
@@ -1111,11 +1154,15 @@ func (a *App) execCommand(cmd string) {
 		a.showContexts()
 		return
 	}
+	if cmd == "settings" || cmd == "set" || cmd == "config" {
+		a.showSettings()
+		return
+	}
 	if res, ok := data.ResourceByAlias(cmd); ok {
 		a.switchResource(res)
 		return
 	}
-	a.flash(fmt.Sprintf("unknown command %q — try :monitors :incidents :slos :logs :dashboards :ctx", cmd), true)
+	a.flash(fmt.Sprintf("unknown command %q — try :monitors :incidents :slos :logs :dashboards :ctx :settings", cmd), true)
 }
 
 // drillToLogs is the k9s killer feature: from a monitor, jump straight to
@@ -1527,6 +1574,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.patterns)
 	case "savedq":
 		a.SetFocus(a.savedQL)
+	case "settings":
+		a.SetFocus(a.settingsTbl)
 	case "ctxform":
 		a.SetFocus(a.ctxForm)
 	default:

@@ -144,6 +144,12 @@ func main() {
 			cfg.DeleteQuery(ctxName, name, view)
 			return cfg.Save(config.Path())
 		}
+		opts.SaveSettings = func(theme string, ttl map[string]string, columns map[string][]string) error {
+			cfg.Theme = theme
+			cfg.TTLOverrides = ttl
+			cfg.Columns = columns
+			return cfg.Save(config.Path())
+		}
 		for _, n := range cfg.Names() {
 			opts.Contexts = append(opts.Contexts, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n])})
 		}
