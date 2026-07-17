@@ -198,6 +198,16 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape) // traces → logs (earlier in the stack)
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
+	// Services view: APM service health table; enter on the busiest row drills
+	// to its traces (services ▸ traces ▸ logs loop).
+	typeCmd(sim, ":services")
+	waitFor(t, sim, "Services(")
+	waitFor(t, sim, "postgres") // demo's busiest service, top row
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Traces(service:postgres")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Services(")
+
 	// Quick filter + client-side filter on monitors.
 	typeCmd(sim, ":monitors")
 	waitFor(t, sim, "Monitors(all)")

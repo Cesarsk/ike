@@ -189,6 +189,12 @@ func Resources() []Resource {
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 		},
 		{
+			Key: "services", Title: "Services",
+			Aliases: []string{"services", "service", "svc"},
+			Columns: []string{"SERVICE", "REQUESTS", "ERR%", "P95"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+		},
+		{
 			Key: "events", Title: "Events",
 			Aliases: []string{"events", "event", "ev"},
 			Columns: []string{"TIME", "TYPE", "SOURCE", "TITLE", "TAGS"},

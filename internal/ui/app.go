@@ -416,7 +416,7 @@ func (a *App) setHints() {
 			"[aqua]<:>[white]cmd  [aqua]</>[white]filter  [aqua]<enter>[white]details  [aqua]<o>[white]open  [aqua]<c>[white]copy  [aqua]<C>[white]cols",
 			fmt.Sprintf("[aqua]<ctrl-r>[white]refresh  [aqua]<p>[white]auto:%s  [aqua]<esc>[white]back  [aqua]<?>[white]help  [aqua]<q>[white]quit", refresh),
 			"",
-			"[orange]:monitors :incidents :slos :logs :traces :events :downtimes :dashboards :ctx :settings",
+			"[orange]:monitors :incidents :slos :logs :traces :services :events :downtimes :dashboards :ctx :settings",
 		}
 		switch a.res.Key {
 		case "monitors":
@@ -431,6 +431,8 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <P>patterns  <Q>saved  window: <1>15m..<5>7d")
 		case "traces":
 			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  <Q>saved  window: <1>15m..<5>7d")
+		case "services":
+			lines = append(lines, "[gray]<enter>traces for service  </>query (e.g. env:prod)  window: <1>15m..<5>7d  <s>sort")
 		case "events":
 			lines = append(lines, "[gray]</>query  <Q>saved  window: <1>15m..<5>7d  <s>sort   (deploys, alerts, changes)")
 		case ctxResource.Key:
@@ -447,8 +449,8 @@ func (a *App) buildHelp() tview.Primitive {
 	tv.SetBorder(true).SetTitle(" Help ").SetTitleColor(a.theme.Title)
 	fmt.Fprint(tv, a.theme.recolor(`
  [orange]NAVIGATION
-   [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces events
-                 downtimes dashboards (aliases: mon inc s l tr ev dt d) — or :ctx / :settings
+   [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces services
+                 events downtimes dashboards (aliases: mon inc s l tr svc ev dt d) — :ctx / :settings
    [aqua]enter[white]         detail — full object on demand; SLO error budget; monitor metric
                  sparkline; on a dashboard its widget grid; on logs/traces a row
    [aqua]esc[white]           go back (navigation history, k9s-style); clears the active filter
@@ -467,6 +469,7 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]Q[white]             (logs/traces/events) saved-query picker — [aqua]enter[white] apply, [aqua]a[white] save, [aqua]d[white] delete
 
  [orange]CORRELATION (the debugging loop)
+   [aqua]enter[white]         (service) → its traces (service:<name>) — services ▸ traces ▸ logs
    [aqua]l[white]             drill to logs — (monitor) its log query; (trace) that trace's logs
    [aqua]t[white]             drill to the trace waterfall — (logs/traces) the row's trace_id;
                  needs APM log-injection, else a clear "no trace_id"
@@ -739,7 +742,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.quickFilter(ev.Rune())
 			return nil
 		}
-		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" {
+		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" || a.res.Key == "services" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -748,7 +751,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case '5':
-		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" {
+		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" || a.res.Key == "services" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -1258,6 +1261,17 @@ func (a *App) drillToTrace(r data.Row) {
 	a.pushNav()
 	a.detailRow = r
 	a.loadTrace(r.TraceID)
+}
+
+// drillToServiceTraces is enter on a Services row: open the traces view scoped
+// to that service (service:<name>) — the services → traces → logs loop.
+func (a *App) drillToServiceTraces(r data.Row) {
+	tr, ok := data.ResourceByAlias("traces")
+	if !ok {
+		return
+	}
+	a.queries["traces"] = "service:" + r.ID
+	a.switchResource(tr) // pushes nav, so esc returns to :services
 }
 
 // showPatterns clusters the currently-loaded log messages into templates
@@ -2480,6 +2494,10 @@ func (a *App) openDetail(tableRow int) {
 		a.pushNav()
 		a.detailRow = r
 		a.loadDashboard(r, false) // render widgets + sparklines instead of JSON
+		return
+	}
+	if a.res.Key == "services" {
+		a.drillToServiceTraces(r) // enter on a service → its traces (the loop)
 		return
 	}
 	a.pushNav()

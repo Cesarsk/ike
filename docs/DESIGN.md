@@ -123,31 +123,23 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
 
 ### Near-term (rest of Tier 2)
 
-2. **APM services** `:services` — design settled, API verified against
-   `datadog-api-client-go v2.62.0`:
-   - Source: `SpansApi.AggregateSpans`, **one call**, `group_by service` over a
-     time window (`APMApi.GetServiceList` returns names only — too thin).
-     Error rate via a **second** aggregate filtered to errors (errors/total).
-     TTL-cached, **no** auto-refresh (same discipline as logs/traces).
-   - Columns: `SERVICE | REQUESTS | ERR% | P95 | ENV`.
-   - `enter` → traces filtered `service:<name>` (deliberate deviation from
-     enter=detail — drills into the debugging loop); `/` filters name;
-     `1`–`5` sets the time window.
-3. **Live log tail** (bounded polling + backoff — must not blow the 300/h logs
+2. **Live log tail** (bounded polling + backoff — must not blow the 300/h logs
    budget) **+ log → surrounding-context** (±N min, same host; needs
    absolute-time-range plumbing through the fetch path).
-4. **Remaining incident verbs**: timeline note, assign commander. Unlike state
+3. **Remaining incident verbs**: timeline note, assign commander. Unlike state
    and severity (single-value field patches, shipped via `r`/`v`), these are
    add-a-note / relationship writes needing their own request shapes.
    Confirm-gated like every other write.
 
 ### Longer-term
 
-5. **Token rotation** on an existing context — folds into `ike auth login
+4. **Token rotation** on an existing context — folds into `ike auth login
    --context <existing>` (re-auth updates the keychain token in place), so no
    separate key/flow is needed once auth login lands.
-6. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
-7. Hardened incidents field mapping (union types; verify against a live org).
+5. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
+6. Hardened incidents field mapping (union types; verify against a live org).
+7. **`:services` ERR% error-filter** — the span error query (`status:error`) is
+   a best-effort guess pending live validation; confirm/adjust against a real org.
 
 ### Deferred deliberately
 
@@ -185,7 +177,9 @@ column picker: `space` show/hide + `J`/`K` reorder, live + saved), ~~themes/
 skins~~ (`theme`: default/mono/nord/solarized), ~~saved queries per context~~
 (`Q` picker — save/apply/delete, persisted per context), ~~`:settings` editor~~
 (theme + per-view TTL edited live and saved to config; theme re-applied at
-runtime via `applyTheme`).
+runtime via `applyTheme`), ~~APM services view~~ (`:services` — per-service
+requests/ERR%/p95 via three bounded `AggregateSpans` calls, `enter` → traces
+`service:<name>`; ERR% error-filter pending live validation).
 
 ## Traces & correlation
 

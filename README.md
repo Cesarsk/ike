@@ -26,8 +26,8 @@ drill down, `esc` to go back.
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-> **Status: real-org validated.** Eight views (monitors, incidents, SLOs,
-> logs, traces, events, downtimes, dashboards), log⇄trace correlation with a
+> **Status: real-org validated.** Nine views (monitors, incidents, SLOs,
+> logs, traces, services, events, downtimes, dashboards), log⇄trace correlation with a
 > unified request timeline, multi-org contexts, confirm-gated writes (mute
 > monitor, incident state + severity, cancel downtime), demo mode. New here?
 > The **[User Manual](docs/MANUAL.md)** is a full walkthrough. See also
@@ -132,7 +132,7 @@ contexts:
 
 | Key | Action |
 |-----|--------|
-| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:traces` `:events` `:downtimes` `:dashboards` `:ctx` `:settings` |
+| `:` | command mode — `:monitors` `:incidents` `:slos` `:logs` `:traces` `:services` `:events` `:downtimes` `:dashboards` `:ctx` `:settings` |
 | `:ctx` | list org contexts; `enter` switches, `a` adds (keys/token → OS keychain), `e` edits the config in `$EDITOR`, `ctrl-d` deletes |
 | `/` | filter rows; in **Logs** this is a Datadog search query sent to the API, with **autocomplete** for facet keys, operators, and values seen in the current results (`tab`/`enter` accepts, then keep typing; a second `enter` submits) |
 | `enter` | detail — full object on demand for monitors/incidents; on an **SLO**, its live **attainment + error budget**; on a **dashboard**, its widgets rendered as a **grid** of sparklines matching the Datadog layout (`ctrl-r` refreshes) |

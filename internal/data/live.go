@@ -132,6 +132,8 @@ func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, 
 		return l.dashboards(ctx)
 	case "traces":
 		return l.spans(ctx, query, timeRange)
+	case "services":
+		return l.services(ctx, query, timeRange)
 	case "events":
 		return l.events(ctx, query, timeRange)
 	case "downtimes":
@@ -897,6 +899,108 @@ func (l *Live) spans(ctx context.Context, query, timeRange string) ([]Row, error
 		})
 	}
 	return rows, nil
+}
+
+// servicesMaxRows caps how many services one aggregate returns (group-by limit).
+const servicesMaxRows = 50
+
+// servicesErrorQuery selects errored spans for the ERR% column. The exact span
+// error facet is not verifiable from the authoring sandbox — validate against a
+// live org and adjust here if error rates read as zero.
+const servicesErrorQuery = "status:error"
+
+// services builds a per-service health table (request count, error rate, p95
+// latency) from three bounded AggregateSpans calls over the window. Each call
+// uses a single compute so its value is read from the sole Computes entry
+// regardless of the auto-generated key; results merge by service, ordered by
+// volume. The error and p95 calls are best-effort (a failure degrades that
+// column, not the whole view).
+func (l *Live) services(ctx context.Context, query, timeRange string) ([]Row, error) {
+	if strings.TrimSpace(query) == "" {
+		query = "*"
+	}
+	if timeRange == "" {
+		timeRange = "now-15m"
+	}
+	reqs, err := l.aggSpansByService(ctx, query, timeRange, datadogV2.SPANSAGGREGATIONFUNCTION_COUNT, "")
+	if err != nil {
+		return nil, err
+	}
+	errFilter := servicesErrorQuery
+	if query != "*" {
+		errFilter = query + " " + servicesErrorQuery
+	}
+	errs, _ := l.aggSpansByService(ctx, errFilter, timeRange, datadogV2.SPANSAGGREGATIONFUNCTION_COUNT, "")
+	p95, _ := l.aggSpansByService(ctx, query, timeRange, datadogV2.SPANSAGGREGATIONFUNCTION_PERCENTILE_95, "@duration")
+
+	names := make([]string, 0, len(reqs))
+	for n := range reqs {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool { return reqs[names[i]] > reqs[names[j]] })
+
+	rows := make([]Row, 0, len(names))
+	for _, n := range names {
+		errPct := 0.0
+		if reqs[n] > 0 {
+			errPct = errs[n] / reqs[n] * 100
+		}
+		rows = append(rows, Row{
+			ID: n,
+			Cells: []string{
+				n,
+				strconv.FormatFloat(reqs[n], 'f', 0, 64),
+				fmt.Sprintf("%.1f%%", errPct),
+				FormatDuration(int64(p95[n] / 1000)), // ns → µs
+			},
+			URL: l.web + "/apm/services/" + n,
+		})
+	}
+	return rows, nil
+}
+
+// aggSpansByService runs one AggregateSpans grouped by service with a single
+// total compute (metric optional, e.g. "@duration" for percentiles) and returns
+// service → value, reading the sole entry in each bucket's Computes map.
+func (l *Live) aggSpansByService(ctx context.Context, query, timeRange string, agg datadogV2.SpansAggregationFunction, metric string) (map[string]float64, error) {
+	compute := datadogV2.SpansCompute{Aggregation: agg, Type: datadogV2.SPANSCOMPUTETYPE_TOTAL.Ptr()}
+	if metric != "" {
+		compute.Metric = datadog.PtrString(metric)
+	}
+	attrs := datadogV2.NewSpansAggregateRequestAttributes()
+	attrs.SetCompute([]datadogV2.SpansCompute{compute})
+	attrs.SetFilter(datadogV2.SpansQueryFilter{
+		Query: datadog.PtrString(query),
+		From:  datadog.PtrString(timeRange),
+		To:    datadog.PtrString("now"),
+	})
+	attrs.SetGroupBy([]datadogV2.SpansGroupBy{{Facet: "service", Limit: datadog.PtrInt64(servicesMaxRows)}})
+
+	data := datadogV2.NewSpansAggregateData()
+	data.SetAttributes(*attrs)
+	data.SetType(datadogV2.SPANSAGGREGATEREQUESTTYPE_AGGREGATE_REQUEST)
+	body := datadogV2.NewSpansAggregateRequest()
+	body.SetData(*data)
+
+	resp, httpresp, err := datadogV2.NewSpansApi(l.client).AggregateSpans(ctx, *body)
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("aggregate spans", err)
+	}
+	out := map[string]float64{}
+	for _, b := range resp.GetData() {
+		a := b.GetAttributes()
+		svc, _ := a.By["service"].(string)
+		if svc == "" {
+			continue
+		}
+		for _, v := range a.Computes { // single compute → sole value
+			if v.SpansAggregateBucketValueSingleNumber != nil {
+				out[svc] = *v.SpansAggregateBucketValueSingleNumber
+			}
+		}
+	}
+	return out, nil
 }
 
 // Trace fetches a distributed trace by id via the APM get-trace endpoint
