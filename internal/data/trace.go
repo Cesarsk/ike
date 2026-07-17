@@ -5,10 +5,6 @@ import (
 	"sort"
 )
 
-// maxTraceSpans caps how many spans one trace reconstruction fetches — a
-// runaway trace can't fan out unbounded, same discipline as the rest.
-const maxTraceSpans = 100
-
 // buildTrace links spans (with absolute OffsetUs = start UnixMicro) into a
 // DFS-ordered tree: roots first, children under parents ordered by start,
 // depth assigned, and every offset normalized relative to the earliest span

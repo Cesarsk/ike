@@ -141,28 +141,19 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
    add-a-note / relationship writes needing their own request shapes.
    Confirm-gated like every other write.
 
-### Tech-debt / simplification
-
-5. **Trace view via `APMTraceApi.GetTraceByID`** — this endpoint exists in
-   v2.62.0, contradicting the "no get-trace-by-id endpoint" assumption the
-   current waterfall is built on (it reconstructs a trace from `trace_id:` span
-   search + `parent_id` linking). Switching to the direct call simplifies
-   `buildTrace`; verify coverage/retention behaviour vs span-search first, as
-   the reconstruction may still be the better fallback.
-
 ### UX polish (Tier 3 — config-schema changes)
 
-6. Saved queries per context; column customization. (`:`-autocomplete already
+5. Saved queries per context; column customization. (`:`-autocomplete already
    covers most of a command palette.)
-7. Per-resource TTL overrides and skins in the config file.
+6. Per-resource TTL overrides and skins in the config file.
 
 ### Longer-term
 
-8. **Token rotation** on an existing context — folds into `ike auth login
+7. **Token rotation** on an existing context — folds into `ike auth login
    --context <existing>` (re-auth updates the keychain token in place), so no
    separate key/flow is needed once auth login lands.
-9. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
-10. Hardened incidents field mapping (union types; verify against a live org).
+8. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
+9. Hardened incidents field mapping (union types; verify against a live org).
 
 ### Deferred deliberately
 
@@ -192,19 +183,23 @@ logs chronological), ~~downtimes list~~ (`:downtimes`), ~~downtimes cancel~~
 (`x`, confirm-gated), ~~incident severity change~~ (`v`, SEV-1…SEV-5,
 confirm-gated), ~~first Homebrew release~~ (`v0.1.0`+`v0.1.1`, `brew install
 cesarsk/tap/ike`; goreleaser builds serialized to avoid runner OOM, formula in
-`Formula/`).
+`Formula/`), ~~trace view via `APMTraceApi.GetTraceByID`~~ (one call + native
+`is_truncated`, replacing the span-search reconstruction).
 
 ## Traces & correlation
 
 `:traces` searches APM spans (v2 spans API), same server-query + time-window
-shape as Logs. The **waterfall** (`t` from a log or span) reconstructs a
-trace by searching `trace_id:<id>` and linking spans via `parent_id` into a
-DFS tree with proportional duration bars — Datadog has no "get trace by id"
-endpoint, so we assemble it from span search (bounded at 100 spans). The
-whole feature hinges on `trace_id` being injected into logs (APM
-log-correlation); a log without one degrades to a clear message rather than
-a broken jump. Span-search retention/indexing limits what's findable — an
-honest constraint, surfaced when a trace comes back empty.
+shape as Logs. The **waterfall** (`t` from a log or span) fetches the trace by
+id via `APMTraceApi.GetTraceByID` (`GET /api/v2/trace/{id}`) and links its
+spans by `parentID` into a DFS tree with proportional duration bars. That is
+the canonical trace-fetch — one call, strongly-typed spans (parent id, service,
+resource, ns timings, error flag), and the API's own `is_truncated` flag —
+and it replaced an earlier reconstruction from a `trace_id:` span search built
+on the wrong belief that no get-trace endpoint existed. Two caveats: the
+endpoint is an **unstable operation** (enabled explicitly at client init, so
+its contract may change across Datadog API versions), and the whole feature
+still hinges on `trace_id` being injected into logs (APM log-correlation) — a
+log without one degrades to a clear message rather than a broken jump.
 
 ## Project policy (decided 2026-07-14)
 

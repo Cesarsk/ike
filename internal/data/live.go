@@ -37,6 +37,7 @@ func newLive(site, webBase string) *Live {
 	cfg.SetUnstableOperationEnabled("v2.ListIncidents", true)
 	cfg.SetUnstableOperationEnabled("v2.GetIncident", true)
 	cfg.SetUnstableOperationEnabled("v2.UpdateIncident", true)
+	cfg.SetUnstableOperationEnabled("v2.GetTraceByID", true)
 	if webBase == "" {
 		webBase = WebBase(site)
 	}
@@ -898,40 +899,40 @@ func (l *Live) spans(ctx context.Context, query, timeRange string) ([]Row, error
 	return rows, nil
 }
 
-// Trace reconstructs a trace by searching all spans with its trace_id and
-// linking them via parent_id into a DFS-ordered tree for the waterfall.
+// Trace fetches a distributed trace by id via the APM get-trace endpoint
+// (GET /api/v2/trace/{id}, an unstable operation enabled at client init) and
+// links its spans by parent id into a DFS-ordered tree for the waterfall. One
+// call, with the API's own truncation flag — this is the canonical trace fetch
+// and replaces the older reconstruction from a trace_id: span search.
 func (l *Live) Trace(ctx context.Context, traceID string) (*TraceView, error) {
 	ctx = l.authCtx(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	api := datadogV2.NewSpansApi(l.client)
-	resp, httpresp, err := api.ListSpansGet(ctx,
-		*datadogV2.NewListSpansGetOptionalParameters().
-			WithFilterQuery("trace_id:" + traceID).
-			WithFilterFrom("now-4h").WithFilterTo("now").
-			WithSort(datadogV2.SPANSSORT_TIMESTAMP_ASCENDING).
-			WithPageLimit(maxTraceSpans))
+	resp, httpresp, err := datadogV2.NewAPMTraceApi(l.client).GetTraceByID(ctx, traceID)
 	l.track(httpresp)
 	if err != nil {
 		return nil, apiErr("trace", err)
 	}
-	raw := resp.GetData()
-	nodes := make([]Span, 0, len(raw))
-	for _, s := range raw {
-		a := s.GetAttributes()
+	attrs := resp.Data.Attributes
+	nodes := make([]Span, 0, len(attrs.Spans))
+	for _, s := range attrs.Spans {
+		parent := "" // ParentId 0 == trace root
+		if s.ParentId != 0 {
+			parent = strconv.FormatUint(uint64(s.ParentId), 10)
+		}
 		nodes = append(nodes, Span{
-			ID:         a.GetSpanId(),
-			ParentID:   a.GetParentId(),
-			Service:    a.GetService(),
-			Resource:   a.GetResourceName(),
-			OffsetUs:   a.GetStartTimestamp().UnixMicro(),
-			DurationUs: spanDurationUs(a),
-			Error:      spanIsError(a),
+			ID:         strconv.FormatUint(uint64(s.SpanId), 10),
+			ParentID:   parent,
+			Service:    s.Service,
+			Resource:   s.Resource,
+			OffsetUs:   s.StartTime / 1000, // Unix ns → µs
+			DurationUs: s.Duration / 1000,  // ns → µs
+			Error:      s.Error == datadogV2.APMSPANERRORFLAG_ERROR,
 		})
 	}
 	view := buildTrace(traceID, nodes)
-	view.Truncated = len(raw) >= maxTraceSpans
+	view.Truncated = attrs.IsTruncated
 	view.Logs = l.traceLogs(ctx, traceID) // best-effort; empty if uncorrelated
 	return view, nil
 }
