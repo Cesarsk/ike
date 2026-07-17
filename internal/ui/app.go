@@ -61,6 +61,9 @@ type Options struct {
 	// TTLOverrides maps a resource key to a custom cache TTL from the config
 	// file, overriding the built-in default (empty = use defaults).
 	TTLOverrides map[string]time.Duration
+	// Columns maps a resource key to the display column subset/order (by
+	// name) from the config file (empty = show all columns in registry order).
+	Columns map[string][]string
 }
 
 // ctxResource is the :ctx pseudo-resource. It is rendered like any table but
@@ -1741,6 +1744,41 @@ func (a *App) tuneResource(res data.Resource) data.Resource {
 	return res
 }
 
+// displayColumns returns the column names to render and their indices into a
+// row's full Cells, honouring a config `columns` override for the current view.
+func (a *App) displayColumns() (names []string, idx []int) {
+	return projectColumns(a.res.Columns, a.opts.Columns[a.res.Key])
+}
+
+// projectColumns maps a desired column-name subset (want) onto the full
+// registry column order, returning the display names and their indices into a
+// row's Cells. Matching is case-insensitive; unknown names are skipped; an
+// empty or all-unknown want yields the identity projection (all columns) so a
+// typo can never blank the table. Display-only: row Cells stay in registry
+// order, so sorting and filtering are unaffected.
+func projectColumns(full, want []string) (names []string, idx []int) {
+	if len(want) > 0 {
+		pos := make(map[string]int, len(full))
+		for i, c := range full {
+			pos[strings.ToUpper(c)] = i
+		}
+		for _, w := range want {
+			if i, ok := pos[strings.ToUpper(strings.TrimSpace(w))]; ok {
+				names = append(names, full[i])
+				idx = append(idx, i)
+			}
+		}
+	}
+	if len(names) == 0 {
+		names = full
+		idx = make([]int, len(full))
+		for i := range full {
+			idx[i] = i
+		}
+	}
+	return names, idx
+}
+
 func (a *App) switchResource(res data.Resource) {
 	if a.page == "table" && res.Key == a.res.Key {
 		return // ':monitors' while on monitors — nothing to do
@@ -1925,7 +1963,8 @@ func (a *App) toggleAutoRefresh() {
 func (a *App) render() {
 	prevRow, _ := a.table.GetSelection()
 	a.table.Clear()
-	for c, col := range a.res.Columns {
+	names, cidx := a.displayColumns()
+	for c, col := range names {
 		cell := tview.NewTableCell(col).
 			SetTextColor(tcell.ColorWhite).
 			SetAttributes(tcell.AttrBold).
@@ -1936,13 +1975,17 @@ func (a *App) render() {
 	for n, idx := range a.filtered {
 		r := a.rows[idx]
 		color := rowColor(a.res.Key, r)
-		for c, val := range r.Cells {
+		for c, ci := range cidx {
+			val := ""
+			if ci < len(r.Cells) {
+				val = r.Cells[ci]
+			}
 			if len(val) > 200 {
 				val = val[:197] + "…"
 			}
 			cell := tview.NewTableCell(tview.Escape(val)).
 				SetTextColor(color).
-				SetExpansion(expansion(a.res.Columns[c]))
+				SetExpansion(expansion(names[c]))
 			a.table.SetCell(n+1, c, cell)
 		}
 	}

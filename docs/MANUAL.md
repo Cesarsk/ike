@@ -304,6 +304,9 @@ refresh-interval: 30s          # optional; overrides the 30s default
 ttl-overrides:                 # optional; per-view cache TTL (Go durations)
   logs: 120s                   # trade freshness against the API rate limit
   monitors: 15s
+columns:                       # optional; choose/reorder columns per view
+  monitors: [STATE, NAME, TAGS]
+  logs: [TIME, SERVICE, MESSAGE]
 contexts:
   dev:
     site: datadoghq.eu
@@ -326,6 +329,20 @@ contexts:
 | `current-context` | Which context to start on (unless overridden by flag/env). |
 | `refresh-interval` | Auto-refresh cadence, e.g. `45s`, `0` to disable. |
 | `ttl-overrides.<view>` | Custom cache TTL per view (`logs`, `monitors`, …), Go duration; overrides the built-in default. |
+| `columns.<view>` | Column subset/order to display for a view, by name (below). Unknown names ignored; empty/all-unknown shows all. Display-only — sort/filter still see every column. |
+
+**Available column names per view** (for `columns:`):
+
+| View | Columns |
+|------|---------|
+| `monitors` | STATE, MUTED, NAME, TYPE, PRIO, TAGS |
+| `incidents` | ID, SEV, STATE, TITLE, IMPACT, CREATED |
+| `slos` | NAME, TYPE, TARGET, TIMEFRAME, TAGS |
+| `logs` | TIME, STATUS, SERVICE, HOST, MESSAGE |
+| `traces` | TIME, SERVICE, RESOURCE, DURATION, ERR, TRACE_ID |
+| `events` | TIME, TYPE, SOURCE, TITLE, TAGS |
+| `downtimes` | STATUS, SCOPE, MESSAGE, CREATED |
+| `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |

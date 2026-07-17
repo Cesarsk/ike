@@ -97,6 +97,11 @@ type Config struct {
 	// trading freshness against the per-org API rate limit. Values are
 	// Go-style durations ("120s", "5m", "0" to always refetch).
 	TTLOverrides map[string]string `yaml:"ttl-overrides,omitempty"`
+	// Columns maps a resource key to the subset/order of columns to display,
+	// by column name (e.g. columns: {monitors: [STATE, NAME, TAGS]}). Unknown
+	// names are ignored; an empty/all-unknown list shows every column. It only
+	// affects display — sorting and filtering still see all columns.
+	Columns map[string][]string `yaml:"columns,omitempty"`
 }
 
 // ResolvedTTLOverrides parses the TTL overrides into durations. Load has

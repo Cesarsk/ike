@@ -99,6 +99,7 @@ func main() {
 		}
 		opts.Current = current
 		opts.TTLOverrides = cfg.ResolvedTTLOverrides()
+		opts.Columns = cfg.Columns
 		for _, n := range cfg.Names() {
 			opts.Contexts = append(opts.Contexts, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n])})
 		}

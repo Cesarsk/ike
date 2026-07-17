@@ -374,6 +374,34 @@ func TestEditConfigReload(t *testing.T) {
 
 // newDemoApp builds an App with two offline demo contexts, mirroring what
 // `ike --demo` wires up in main.go — including in-memory add/delete.
+func TestProjectColumns(t *testing.T) {
+	full := []string{"STATE", "MUTED", "NAME", "TYPE", "PRIO", "TAGS"}
+
+	// Subset + reorder, case-insensitive, with indices into the full row.
+	names, idx := projectColumns(full, []string{"name", "STATE", "tags"})
+	if strings.Join(names, ",") != "NAME,STATE,TAGS" {
+		t.Errorf("names = %v", names)
+	}
+	if len(idx) != 3 || idx[0] != 2 || idx[1] != 0 || idx[2] != 5 {
+		t.Errorf("idx = %v, want [2 0 5]", idx)
+	}
+
+	// Unknown names are skipped, valid ones kept.
+	if names, _ := projectColumns(full, []string{"NOPE", "NAME"}); strings.Join(names, ",") != "NAME" {
+		t.Errorf("names = %v, want NAME", names)
+	}
+
+	// Empty want → identity (all columns, registry order).
+	if names, idx := projectColumns(full, nil); len(names) != len(full) || idx[0] != 0 {
+		t.Errorf("identity failed: names=%v idx=%v", names, idx)
+	}
+
+	// All-unknown → identity fallback, never a blank table.
+	if names, _ := projectColumns(full, []string{"XXX", "YYY"}); len(names) != len(full) {
+		t.Errorf("all-unknown should fall back to all columns: %v", names)
+	}
+}
+
 func newDemoApp(t *testing.T) *App {
 	t.Helper()
 	sites := map[string]string{"demo-dev": "datadoghq.eu", "demo-prod": "datadoghq.com"}
