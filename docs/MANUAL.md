@@ -135,8 +135,11 @@ Switch to any view with `:` + its name or a shorter alias.
 - **Monitors** — `0`–`4` quick-filter by state (alert / warn / nodata / ok / all);
   `l` → its logs; `m` → mute/unmute.
 - **Incidents** — `0`–`3` quick-filter by state (active / stable / resolved / all);
-  `r` → change state; `v` → change severity; `I` → take command (assign the
-  commander to you); `T` → add a to-do (action item, assigned to you).
+  `r` → change state; `v` → change severity; `I` → assign commander (searchable
+  user picker, yourself pinned on top so `enter` = take command); `T` → to-do
+  panel (list / add / complete / delete, assign to anyone). `enter` opens the
+  detail, which shows a **People** header (commander + responders — responders
+  are read-only) above the object.
 - **SLOs** — `enter` shows live **attainment + error budget**; `t` cycles the
   type filter (metric / monitor / time_slice / all).
 - **Logs / Traces / Events** — `/` is a Datadog query; `1`–`5` set the time
@@ -210,6 +213,8 @@ leaves your keyboard without a second keypress.
 |-----|------|--------|
 | `r` | Incidents | Change state (active / stable / resolved). |
 | `v` | Incidents | Change severity (SEV-1 … SEV-5). |
+| `I` | Incidents | Assign commander — searchable user picker (yourself pinned on top: `enter` = take command), then a confirm. |
+| `T` | Incidents | To-do panel — `a` add (with assignee picker), `c`/`space` toggle complete, `d` delete (delete is confirm-gated). |
 | `m` | Monitors | Mute / unmute (toggles from current state; edits only the `silenced` option, nothing else). |
 | `x` | Downtimes | Cancel the selected downtime. |
 | `c` | any | **Copy** the row's web URL (or log query / id) to the clipboard — not a write, no prompt. |
@@ -307,8 +312,8 @@ the error rather than blanking mid-incident.
 | `Q` | Logs/Traces/Events | saved-query picker (enter apply · `a` save · `d` delete) |
 | `r` | Incidents | change state |
 | `v` | Incidents | change severity |
-| `I` | Incidents | take command (assign commander to you) |
-| `T` | Incidents | add a to-do (action item) |
+| `I` | Incidents | assign commander (user picker; you pinned on top) |
+| `T` | Incidents | to-do panel (list · `a` add · `c` done · `d` delete) |
 | `m` | Monitors | mute / unmute |
 | `x` | Downtimes | cancel downtime |
 | `↑` `↓` | `/` prompt | query history |

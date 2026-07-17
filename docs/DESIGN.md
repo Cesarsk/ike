@@ -135,8 +135,11 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
 4. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
 5. **Incident timeline note** — a free-text timeline comment is **not** in the
    official client (only to-dos and attachments are; the timeline is an internal
-   API). Shipped `T` (add to-do) as the feasible annotate-the-incident verb;
-   a true note waits on an official endpoint.
+   API). Shipped the `T` to-do panel (list/add/complete/delete) as the feasible
+   annotate-the-incident verb; a true note waits on an official endpoint.
+   Likewise **setting responders** has no write path (the incident update
+   relationships expose only commander/integrations/postmortem) — responders are
+   shown read-only in the detail.
 6. **`:services` stats** — requests/error-rate/p95 per service would need either
    the internal service-stats endpoint (not in the official client) or a
    trace-metrics query (per-operation, no clean per-service rollup); revisit if
@@ -146,7 +149,8 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
 
 Write-heavy verbs (bulk actions, the remaining incident writes) can't be tested
 from the authoring sandbox — they wait on live dev-org validation of the writes
-already shipped (incident state/severity, monitor mute, cancel downtime).
+already shipped (incident state/severity, commander assign, to-do
+add/complete/delete, monitor mute, cancel downtime).
 
 Done: ~~multi-org contexts + config file~~ (`:ctx`, env-indirected secrets),
 ~~esc navigation stack~~, ~~in-app context add/delete with OS-keychain
@@ -183,10 +187,15 @@ runtime via `applyTheme`), ~~APM services view~~ (`:services` — service list v
 traces `service:<name>`; names only — the official API exposes no per-service
 stats, and it's retention-independent unlike the span-aggregate it replaced,
 which showed empty on orgs with tight span retention), ~~incident commander~~
-(`I` — take command / assign commander to you, confirm-gated), ~~incident
-to-do~~ (`T` — add an action item, assigned to you), ~~hardened incident field
-mapping~~ (`incidentField` handles both the single- and multi-value arms of the
-field union + missing fields, so custom fields don't blank SEV/STATE).
+(`I` — searchable user picker backed by `ListUsers`, assign to anyone with
+yourself pinned on top; confirm-gated), ~~incident to-do panel~~ (`T` — list /
+add / toggle-complete / delete action items, assignable to anyone via the same
+picker), ~~incident responders + People detail~~ (commander / responders /
+declared-by / created-by resolved to handles above the raw object via
+`include=users`; responders are read-only — the API has no write path),
+~~hardened incident field mapping~~ (`incidentField` handles both the single-
+and multi-value arms of the field union + missing fields, so custom fields
+don't blank SEV/STATE).
 
 ## Traces & correlation
 

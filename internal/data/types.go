@@ -97,11 +97,42 @@ type TraceView struct {
 	Truncated bool       // more spans than the fetch cap
 }
 
-// User is the acting user — used to assign an incident commander ('I') and as
-// the default assignee of an incident to-do ('T').
+// User is a Datadog user — the acting user (commander/to-do assignment) and an
+// entry in the assignee picker (populated from ListUsers). Name is best-effort
+// (may be empty); Handle is the stable identifier shown and used for to-dos.
 type User struct {
 	ID     string
 	Handle string
+	Name   string
+}
+
+// Todo is one incident action item (to-do), as listed in the to-do panel ('T').
+// Completed is derived from the API's nullable "completed" timestamp (set =
+// done). Assignees are user handles.
+type Todo struct {
+	ID        string
+	Content   string
+	Assignees []string
+	Completed bool
+}
+
+// IncidentPeople are the humans attached to an incident, resolved to handles
+// for the detail view's People header. Responders are best-effort: the API
+// exposes them read-only as a distinct object type with no include support, so
+// an unresolved responder falls back to its raw id rather than a fake name.
+type IncidentPeople struct {
+	Commander  string
+	DeclaredBy string
+	CreatedBy  string
+	Responders []string
+}
+
+// IncidentDetail is what FetchDetail returns for an incident: the resolved
+// People (rendered as a header) plus the raw incident object (dumped as JSON).
+// One GetIncident call (with include=users) feeds both.
+type IncidentDetail struct {
+	People   IncidentPeople
+	Incident any
 }
 
 // IncidentStates are the states an incident can be moved to via 'r'.
@@ -157,6 +188,17 @@ type Provider interface {
 	// AddIncidentTodo adds a to-do (action item) to an incident, assigned to
 	// the given user handle. A write; UI-gated (the content prompt).
 	AddIncidentTodo(ctx context.Context, incidentID, content, assigneeHandle string) error
+	// ListUsers searches active org users (server-side filter on
+	// name/email/handle); empty query returns the first page. Backs the
+	// commander/to-do assignee picker. Bounded to one page.
+	ListUsers(ctx context.Context, query string) ([]User, error)
+	// IncidentTodos lists an incident's to-dos for the to-do panel. On-demand.
+	IncidentTodos(ctx context.Context, incidentID string) ([]Todo, error)
+	// SetIncidentTodoCompleted marks a to-do done/undone. Content and assignees
+	// are carried on the Todo so the PATCH doesn't clobber them. A write.
+	SetIncidentTodoCompleted(ctx context.Context, incidentID string, todo Todo, done bool) error
+	// DeleteIncidentTodo removes a to-do from an incident. A write; UI-gated.
+	DeleteIncidentTodo(ctx context.Context, incidentID, todoID string) error
 	// Budget reports the last-seen API rate-limit state, one line per
 	// endpoint family (from X-RateLimit-* response headers).
 	Budget() []string

@@ -51,6 +51,38 @@ func TestCommanderUpdateBodyJSON(t *testing.T) {
 	}
 }
 
+// TestTodoCompletedPatchBody asserts the wire shape of the to-do completion
+// PATCH: content and assignees are re-sent so they aren't blanked, and
+// completed is a timestamp when done / explicit null when reopened.
+func TestTodoCompletedPatchBody(t *testing.T) {
+	todo := Todo{ID: "td-1", Content: "Page the DBA", Assignees: []string{"alice"}}
+
+	done, err := json.Marshal(todoCompletedPatchBody(todo, true, "2026-07-17T00:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"type":"incident_todos"`, `"content":"Page the DBA"`, `"assignees"`, `"alice"`,
+		`"completed":"2026-07-17T00:00:00Z"`,
+	} {
+		if !strings.Contains(string(done), want) {
+			t.Errorf("done body missing %q\n got: %s", want, done)
+		}
+	}
+
+	reopened, err := json.Marshal(todoCompletedPatchBody(todo, false, "2026-07-17T00:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(reopened), `"completed":null`) {
+		t.Errorf("reopened body should null the completion\n got: %s", reopened)
+	}
+	// Content/assignees must survive the reopen too (no blanking).
+	if !strings.Contains(string(reopened), `"content":"Page the DBA"`) {
+		t.Errorf("reopened body dropped content\n got: %s", reopened)
+	}
+}
+
 // TestIncidentFieldUnion covers both arms of the IncidentFieldAttributes union
 // plus a missing field — the hardening that keeps a real org's custom fields
 // from blanking the SEV/STATE columns.

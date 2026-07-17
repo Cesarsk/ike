@@ -130,11 +130,29 @@ type App struct {
 	settingRows []settingRow // editable settings, indexed by table data row
 	editingSet  int          // settingRows index being edited (prompt in flight)
 
-	todoIncidentID string // incident awaiting a to-do (content prompt in flight)
+	todoIncidentID string // incident whose to-dos the panel shows / to-do add in flight
 
 	colPick      *tview.List // the 'C' column picker
 	colPickView  string      // view whose columns the picker is editing
 	colPickItems []colItem   // picker rows (column + shown), in display order
+
+	// userpick: the searchable commander/assignee picker ('I', to-do assign)
+	userPickFlex    *tview.Flex
+	userSearch      *tview.InputField
+	userPick        *tview.List
+	userPickItems   []data.User     // list rows, in display order
+	userPickOnPick  func(data.User) // what to do with the chosen user
+	userPickReturn  string          // page to return to on pick/cancel
+	userPickSeq     int             // drops stale async search results
+	userSearchTimer *time.Timer     // search debounce
+	pickSelf        *data.User      // cached acting user, pinned atop an empty search
+	pendTodoContent string          // to-do content awaiting an assignee pick
+
+	// todos: the incident to-do panel ('T')
+	todoList  *tview.List
+	todoItems []data.Todo // list rows, in display order
+
+	confirmReturn string // page to restore after a confirm modal closes
 
 	res      data.Resource
 	rows     []data.Row
@@ -235,6 +253,19 @@ func (a *App) applyTheme() {
 		a.colPick.SetBorderColor(a.theme.Border)
 		a.colPick.SetTitleColor(a.theme.Title)
 	}
+	if a.userPickFlex != nil {
+		a.userPickFlex.SetBorderColor(a.theme.Border)
+		a.userPickFlex.SetTitleColor(a.theme.Title)
+		a.userSearch.SetLabelColor(a.theme.Label)
+		a.userSearch.SetFieldBackgroundColor(a.theme.FieldBg)
+		a.userSearch.SetFieldTextColor(a.theme.FieldFg)
+		a.userPick.SetSelectedStyle(sel)
+	}
+	if a.todoList != nil {
+		a.todoList.SetBorderColor(a.theme.Border)
+		a.todoList.SetTitleColor(a.theme.Title)
+		a.todoList.SetSelectedStyle(sel)
+	}
 	a.ctxForm.SetTitleColor(a.theme.Title)
 	a.ctxForm.SetBorderColor(a.theme.Border)
 	a.ctxForm.SetFieldBackgroundColor(a.theme.FieldBg)
@@ -330,6 +361,24 @@ func (a *App) build() {
 	a.colPick.SetBorder(true)
 	a.colPick.SetMainTextColor(tcell.ColorWhite)
 
+	// userpick: a search field over a results list. Focus stays on the search
+	// field (so typing filters); the keys handler routes ↑/↓/enter/esc to the
+	// list. See userpick.go.
+	a.userSearch = tview.NewInputField().SetLabel(" search users> ")
+	a.userSearch.SetChangedFunc(func(string) { a.scheduleUserSearch() })
+	a.userPick = tview.NewList().ShowSecondaryText(false)
+	a.userPick.SetMainTextColor(tcell.ColorWhite)
+	a.userPickFlex = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.userSearch, 1, 0, true).
+		AddItem(a.userPick, 0, 1, false)
+	a.userPickFlex.SetBorder(true).SetTitle(" Assign ")
+
+	// todos: the incident to-do panel. See todos.go.
+	a.todoList = tview.NewList().ShowSecondaryText(true)
+	a.todoList.SetBorder(true)
+	a.todoList.SetMainTextColor(tcell.ColorWhite)
+	a.todoList.SetSecondaryTextColor(tcell.ColorGray)
+
 	a.ctxForm = tview.NewForm()
 	a.ctxForm.SetBorder(true)
 	a.ctxForm.SetTitle(" Add context ")
@@ -362,6 +411,8 @@ func (a *App) build() {
 		AddPage("savedq", a.savedQL, true, false).
 		AddPage("settings", a.settingsTbl, true, false).
 		AddPage("colpick", a.colPick, true, false).
+		AddPage("userpick", a.userPickFlex, true, false).
+		AddPage("todos", a.todoList, true, false).
 		AddPage("help", a.buildHelp(), true, false).
 		AddPage("ctxform", ctxFormFlex, true, false).
 		AddPage("confirm", a.confirm, true, false)
@@ -410,6 +461,16 @@ func (a *App) setHints() {
 			"[aqua]<tab>[white]next field  [aqua]<shift-tab>[white]previous",
 			"[aqua]<esc>[white]cancel  [aqua]<enter>[white]on Save to store",
 		}
+	case "userpick":
+		lines = []string{
+			"[aqua]<type>[white]search users (from Datadog)  [aqua]<↑/↓>[white]select",
+			"[aqua]<enter>[white]choose  [aqua]<esc>[white]cancel",
+		}
+	case "todos":
+		lines = []string{
+			"[aqua]<a>[white]add  [aqua]<c/space/enter>[white]toggle done  [aqua]<d>[white]delete",
+			"[aqua]<↑/↓ j/k>[white]move  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	default:
 		refresh := "on"
 		if a.paused {
@@ -427,7 +488,7 @@ func (a *App) setHints() {
 		case "slos":
 			lines = append(lines, "[gray]<enter>error budget  <t>cycle type filter  <s>sort <S>reverse")
 		case "incidents":
-			lines = append(lines, "[gray]<r>state  <v>severity  <I>commander  <T>to-do  quick: <1>active <2>stable <3>resolved <0>all")
+			lines = append(lines, "[gray]<r>state  <v>severity  <I>commander (pick)  <T>to-dos  quick: <1>active <2>stable <3>resolved <0>all")
 		case "downtimes":
 			lines = append(lines, "[gray]<x>cancel downtime  <s>sort <S>reverse")
 		case "logs":
@@ -481,8 +542,12 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
    [aqua]r[white]             (incident) change state (active/stable/resolved) — behind a confirm
    [aqua]v[white]             (incident) change severity (SEV-1…SEV-5) — behind a confirm
-   [aqua]I[white]             (incident) take command — assign commander to you — behind a confirm
-   [aqua]T[white]             (incident) add a to-do (action item, assigned to you)
+   [aqua]I[white]             (incident) assign commander — searchable user picker (you pinned
+                 on top: enter = take command), behind a confirm
+   [aqua]T[white]             (incident) to-do panel — list / add (assign to anyone) / toggle
+                 done / delete action items
+   [gray]              (incident) commander & responders show in the detail (enter) — responders
+                 are read-only; the API has no write path for them
    [aqua]x[white]             (downtime) cancel the selected downtime — behind a confirm
    [aqua]c[white]             copy the row's URL / query / id to the clipboard
    [aqua]ctrl-r[white]        force refresh (bypasses cache — spends API budget)
@@ -672,6 +737,46 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		return ev // the list handles ↑/↓ j/k navigation
+	case "userpick":
+		// A text-entry modal: esc/enter/arrows are actions; every other key
+		// types into the search field (so ':' etc. are searchable, not commands).
+		switch {
+		case ev.Key() == tcell.KeyEscape:
+			a.closeUserPick()
+			return nil
+		case ev.Key() == tcell.KeyEnter:
+			a.userPickChoose()
+			return nil
+		case ev.Key() == tcell.KeyUp:
+			a.userPickMove(-1)
+			return nil
+		case ev.Key() == tcell.KeyDown:
+			a.userPickMove(1)
+			return nil
+		}
+		return ev // everything else types into the search field
+	case "todos":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == 'a':
+			a.addTodoFlow()
+			return nil
+		case ev.Rune() == 'c' || ev.Rune() == ' ' || ev.Key() == tcell.KeyEnter:
+			a.toggleTodoComplete()
+			return nil
+		case ev.Rune() == 'd':
+			a.deleteTodoFlow()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		}
+		return ev // the list handles ↑/↓ j/k navigation
 	case "trace":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
@@ -817,15 +922,14 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 'I':
 		if a.res.Key == "incidents" {
 			if row, ok := a.selectedRow(); ok {
-				a.confirmAssignCommander(row)
+				a.assignCommanderFlow(row)
 			}
 			return nil
 		}
 	case 'T':
 		if a.res.Key == "incidents" {
 			if row, ok := a.selectedRow(); ok {
-				a.todoIncidentID = row.ID
-				a.openPrompt(promptTodo)
+				a.openTodoPanel(row.ID)
 			}
 			return nil
 		}
@@ -1114,6 +1218,8 @@ func (a *App) closePrompt() {
 		a.SetFocus(a.savedQL)
 	case "settings":
 		a.SetFocus(a.settingsTbl)
+	case "todos":
+		a.SetFocus(a.todoList)
 	default:
 		a.SetFocus(a.table)
 	}
@@ -1163,9 +1269,15 @@ func (a *App) promptDone(key tcell.Key) {
 	case promptSettings:
 		a.applySettingInput(text)
 	case promptTodo:
-		if text != "" && a.todoIncidentID != "" {
-			a.addTodo(a.todoIncidentID, text)
+		if text == "" || a.todoIncidentID == "" {
+			return
 		}
+		inc := a.todoIncidentID
+		a.pendTodoContent = text
+		// Pick the assignee (self pinned on top) before creating the to-do.
+		a.openUserPicker("Assign to-do · "+inc, func(u data.User) {
+			a.addTodoAssigned(inc, a.pendTodoContent, u.Handle)
+		})
 	}
 }
 
@@ -1678,6 +1790,10 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.settingsTbl)
 	case "colpick":
 		a.SetFocus(a.colPick)
+	case "userpick":
+		a.SetFocus(a.userSearch) // typing filters; keys handler routes ↑/↓/enter
+	case "todos":
+		a.SetFocus(a.todoList)
 	case "ctxform":
 		a.SetFocus(a.ctxForm)
 	default:
@@ -1893,9 +2009,11 @@ func (a *App) confirmDeleteContext() {
 
 func (a *App) closeConfirm() {
 	a.content.HidePage("confirm")
-	a.page = "table"
-	a.SetFocus(a.table)
-	a.setHints()
+	ret := a.confirmReturn
+	if ret == "" {
+		ret = "table"
+	}
+	a.showPage(ret) // restore the page the modal was opened over (e.g. the to-do panel)
 }
 
 // showConfirm displays a confirmation modal with the given buttons and calls
@@ -1909,6 +2027,7 @@ func (a *App) showConfirm(text string, buttons []string, onDone func(label strin
 		onDone(label)
 	})
 	a.confirm = m
+	a.confirmReturn = a.page // restore this page (not always "table") when the modal closes
 	a.content.RemovePage("confirm").AddPage("confirm", m, true, false)
 	a.page = "confirm"
 	a.content.ShowPage("confirm")
@@ -1996,29 +2115,20 @@ func (a *App) applyIncidentField(r data.Row, field, value, ok string) {
 	}()
 }
 
-// confirmAssignCommander offers to make the current user the incident's
-// commander ("take command"), behind a confirmation modal (a write path). The
-// current user is fetched first so the modal can name who's being assigned.
-func (a *App) confirmAssignCommander(r data.Row) {
-	a.flash("fetching current user …", false)
-	go func() {
-		u, err := a.provider.CurrentUser(context.Background())
-		a.QueueUpdateDraw(func() {
-			if err != nil {
-				a.flash("✗ current user: "+err.Error(), true)
-				return
-			}
-			a.showConfirm(
-				fmt.Sprintf("Assign %s commander to %s?\nThis writes to Datadog.", r.ID, u.Handle),
-				[]string{"Cancel", "Assign to me"},
-				func(label string) {
-					if label != "Assign to me" {
-						return
-					}
-					a.applyAssignCommander(r, u)
-				})
-		})
-	}()
+// assignCommanderFlow opens the user picker (current user pinned on top, so
+// Enter still means "take command") and, on a pick, confirms before writing.
+func (a *App) assignCommanderFlow(r data.Row) {
+	a.openUserPicker("Commander · "+r.ID, func(u data.User) {
+		a.showConfirm(
+			fmt.Sprintf("Assign %s commander to %s?\nThis writes to Datadog.", r.ID, u.Handle),
+			[]string{"Cancel", "Assign"},
+			func(label string) {
+				if label != "Assign" {
+					return
+				}
+				a.applyAssignCommander(r, u)
+			})
+	})
 }
 
 func (a *App) applyAssignCommander(r data.Row, u data.User) {
@@ -2038,22 +2148,22 @@ func (a *App) applyAssignCommander(r data.Row, u data.User) {
 	}()
 }
 
-// addTodo creates the incident to-do typed at the prompt, assigned to the
-// current user (the API requires an assignee).
-func (a *App) addTodo(incidentID, content string) {
+// addTodoAssigned creates an incident to-do with the picked assignee handle,
+// refreshing the panel if it's still open on the same incident.
+func (a *App) addTodoAssigned(incidentID, content, handle string) {
 	a.flash("adding to-do to "+incidentID+" …", false)
 	go func() {
-		u, err := a.provider.CurrentUser(context.Background())
-		if err == nil {
-			err = a.provider.AddIncidentTodo(context.Background(), incidentID, content, u.Handle)
-		}
+		err := a.provider.AddIncidentTodo(context.Background(), incidentID, content, handle)
 		a.QueueUpdateDraw(func() {
 			if err != nil {
 				slog.Error("add to-do failed", "id", incidentID, "err", err)
 				a.flash("✗ "+err.Error(), true)
 				return
 			}
-			a.flash("to-do added to "+incidentID, false)
+			a.flash("to-do added → @"+handle, false)
+			if a.page == "todos" && a.todoIncidentID == incidentID {
+				a.refreshTodos()
+			}
 		})
 	}()
 }
@@ -2608,17 +2718,25 @@ func (a *App) openDetail(tableRow int) {
 			return // the row already was the complete object
 		}
 		slog.Debug("detail fetched", "resource", res.Key, "id", r.ID)
-		b, err := json.MarshalIndent(full, "", "  ")
-		if err != nil {
-			return
-		}
-		body := string(b)
-		// Monitors: prepend the evaluated metric as a sparkline — the data
-		// behind the alert, so the detail answers "why is it firing?".
-		if res.Key == "monitors" {
+		var body string
+		switch res.Key {
+		case "incidents":
+			// A People header (resolved handles) over the raw incident object —
+			// turning an opaque JSON dump into something readable at a glance.
+			if d, ok := full.(*data.IncidentDetail); ok {
+				body = incidentPeopleHeader(d.People) + jsonIndent(d.Incident)
+			} else {
+				body = jsonIndent(full)
+			}
+		case "monitors":
+			// Prepend the evaluated metric as a sparkline — the data behind the
+			// alert, so the detail answers "why is it firing?".
+			body = jsonIndent(full)
 			if ms, mErr := a.provider.MonitorMetric(context.Background(), r.ID); mErr == nil {
 				body = monitorMetricHeader(ms) + body
 			}
+		default:
+			body = jsonIndent(full)
 		}
 		a.QueueUpdateDraw(func() {
 			if a.page != "detail" || a.detailRow.ID != r.ID {
@@ -2647,6 +2765,41 @@ func monitorMetricHeader(ms *data.MetricSeries) string {
 		b.WriteString(ms.Note + "\n")
 	}
 	b.WriteString("──────────────────────\n\n")
+	return b.String()
+}
+
+// jsonIndent renders a value as indented JSON for the detail view (dynamic
+// colours are OFF there, so raw JSON is safe), surfacing any marshal error.
+func jsonIndent(v any) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return "✗ " + err.Error()
+	}
+	return string(b)
+}
+
+// incidentPeopleHeader renders the resolved People block shown above an
+// incident's JSON. Plain text (no colour tags — the detail view has dynamic
+// colours off). Responders are read-only (the API has no write path); an
+// unresolved responder shows its raw id.
+func incidentPeopleHeader(p data.IncidentPeople) string {
+	dash := func(s string) string {
+		if s == "" {
+			return "—"
+		}
+		return s
+	}
+	responders := "—"
+	if len(p.Responders) > 0 {
+		responders = strings.Join(p.Responders, ", ")
+	}
+	var b strings.Builder
+	b.WriteString("── people ──\n")
+	fmt.Fprintf(&b, "  %-13s%s\n", "commander:", dash(p.Commander))
+	fmt.Fprintf(&b, "  %-13s%s\n", "responders:", responders)
+	fmt.Fprintf(&b, "  %-13s%s\n", "declared by:", dash(p.DeclaredBy))
+	fmt.Fprintf(&b, "  %-13s%s\n", "created by:", dash(p.CreatedBy))
+	b.WriteString("────────────\n\n")
 	return b.String()
 }
 

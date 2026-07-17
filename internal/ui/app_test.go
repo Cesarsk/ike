@@ -79,19 +79,63 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "IR-142 SEV-2 resolved")
 
-	// Incident commander: I fetches the current user, confirms, assigns.
+	// Incident commander: I opens the searchable user picker with the acting
+	// user pinned on top; enter on the pin = take command, behind a confirm.
 	typeRunes(sim, "I")
-	waitFor(t, sim, "Assign to me") // confirm modal button (question text wraps)
-	press(sim, tcell.KeyRight)      // Cancel → Assign to me
+	waitFor(t, sim, "Commander · IR-142") // picker open
+	waitFor(t, sim, "(you)")              // acting user pinned on top
+	press(sim, tcell.KeyEnter)            // choose the pinned self
+	waitFor(t, sim, "to demo.user?")      // confirm modal (question text wraps across lines)
+	press(sim, tcell.KeyRight)            // Cancel → Assign
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "commander → demo.user")
 
-	// Incident to-do: T prompts for content, then creates it (assigned to me).
+	// Commander to someone else: I → type to search the org (live ListUsers) →
+	// choose a different user → confirm → assigned. This is the core new verb.
+	typeRunes(sim, "I")
+	waitFor(t, sim, "Commander · IR-142")
+	waitFor(t, sim, "(you)") // full list rendered (pin present)
+	typeRunes(sim, "carol")
+	waitForGone(t, sim, "(you)") // filtered on "carol": pin gone, carol is the row
+	waitFor(t, sim, "Carol Diaz")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "to carol?") // confirm modal
+	press(sim, tcell.KeyRight)   // Cancel → Assign
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "commander → carol")
+
+	// Incident to-do panel: T opens the panel (listing seeded to-dos); 'a' adds
+	// one (content prompt → assignee picker), 'c' toggles complete, 'd' deletes.
 	typeRunes(sim, "T")
-	waitFor(t, sim, "to-do for IR-142")
+	waitFor(t, sim, "To-dos · IR-142")
+	waitFor(t, sim, "Page the on-call DBA") // a seeded to-do
+	typeRunes(sim, "a")
+	waitFor(t, sim, "to-do for IR-142") // content prompt
 	typeRunes(sim, "failover the primary")
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "to-do added to IR-142")
+	waitFor(t, sim, "Assign to-do · IR-142") // assignee picker
+	waitFor(t, sim, "(you)")                 // pinned self rendered before choosing
+	press(sim, tcell.KeyEnter)               // assign to self (pinned)
+	waitFor(t, sim, "to-do added → @demo.user")
+	waitFor(t, sim, "failover the primary") // now listed in the panel
+	typeRunes(sim, "c")                     // toggle complete on the highlighted to-do
+	waitFor(t, sim, "to-do completed")
+	typeRunes(sim, "d") // delete the highlighted to-do
+	waitFor(t, sim, "Delete this to-do")
+	press(sim, tcell.KeyRight) // Cancel → Delete
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "to-do deleted")
+	press(sim, tcell.KeyEscape) // back to incidents
+	waitFor(t, sim, "Incidents(all)")
+
+	// Incident detail: the People header resolves commander + responders
+	// (read-only) above the raw object — no longer an opaque JSON dump.
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "── people ──")
+	waitFor(t, sim, "responders:")
+	waitFor(t, sim, "bob") // a demo responder handle
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Incidents(all)")
 
 	// Incident quick filter: digit 3 = resolved only (STATE column).
 	typeRunes(sim, "3")
@@ -564,6 +608,21 @@ func waitFor(t *testing.T, sim tcell.SimulationScreen, want string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("screen never showed %q; screen was:\n%s", want, screenText(sim))
+}
+
+// waitForGone waits until a substring is absent — used to confirm an async
+// state change landed (e.g. the picker's pinned "(you)" row disappearing once
+// a search filter applies) without racing an early positive match.
+func waitForGone(t *testing.T, sim tcell.SimulationScreen, gone string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !strings.Contains(screenText(sim), gone) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("screen still showed %q; screen was:\n%s", gone, screenText(sim))
 }
 
 func screenText(sim tcell.SimulationScreen) string {

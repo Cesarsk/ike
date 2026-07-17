@@ -34,6 +34,12 @@ func (e *Errored) CancelDowntime(context.Context, string) error                 
 func (e *Errored) CurrentUser(context.Context) (User, error)                      { return User{}, e.err }
 func (e *Errored) SetIncidentCommander(context.Context, string, string) error     { return e.err }
 func (e *Errored) AddIncidentTodo(context.Context, string, string, string) error  { return e.err }
-func (e *Errored) Budget() []string                                               { return nil }
-func (e *Errored) Mode() string                                                   { return "live" }
-func (e *Errored) Site() string                                                   { return e.site }
+func (e *Errored) ListUsers(context.Context, string) ([]User, error)              { return nil, e.err }
+func (e *Errored) IncidentTodos(context.Context, string) ([]Todo, error)          { return nil, e.err }
+func (e *Errored) SetIncidentTodoCompleted(context.Context, string, Todo, bool) error {
+	return e.err
+}
+func (e *Errored) DeleteIncidentTodo(context.Context, string, string) error { return e.err }
+func (e *Errored) Budget() []string                                         { return nil }
+func (e *Errored) Mode() string                                             { return "live" }
+func (e *Errored) Site() string                                             { return e.site }

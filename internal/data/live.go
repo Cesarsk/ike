@@ -171,13 +171,17 @@ func (l *Live) FetchDetail(ctx context.Context, key, id string) (any, error) {
 		}
 		return d, nil
 	case "incidents":
+		// include=users carries the incident's user objects in the response so
+		// the People header can resolve commander/created/declared ids to
+		// handles in this one call (GetIncident is otherwise bare).
 		in, resp, err := datadogV2.NewIncidentsApi(l.client).GetIncident(ctx, id,
-			*datadogV2.NewGetIncidentOptionalParameters())
+			*datadogV2.NewGetIncidentOptionalParameters().
+				WithInclude([]datadogV2.IncidentRelatedObject{datadogV2.INCIDENTRELATEDOBJECT_USERS}))
 		l.track(resp)
 		if err != nil {
 			return nil, apiErr("incident detail", err)
 		}
-		return in, nil
+		return &IncidentDetail{People: incidentPeople(in), Incident: in}, nil
 	case "slos":
 		return l.sloStatus(ctx, id)
 	}
@@ -335,6 +339,189 @@ func (l *Live) AddIncidentTodo(ctx context.Context, incidentID, content, assigne
 	}
 	slog.Info("incident to-do added", "id", incidentID, "assignee", assigneeHandle)
 	return nil
+}
+
+// ListUsers searches active org users (GET /api/v2/users). The query is the
+// server-side filter (name/email/handle); one bounded page so a picker never
+// spends unbounded budget on an org with thousands of users.
+func (l *Live) ListUsers(ctx context.Context, query string) ([]User, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	opts := datadogV2.NewListUsersOptionalParameters().
+		WithFilterStatus("Active").
+		WithPageSize(50)
+	if query != "" {
+		opts = opts.WithFilter(query)
+	}
+	resp, httpresp, err := datadogV2.NewUsersApi(l.client).ListUsers(ctx, *opts)
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("list users", err)
+	}
+	data := resp.GetData()
+	users := make([]User, 0, len(data))
+	for _, u := range data {
+		attrs := u.GetAttributes()
+		handle := attrs.GetHandle()
+		if handle == "" {
+			handle = attrs.GetEmail()
+		}
+		users = append(users, User{ID: u.GetId(), Handle: handle, Name: attrs.GetName()})
+	}
+	return users, nil
+}
+
+// IncidentTodos lists an incident's to-dos (GET /api/v2/incidents/{id}/relationships/todos).
+func (l *Live) IncidentTodos(ctx context.Context, incidentID string) ([]Todo, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, httpresp, err := datadogV2.NewIncidentsApi(l.client).ListIncidentTodos(ctx, incidentID)
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("list incident to-dos", err)
+	}
+	data := resp.GetData()
+	todos := make([]Todo, 0, len(data))
+	for _, td := range data {
+		attrs := td.GetAttributes()
+		todos = append(todos, Todo{
+			ID:        td.GetId(),
+			Content:   attrs.GetContent(),
+			Assignees: todoAssigneeHandles(attrs.GetAssignees()),
+			Completed: attrs.GetCompleted() != "", // non-empty completed timestamp = done
+		})
+	}
+	return todos, nil
+}
+
+// SetIncidentTodoCompleted marks a to-do done (a completion timestamp) or
+// undone (null). Content and assignees are re-sent from the loaded Todo so the
+// PATCH doesn't blank them — the attributes constructor requires both.
+func (l *Live) SetIncidentTodoCompleted(ctx context.Context, incidentID string, todo Todo, done bool) error {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	body := todoCompletedPatchBody(todo, done, time.Now().UTC().Format(time.RFC3339))
+	_, resp, err := datadogV2.NewIncidentsApi(l.client).UpdateIncidentTodo(ctx, incidentID, todo.ID, body)
+	l.track(resp)
+	if err != nil {
+		return apiErr("update incident to-do", err)
+	}
+	slog.Info("incident to-do completion changed", "id", incidentID, "todo", todo.ID, "done", done)
+	return nil
+}
+
+// todoCompletedPatchBody builds the PATCH request that flips a to-do's
+// completion. Extracted so a test can assert its wire shape: content and
+// assignees are re-sent (the attributes constructor requires them) so the PATCH
+// never blanks them; completed is the timestamp (done) or null (reopened).
+func todoCompletedPatchBody(todo Todo, done bool, now string) datadogV2.IncidentTodoPatchRequest {
+	assignees := make([]datadogV2.IncidentTodoAssignee, 0, len(todo.Assignees))
+	for i := range todo.Assignees {
+		h := todo.Assignees[i]
+		assignees = append(assignees, datadogV2.IncidentTodoAssigneeHandleAsIncidentTodoAssignee(&h))
+	}
+	attrs := datadogV2.NewIncidentTodoAttributes(assignees, todo.Content)
+	if done {
+		attrs.SetCompleted(now)
+	} else {
+		attrs.SetCompletedNil()
+	}
+	data := datadogV2.NewIncidentTodoPatchData(*attrs, datadogV2.INCIDENTTODOTYPE_INCIDENT_TODOS)
+	return *datadogV2.NewIncidentTodoPatchRequest(*data)
+}
+
+// DeleteIncidentTodo removes a to-do from an incident.
+func (l *Live) DeleteIncidentTodo(ctx context.Context, incidentID, todoID string) error {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := datadogV2.NewIncidentsApi(l.client).DeleteIncidentTodo(ctx, incidentID, todoID)
+	l.track(resp)
+	if err != nil {
+		return apiErr("delete incident to-do", err)
+	}
+	slog.Info("incident to-do deleted", "id", incidentID, "todo", todoID)
+	return nil
+}
+
+// todoAssigneeHandles pulls the handle from each to-do assignee (the handle
+// arm of the assignee union); anonymous assignees are skipped.
+func todoAssigneeHandles(as []datadogV2.IncidentTodoAssignee) []string {
+	var out []string
+	for i := range as {
+		if h := as[i].IncidentTodoAssigneeHandle; h != nil && *h != "" {
+			out = append(out, *h)
+		}
+	}
+	return out
+}
+
+// incidentPeople resolves an incident's commander/created/declared/responders
+// to handles using the response's included users. Commander and created/declared
+// ids are user ids (resolve cleanly); responder ids are a distinct object type
+// with no include support, so an unresolved one falls back to its raw id.
+func incidentPeople(in datadogV2.IncidentResponse) IncidentPeople {
+	users := map[string]string{}
+	for _, item := range in.GetIncluded() {
+		if u := item.IncidentUserData; u != nil {
+			users[u.GetId()] = incUserHandle(u)
+		}
+	}
+	resolve := func(id string) string {
+		if id == "" {
+			return ""
+		}
+		if h, ok := users[id]; ok {
+			return h
+		}
+		return id
+	}
+
+	data := in.GetData()
+	rels := data.GetRelationships()
+	var p IncidentPeople
+
+	cu := rels.GetCommanderUser()
+	cud := cu.GetData()
+	p.Commander = resolve(cud.GetId())
+
+	cb := rels.GetCreatedByUser()
+	cbd := cb.GetData()
+	p.CreatedBy = resolve(cbd.GetId())
+
+	db := rels.GetDeclaredByUser()
+	dbd := db.GetData()
+	p.DeclaredBy = resolve(dbd.GetId())
+
+	rr := rels.GetResponders()
+	for _, rd := range rr.GetData() {
+		if h := resolve(rd.GetId()); h != "" {
+			p.Responders = append(p.Responders, h)
+		}
+	}
+	return p
+}
+
+// incUserHandle prefers handle, then name, then email, then id.
+func incUserHandle(u *datadogV2.IncidentUserData) string {
+	attrs := u.GetAttributes()
+	if h := attrs.GetHandle(); h != "" {
+		return h
+	}
+	if n := attrs.GetName(); n != "" {
+		return n
+	}
+	if e := attrs.GetEmail(); e != "" {
+		return e
+	}
+	return u.GetId()
 }
 
 // SetMonitorMute mutes (indefinitely) or unmutes a monitor. It is a

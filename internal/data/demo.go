@@ -15,13 +15,14 @@ import (
 // can be exercised (and demoed) without Datadog credentials. States jitter
 // a little on every refresh to make auto-refresh visible.
 type Demo struct {
-	site   string
-	mu     sync.Mutex
-	rnd    *rand.Rand
-	mons   []demoMonitor
-	incSt  map[string]string // incident id → state, mutated by SetIncidentField
-	incSev map[string]string // incident id → severity, mutated by SetIncidentField
-	dtGone map[string]bool   // downtime id → cancelled, mutated by CancelDowntime
+	site     string
+	mu       sync.Mutex
+	rnd      *rand.Rand
+	mons     []demoMonitor
+	incSt    map[string]string // incident id → state, mutated by SetIncidentField
+	incSev   map[string]string // incident id → severity, mutated by SetIncidentField
+	dtGone   map[string]bool   // downtime id → cancelled, mutated by CancelDowntime
+	incTodos map[string][]Todo // incident id → to-dos, mutated by the to-do panel
 }
 
 type demoMonitor struct {
@@ -150,7 +151,23 @@ func (d *Demo) Dashboard(_ context.Context, id string) (*DashboardView, error) {
 // testable offline.
 func (d *Demo) FetchDetail(_ context.Context, key, id string) (any, error) {
 	switch key {
-	case "monitors", "dashboards", "incidents":
+	case "incidents":
+		// Mirror the live shape: resolved People header + the raw object.
+		return &IncidentDetail{
+			People: IncidentPeople{
+				Commander:  "demo.user",
+				DeclaredBy: "alice",
+				CreatedBy:  "alice",
+				Responders: []string{"bob", "carol"},
+			},
+			Incident: map[string]any{
+				"public_id":   id,
+				"resource":    key,
+				"full_object": true,
+				"note":        "demo: in live mode this is the complete incident fetched on demand (fields, timeline …)",
+			},
+		}, nil
+	case "monitors", "dashboards":
 		return map[string]any{
 			"id":          id,
 			"resource":    key,
@@ -550,11 +567,100 @@ func (d *Demo) CurrentUser(_ context.Context) (User, error) {
 	return User{ID: "demo-user", Handle: "demo.user"}, nil
 }
 
-// SetIncidentCommander / AddIncidentTodo are no-ops in demo mode: neither
-// commander nor to-dos surface in the incidents table, so there's nothing to
-// reflect — the write path is exercised, it just succeeds.
+// SetIncidentCommander is a no-op success in demo mode: the commander doesn't
+// surface in the incidents table, so there's nothing to reflect — the write
+// path is exercised, it just succeeds.
 func (d *Demo) SetIncidentCommander(_ context.Context, _, _ string) error { return nil }
-func (d *Demo) AddIncidentTodo(_ context.Context, _, _, _ string) error   { return nil }
+
+// demoUsers is the offline roster the assignee picker searches.
+var demoUsers = []User{
+	{ID: "demo-user", Handle: "demo.user", Name: "Demo User"},
+	{ID: "u-alice", Handle: "alice", Name: "Alice Ng"},
+	{ID: "u-bob", Handle: "bob", Name: "Bob Ito"},
+	{ID: "u-carol", Handle: "carol", Name: "Carol Diaz"},
+	{ID: "u-dave", Handle: "dave", Name: "Dave Roy"},
+	{ID: "u-erin", Handle: "erin", Name: "Erin Poe"},
+	{ID: "u-oncall", Handle: "sre.oncall", Name: "SRE On-Call"},
+}
+
+// ListUsers filters the demo roster by a case-insensitive substring on
+// handle/name (empty query returns all), mirroring the live server-side filter.
+func (d *Demo) ListUsers(_ context.Context, query string) ([]User, error) {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		out := make([]User, len(demoUsers))
+		copy(out, demoUsers)
+		return out, nil
+	}
+	var out []User
+	for _, u := range demoUsers {
+		if strings.Contains(strings.ToLower(u.Handle), q) || strings.Contains(strings.ToLower(u.Name), q) {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+// IncidentTodos returns an incident's to-dos, seeding a plausible pair the
+// first time an incident is opened so the panel is demoable.
+func (d *Demo) IncidentTodos(_ context.Context, incidentID string) ([]Todo, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.incTodos == nil {
+		d.incTodos = map[string][]Todo{}
+	}
+	if _, ok := d.incTodos[incidentID]; !ok {
+		d.incTodos[incidentID] = []Todo{
+			{ID: incidentID + "-todo-1", Content: "Page the on-call DBA", Assignees: []string{"bob"}, Completed: false},
+			{ID: incidentID + "-todo-2", Content: "Post a status-page update", Assignees: []string{"demo.user"}, Completed: true},
+		}
+	}
+	out := make([]Todo, len(d.incTodos[incidentID]))
+	copy(out, d.incTodos[incidentID])
+	return out, nil
+}
+
+// AddIncidentTodo appends a to-do so the demo panel reflects the add.
+func (d *Demo) AddIncidentTodo(_ context.Context, incidentID, content, assigneeHandle string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.incTodos == nil {
+		d.incTodos = map[string][]Todo{}
+	}
+	d.incTodos[incidentID] = append(d.incTodos[incidentID], Todo{
+		ID:        fmt.Sprintf("%s-todo-%d", incidentID, d.rnd.Intn(1_000_000)),
+		Content:   content,
+		Assignees: []string{assigneeHandle},
+	})
+	return nil
+}
+
+// SetIncidentTodoCompleted flips a demo to-do's completion so the panel reflects it.
+func (d *Demo) SetIncidentTodoCompleted(_ context.Context, incidentID string, todo Todo, done bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for i := range d.incTodos[incidentID] {
+		if d.incTodos[incidentID][i].ID == todo.ID {
+			d.incTodos[incidentID][i].Completed = done
+		}
+	}
+	return nil
+}
+
+// DeleteIncidentTodo removes a demo to-do so the panel reflects it.
+func (d *Demo) DeleteIncidentTodo(_ context.Context, incidentID, todoID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	cur := d.incTodos[incidentID]
+	out := cur[:0:0]
+	for _, t := range cur {
+		if t.ID != todoID {
+			out = append(out, t)
+		}
+	}
+	d.incTodos[incidentID] = out
+	return nil
+}
 
 func (d *Demo) services() []Row {
 	// Names only, sorted — mirrors the live service-list endpoint (no per-

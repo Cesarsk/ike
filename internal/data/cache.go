@@ -15,6 +15,9 @@ type Cached struct {
 	p       Provider
 	mu      sync.Mutex
 	entries map[string]*entry
+
+	uMu    sync.Mutex
+	ucache map[string]*ucacheEntry // ListUsers results, keyed by query
 }
 
 type entry struct {
@@ -22,8 +25,18 @@ type entry struct {
 	at   time.Time
 }
 
+type ucacheEntry struct {
+	users []User
+	at    time.Time
+}
+
+// userCacheTTL bounds how long a user-search result is reused. Users change
+// rarely, so re-searching the same query within the window is served locally —
+// the picker's debounce plus this cache keep the users endpoint cheap.
+const userCacheTTL = 2 * time.Minute
+
 func NewCached(p Provider) *Cached {
-	return &Cached{p: p, entries: map[string]*entry{}}
+	return &Cached{p: p, entries: map[string]*entry{}, ucache: map[string]*ucacheEntry{}}
 }
 
 func (c *Cached) Mode() string     { return c.p.Mode() }
@@ -101,6 +114,41 @@ func (c *Cached) SetIncidentCommander(ctx context.Context, incidentID, userID st
 // so no cache eviction is needed.
 func (c *Cached) AddIncidentTodo(ctx context.Context, incidentID, content, assigneeHandle string) error {
 	return c.p.AddIncidentTodo(ctx, incidentID, content, assigneeHandle)
+}
+
+// ListUsers is cached per query for a short window (users change rarely), so
+// re-opening the picker or re-typing a prior search doesn't re-hit the API.
+func (c *Cached) ListUsers(ctx context.Context, query string) ([]User, error) {
+	c.uMu.Lock()
+	e, ok := c.ucache[query]
+	c.uMu.Unlock()
+	if ok && time.Since(e.at) < userCacheTTL {
+		return e.users, nil
+	}
+	users, err := c.p.ListUsers(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	c.uMu.Lock()
+	c.ucache[query] = &ucacheEntry{users: users, at: time.Now()}
+	c.uMu.Unlock()
+	return users, nil
+}
+
+// IncidentTodos is an on-demand panel fetch, deliberately uncached — one open,
+// one call; writes re-fetch to reflect changes.
+func (c *Cached) IncidentTodos(ctx context.Context, incidentID string) ([]Todo, error) {
+	return c.p.IncidentTodos(ctx, incidentID)
+}
+
+// SetIncidentTodoCompleted / DeleteIncidentTodo write through. To-dos aren't in
+// the incidents table cache, so nothing to evict; the panel re-fetches.
+func (c *Cached) SetIncidentTodoCompleted(ctx context.Context, incidentID string, todo Todo, done bool) error {
+	return c.p.SetIncidentTodoCompleted(ctx, incidentID, todo, done)
+}
+
+func (c *Cached) DeleteIncidentTodo(ctx context.Context, incidentID, todoID string) error {
+	return c.p.DeleteIncidentTodo(ctx, incidentID, todoID)
 }
 
 // dropResource evicts all cache entries for a resource key.
