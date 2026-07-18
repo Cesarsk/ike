@@ -150,6 +150,15 @@ func main() {
 			cfg.Columns = columns
 			return cfg.Save(config.Path())
 		}
+		opts.CurrentView = cfg.CurrentView
+		opts.Version = version
+		// PersistSession remembers the org + view across sessions, written as the
+		// user navigates (see ui.App.persistSession).
+		opts.PersistSession = func(context, view string) error {
+			cfg.CurrentContext = context
+			cfg.CurrentView = view
+			return cfg.Save(config.Path())
+		}
 		for _, n := range cfg.Names() {
 			opts.Contexts = append(opts.Contexts, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n])})
 		}

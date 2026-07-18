@@ -85,6 +85,14 @@ type Options struct {
 	// SaveSettings persists the theme + per-view TTL overrides + columns edited
 	// in :settings back to the config file (nil = don't persist, e.g. demo).
 	SaveSettings func(theme string, ttl map[string]string, columns map[string][]string) error
+	// CurrentView is the resource view to reopen on (from config; empty/unknown
+	// falls back to the first resource). Restored alongside the org.
+	CurrentView string
+	// PersistSession remembers the active org + view across sessions, called as
+	// the user switches context or view (nil = don't persist, e.g. demo).
+	PersistSession func(context, view string) error
+	// Version is shown on the startup splash (goreleaser ldflag; "dev" locally).
+	Version string
 }
 
 // ctxResource is the :ctx pseudo-resource. It is rendered like any table but
@@ -107,24 +115,27 @@ type App struct {
 	current      string // active context name
 	refreshEvery time.Duration
 
-	content   *tview.Pages // "table" | "detail" | "help" | "ctxform" (+ "confirm" overlay)
-	infoTV    *tview.TextView
-	hintTV    *tview.TextView
-	table     *tview.Table
-	prompt    *tview.InputField
-	status    *tview.TextView
-	footer    *tview.Pages
-	detail    *tview.TextView
-	dash      *tview.TextView
-	trace     *tview.TextView
-	patterns  *tview.TextView
-	ctxForm   *tview.Form
-	formErr   *tview.TextView
-	confirm   *tview.Modal
-	savedQL   *tview.List  // the 'Q' saved-query picker
-	savedQV   string       // view the open picker is scoped to
-	savedQIt  []SavedQuery // items backing the picker, by list index
-	pendSaveQ string       // query pending a name (save prompt in flight)
+	content    *tview.Pages // "table" | "detail" | "help" | "ctxform" (+ "confirm" overlay)
+	infoTV     *tview.TextView
+	hintTV     *tview.TextView
+	table      *tview.Table
+	prompt     *tview.InputField
+	status     *tview.TextView
+	footer     *tview.Pages
+	detail     *tview.TextView
+	dash       *tview.TextView
+	trace      *tview.TextView
+	patterns   *tview.TextView
+	splash     *tview.TextView // startup logo, auto-dismissed
+	rootView   tview.Primitive // the normal layout (header + content + footer)
+	splashView tview.Primitive // full-screen splash overlay (shown briefly at launch)
+	ctxForm    *tview.Form
+	formErr    *tview.TextView
+	confirm    *tview.Modal
+	savedQL    *tview.List  // the 'Q' saved-query picker
+	savedQV    string       // view the open picker is scoped to
+	savedQIt   []SavedQuery // items backing the picker, by list index
+	pendSaveQ  string       // query pending a name (save prompt in flight)
 
 	settingsTbl *tview.Table // the :settings editor
 	settingRows []settingRow // editable settings, indexed by table data row
@@ -226,10 +237,20 @@ func New(o Options) (*App, error) {
 		a.showContexts()
 		a.flash("✗ context "+o.Current+": "+startErr.Error()+" — press <a> to add a context", true)
 	} else {
-		a.switchResource(data.Resources()[0])
+		a.switchResource(initialResource(o.CurrentView)) // restore the last view
+		a.showSplash()                                   // brief logo over the loading view
 	}
 	go a.ticker()
 	return a, nil
+}
+
+// initialResource resolves the persisted view name to a resource, falling back
+// to the first registered resource when empty or unknown.
+func initialResource(view string) data.Resource {
+	if r, ok := data.ResourceByAlias(view); ok {
+		return r
+	}
+	return data.Resources()[0]
 }
 
 // applyTheme (re)applies the current palette's structural colours to every
@@ -347,6 +368,21 @@ func (a *App) build() {
 	a.patterns = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.patterns.SetBorder(true)
 
+	a.splash = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+	// Transparent so the splash inherits the terminal background instead of
+	// painting a differently-shaded rectangle behind the logo.
+	a.splash.SetBackgroundColor(tcell.ColorDefault)
+	// Full-screen splash: flexible spacers above/below a fixed block centre the
+	// logo vertically. Shown as its own root (not a content page) so the tall
+	// art isn't boxed under the header/footer. The wrapper is transparent too so
+	// the whole splash area matches the terminal (no painted band).
+	splashFlex := tview.NewFlex().SetDirection(tview.FlexRow)
+	splashFlex.AddItem(nil, 0, 1, false).
+		AddItem(a.splash, splashHeight, 0, false).
+		AddItem(nil, 0, 1, false)
+	splashFlex.SetBackgroundColor(tcell.ColorDefault)
+	a.splashView = splashFlex
+
 	a.savedQL = tview.NewList().ShowSecondaryText(true)
 	a.savedQL.SetBorder(true)
 	a.savedQL.SetMainTextColor(tcell.ColorWhite)
@@ -422,6 +458,7 @@ func (a *App) build() {
 		AddItem(header, 6, 0, false).
 		AddItem(a.content, 0, 1, true).
 		AddItem(a.footer, 1, 0, false)
+	a.rootView = main
 
 	a.applyTheme() // single-source the palette onto every widget
 	a.SetInputCapture(a.keys)
@@ -596,6 +633,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		return ev
 	}
 	switch a.page {
+	case "splash":
+		a.dismissSplash() // any key skips the splash (the key is swallowed)
+		return nil
 	case "help":
 		if ev.Key() == tcell.KeyEscape || ev.Rune() == 'q' {
 			a.back()
@@ -1342,6 +1382,7 @@ func (a *App) execCommand(cmd string) {
 	}
 	if res, ok := data.ResourceByAlias(cmd); ok {
 		a.switchResource(res)
+		a.persistSession() // remember this view for the next session
 		return
 	}
 	a.flash(fmt.Sprintf("unknown command %q — try :monitors :incidents :slos :logs :dashboards :ctx :settings", cmd), true)
@@ -1683,6 +1724,22 @@ func (a *App) switchContext(name string) {
 	a.res = data.Resource{} // so switchResource doesn't push the ctx view
 	a.flash("context → "+name, false)
 	a.switchResource(data.Resources()[0])
+	a.persistSession() // remember the new org (+ its reset-to-first view)
+}
+
+// persistSession writes the active org + view so a new session reopens here.
+// Called at deliberate navigation points (org switch, :view switch), never for
+// transient drill-downs. The ctx switcher and the empty resource are skipped.
+func (a *App) persistSession() {
+	if a.opts.PersistSession == nil {
+		return
+	}
+	if a.res.Key == "" || a.res.Key == ctxResource.Key {
+		return
+	}
+	if err := a.opts.PersistSession(a.current, a.res.Key); err != nil {
+		slog.Warn("persist session failed", "context", a.current, "view", a.res.Key, "err", err)
+	}
 }
 
 // pushNav records the current state on the navigation stack.

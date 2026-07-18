@@ -98,8 +98,12 @@ type SavedQuery struct {
 }
 
 type Config struct {
-	CurrentContext string             `yaml:"current-context"`
-	Contexts       map[string]Context `yaml:"contexts"`
+	CurrentContext string `yaml:"current-context"`
+	// CurrentView is the resource view (e.g. "incidents") ike reopens on. It is
+	// persisted as the user navigates so a new session restores where they were;
+	// an empty or unknown value falls back to the default view at the UI layer.
+	CurrentView string             `yaml:"current-view,omitempty"`
+	Contexts    map[string]Context `yaml:"contexts"`
 	// RefreshInterval configures auto-refresh, e.g. "30s", "1m", or "0" to
 	// disable. The --refresh flag overrides it when explicitly passed.
 	RefreshInterval string `yaml:"refresh-interval,omitempty"`

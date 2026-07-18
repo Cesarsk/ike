@@ -537,6 +537,101 @@ func TestCommandCompletions(t *testing.T) {
 	}
 }
 
+func TestInitialResource(t *testing.T) {
+	first := data.Resources()[0].Key
+	cases := map[string]string{
+		"incidents": "incidents", // exact key
+		"inc":       "incidents", // alias
+		"":          first,       // empty → default
+		"bogus":     first,       // unknown → default
+	}
+	for view, want := range cases {
+		if got := initialResource(view).Key; got != want {
+			t.Errorf("initialResource(%q) = %q, want %q", view, got, want)
+		}
+	}
+}
+
+// TestSplash: the startup logo shows, then auto-dismisses to the table.
+func TestSplash(t *testing.T) {
+	sim := newSim(t)
+	app := newDemoApp(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "github.com/Cesarsk") // splash creator line
+	waitFor(t, sim, "Monitors(all)")      // auto-dismissed → the table
+	app.Stop()
+}
+
+// TestSessionRestore: switching org + view persists, and a fresh session
+// launched from the persisted values reopens on that org + view (not the
+// default context + monitors).
+func TestSessionRestore(t *testing.T) {
+	sites := map[string]string{"demo-dev": "datadoghq.eu", "demo-prod": "datadoghq.com"}
+	var savedCtx, savedView string
+	mkOpts := func(current, view string) Options {
+		return Options{
+			Contexts: []ContextInfo{
+				{Name: "demo-dev", Site: sites["demo-dev"], Keys: "built-in"},
+				{Name: "demo-prod", Site: sites["demo-prod"], Keys: "built-in"},
+			},
+			Current:     current,
+			CurrentView: view,
+			Factory:     func(name string) (data.Provider, error) { return data.NewDemo(sites[name]), nil },
+			PersistSession: func(c, v string) error {
+				savedCtx, savedView = c, v
+				return nil
+			},
+			Refresh: time.Minute,
+		}
+	}
+
+	// Session 1: start on demo-dev, switch org to demo-prod, then view :incidents.
+	sim1 := newSim(t)
+	app1, err := New(mkOpts("demo-dev", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app1.SetScreen(sim1)
+	go func() { _ = app1.Run() }()
+	waitFor(t, sim1, "Monitors(all)") // splash cleared → default view
+	typeCmd(sim1, ":ctx")
+	waitFor(t, sim1, "demo-prod")
+	press(sim1, tcell.KeyDown) // demo-dev (active) → demo-prod
+	press(sim1, tcell.KeyEnter)
+	waitFor(t, sim1, "demo [demo-prod]")
+	typeCmd(sim1, ":incidents")
+	waitFor(t, sim1, "Incidents(all)")
+	app1.Stop()
+
+	if savedCtx != "demo-prod" || savedView != "incidents" {
+		t.Fatalf("persisted (%q,%q), want (demo-prod,incidents)", savedCtx, savedView)
+	}
+
+	// Session 2: relaunch from the persisted values → reopens there.
+	sim2 := newSim(t)
+	app2, err := New(mkOpts(savedCtx, savedView))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app2.SetScreen(sim2)
+	go func() { _ = app2.Run() }()
+	waitFor(t, sim2, "demo [demo-prod]") // restored org
+	waitFor(t, sim2, "Incidents(all)")   // restored view (not the default monitors)
+	app2.Stop()
+}
+
+func newSim(t *testing.T) tcell.SimulationScreen {
+	t.Helper()
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(140, 35)
+	return sim
+}
+
 func newDemoApp(t *testing.T) *App {
 	t.Helper()
 	sites := map[string]string{"demo-dev": "datadoghq.eu", "demo-prod": "datadoghq.com"}

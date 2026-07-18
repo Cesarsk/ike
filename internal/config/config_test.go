@@ -294,6 +294,7 @@ func TestSaveRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "sub", "config.yaml")
 	c := &Config{
 		CurrentContext: "dev",
+		CurrentView:    "incidents",
 		Contexts: map[string]Context{
 			"dev":  {Site: "datadoghq.eu", APIKeyEnv: "A", AppKeyEnv: "B"},
 			"prod": {Site: "datadoghq.com", Keychain: true},
@@ -308,6 +309,9 @@ func TestSaveRoundTrip(t *testing.T) {
 	}
 	if got.CurrentContext != "dev" || len(got.Contexts) != 2 || !got.Contexts["prod"].Keychain {
 		t.Errorf("round trip mismatch: %+v", got)
+	}
+	if got.CurrentView != "incidents" {
+		t.Errorf("current-view not preserved: %q", got.CurrentView)
 	}
 	info, err := os.Stat(p)
 	if err != nil {
