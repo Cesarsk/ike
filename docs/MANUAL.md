@@ -65,6 +65,13 @@ orgs, see [contexts](#multiple-orgs-contexts--auth).
 > app never writes anything without a confirmation prompt (see
 > [Actions](#actions-writes)).
 
+**Splash + session restore.** On launch a brief full-screen `IKE` splash shows
+(with the version) while your first view loads underneath — it clears after
+~1.2s or on any keypress. ike **reopens where you left off**: the last org
+(context) and the last view you switched to (e.g. `:incidents`) are remembered
+across sessions, so the next `ike` lands there instead of the default context +
+monitors. `--context` / `$IKE_CONTEXT` still override the org at launch.
+
 ---
 
 ## Reading the screen
@@ -379,7 +386,8 @@ contexts:
 
 | Field | Meaning |
 |-------|---------|
-| `current-context` | Which context to start on (unless overridden by flag/env). |
+| `current-context` | Which context to start on (unless overridden by flag/env). Updated automatically when you switch org. |
+| `current-view` | The view to reopen on (e.g. `incidents`); written as you navigate so a new session restores where you were. Empty/unknown falls back to the first view. |
 | `refresh-interval` | Auto-refresh cadence, e.g. `45s`, `0` to disable. |
 | `ttl-overrides.<view>` | Custom cache TTL per view (`logs`, `monitors`, …), Go duration; overrides the built-in default. |
 | `columns.<view>` | Column subset/order to display for a view, by name (below). Normally set via the in-app `C` picker; hand-editable too. Unknown names ignored; empty/all-unknown shows all. Display-only — sort/filter still see every column. |

@@ -195,7 +195,11 @@ declared-by / created-by resolved to handles above the raw object via
 `include=users`; responders are read-only — the API has no write path),
 ~~hardened incident field mapping~~ (`incidentField` handles both the single-
 and multi-value arms of the field union + missing fields, so custom fields
-don't blank SEV/STATE).
+don't blank SEV/STATE), ~~session restore~~ (`current-view` in the config
+alongside `current-context`; reopens on the last org + view, persisted on
+`:ctx`/`:<resource>` switches, drill-downs stay transient), ~~startup splash~~
+(full-screen `IKE` logo + version + `github.com/Cesarsk`, transparent
+background, ~1.2s or any key to dismiss, first view loading underneath).
 
 ## Traces & correlation
 

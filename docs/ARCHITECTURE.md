@@ -19,12 +19,13 @@ flowchart TB
             APP --- CTX
         end
         subgraph dataL["internal/data"]
-            CACHE["Cached<br/>TTL cache per resource+query<br/>stale-on-error"]
-            LIVE["Live provider<br/>datadog-api-client-go v2<br/>rate-limit header tracking"]
+            CACHE["Cached<br/>TTL cache per resource+query<br/>stale-on-error · drops on write"]
+            LIVE["Live provider<br/>datadog-api-client-go v2<br/>reads + confirm-gated writes"]
             DEMO["Demo provider<br/>offline fake data (--demo)"]
+            ERR["Errored provider<br/>unresolved creds →<br/>app opens on :ctx"]
         end
         subgraph cfgL["internal/config"]
-            CFG["contexts config<br/>~/.config/ike/config.yaml"]
+            CFG["contexts config<br/>~/.config/ike/config.yaml<br/>+ current-context / current-view"]
         end
     end
     ENV["env vars<br/>$IKE_DEV_API_KEY …"]
@@ -40,9 +41,19 @@ flowchart TB
     LIVE -.->|"after :ctx switch"| DD2
 ```
 
-Key property: `Provider` is an interface (`Fetch`, `Budget`, `Mode`, `Site`).
-The demo provider implements it fully, which is what makes the entire TUI —
-including context switching — testable headlessly with zero credentials.
+Key property: `Provider` is a single interface spanning **reads** (`Fetch`,
+`FetchDetail`, `Dashboard`, `Trace`, `MonitorMetric`, `ListUsers`,
+`IncidentTodos`, `CurrentUser`), **confirm-gated writes** (`SetIncidentField`
+for state/severity, `SetIncidentCommander`, `AddIncidentTodo`,
+`SetIncidentTodoCompleted`, `DeleteIncidentTodo`, `SetMonitorMute`,
+`CancelDowntime`) and **status** (`Budget`, `Mode`, `Site`). Three
+implementations — `Live` (Datadog API), `Demo` (offline `--demo`), and
+`Errored` (a placeholder for unresolved credentials, so a first run still opens
+on `:ctx` to add or fix a context instead of exiting). Every write goes through
+the `Cached` wrapper, which invalidates the affected resource so the next fetch
+reflects the change. The demo provider implements the whole interface — every
+read *and* write — which is what makes the entire TUI testable headlessly with
+zero credentials.
 
 ## Data flow: one fetch
 
@@ -121,6 +132,13 @@ Startup context selection precedence: `--context` flag →
 at all, the classic `DD_API_KEY`/`DD_APP_KEY`/`DD_SITE` env vars become an
 implicit `default` context, so pre-contexts usage keeps working.
 
+**Session restore.** The active org and view are persisted as you navigate
+(`current-context` + `current-view`, written on a `:ctx` switch and on a
+`:<resource>` command via a `PersistSession` callback — drill-downs stay
+transient), so a new session reopens where you left off. At launch a brief
+full-screen **splash** (the `IKE` logo + version) shows while the first view
+loads underneath, dismissed after ~1.2s or on any key.
+
 ## Navigation model
 
 Mirrors k9s's page stack (`Pages` + `model.Stack` in k9s): every navigation
@@ -150,6 +168,14 @@ The `:ctx` view is a pseudo-resource: rendered through the same table
 pipeline (filter, colors, selection) but served from the app's own context
 list instead of a Provider, and `enter` switches org instead of opening a
 detail view.
+
+The diagram shows the core states; the same push/pop stack drives the other
+overlay pages too — the dashboard grid, the trace waterfall, log patterns
+(`P`), the saved-query picker (`Q`), `:settings`, the column picker (`C`), the
+searchable user picker (`I` / to-do assignee) and the incident to-do panel
+(`T`) — each pushes the prior view and esc pops it. The startup splash is the
+one exception: it is shown as its own transient full-screen root (a
+`SetRoot` swap), outside the navigation stack.
 
 ## Security model
 
@@ -182,10 +208,16 @@ knows nothing about tview, `ui` knows nothing about YAML or env vars.
 
 No pty, no credentials, no network:
 
-- `internal/config`: table-driven unit tests (valid/implicit/reject-plaintext).
+- `internal/config`: table-driven unit tests (valid/implicit/reject-plaintext,
+  `current-context`/`current-view` round-trip).
+- `internal/data`: wire-shape unit tests for the writes that can't be exercised
+  from the sandbox — the nested-nullable commander-assign body and the to-do
+  completion PATCH — assert the exact JSON Datadog expects.
 - `internal/ui`: the real `App` runs on a tcell `SimulationScreen`; tests
-  inject keystrokes and assert on the rendered screen text. This covers
-  command mode, filters, quick filters, help, detail, esc-history and
-  context switching end-to-end.
+  inject keystrokes and assert on the rendered screen text. This covers command
+  mode, filters, quick filters, help, detail, esc-history, context switching,
+  the confirm-gated writes (mute, incident state/severity/commander-picker,
+  to-do panel add/complete/delete), the startup splash, and session restore
+  (switch org+view → relaunch reopens there) — all end-to-end.
 - `TestScreenDump` (`IKE_DUMP=1`) regenerates the README screenshots from
   the same harness.
