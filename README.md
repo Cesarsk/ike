@@ -37,14 +37,13 @@ already have from [k9s](https://k9scli.io): `:` to switch views, `/` to filter,
 
 ## Demo
 
-An animated walkthrough of the debugging loop is on the way. Until then, the
-fastest way to see ike is to run it yourself with no credentials:
+![ike demo](docs/demo.gif)
+
+Or run it yourself with no credentials:
 
 ```sh
 ike --demo
 ```
-
-<!-- TODO: embed the demo cast here (docs/demo.gif), recorded with vhs. -->
 
 ## Install
 
