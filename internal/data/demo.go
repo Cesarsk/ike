@@ -352,7 +352,7 @@ func (d *Demo) logs(query, timeRange string) []Row {
 	}
 	// Token-aware query handling so drill-down queries like
 	// "service:kong-proxy status:error" behave like the real search API.
-	var statusFilter, svcFilter string
+	var statusFilter, svcFilter, traceFilter string
 	var textToks []string
 	for _, tok := range strings.Fields(strings.ToLower(strings.TrimSpace(query))) {
 		switch {
@@ -361,11 +361,19 @@ func (d *Demo) logs(query, timeRange string) []Row {
 			statusFilter = strings.TrimPrefix(tok, "status:")
 		case strings.HasPrefix(tok, "service:"):
 			svcFilter = strings.TrimPrefix(tok, "service:")
+		case strings.HasPrefix(tok, "trace_id:"):
+			traceFilter = strings.TrimPrefix(tok, "trace_id:")
 		case strings.HasPrefix(tok, "env:"):
 			// demo data is single-env; accept and ignore
 		default:
 			textToks = append(textToks, tok)
 		}
+	}
+	// A trace_id query is the trace → logs drill-down. Synthesize the correlated
+	// logs for that trace (one per hop, deepest hop errors) so the drill is
+	// never empty in demo mode — mirrors the trace's unified timeline.
+	if traceFilter != "" {
+		return d.traceLogs(traceFilter)
 	}
 	var rows []Row
 	for i := 0; i < 60; i++ {
@@ -412,6 +420,44 @@ func (d *Demo) logs(query, timeRange string) []Row {
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Cells[0] > rows[j].Cells[0] }) // newest first
+	return rows
+}
+
+// traceLogs synthesizes the logs correlated to one trace_id: one line per hop
+// of the demo trace chain, deepest hop erroring, all stamped with the trace id.
+// Deterministic (no jitter) so the trace → logs drill-down is stable to demo
+// and to record. Newest-first, matching logs().
+func (d *Demo) traceLogs(traceID string) []Row {
+	msgs := []string{
+		"request received GET /api/v1/orders",
+		"handling order lookup id=91422",
+		"SELECT * FROM orders WHERE id=91422 (48ms)",
+		"quote fetch failed: upstream deadline exceeded",
+	}
+	hosts := []string{"ip-10-1-2-11", "ip-10-1-4-23", "ip-10-1-4-23", "ip-10-1-5-2"}
+	base := time.Now().Add(-90 * time.Second)
+	rows := make([]Row, 0, len(demoTraceChain))
+	for i, hop := range demoTraceChain {
+		status := "info"
+		if i == len(demoTraceChain)-1 {
+			status = "error"
+		}
+		ts := base.Add(time.Duration(i*40) * time.Millisecond)
+		host := hosts[i%len(hosts)]
+		msg := msgs[i%len(msgs)]
+		rows = append(rows, Row{
+			ID:      fmt.Sprintf("log-%s-%d", traceID, i),
+			TraceID: traceID,
+			Cells:   []string{ts.Format("15:04:05"), status, hop.svc, host, msg},
+			Raw: map[string]any{
+				"timestamp": ts.Format(time.RFC3339), "status": status,
+				"service": hop.svc, "host": host, "message": msg,
+				"trace_id": traceID, "tags": []string{"env:prod", "team:sre"},
+			},
+			URL: WebBase(d.site) + "/logs?query=trace_id:" + traceID,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Cells[0] > rows[j].Cells[0] })
 	return rows
 }
 
