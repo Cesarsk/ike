@@ -190,10 +190,16 @@ func (d *Demo) FetchDetail(_ context.Context, key, id string) (any, error) {
 		if att < target {
 			remaining = 100 - (target-att)/(100-target)*100
 		}
-		return map[string]any{
-			"name": id, "type": "metric", "target_pct": target,
-			"timeframe_days": 30, "attainment_pct": att,
-			"error_budget_remaining_pct": remaining, "meeting_target": att >= target,
+		burndown := make([]float64, 30)
+		for i := range burndown {
+			// Ease from 100% toward the current remaining budget.
+			frac := float64(i) / float64(len(burndown)-1)
+			burndown[i] = 100 - (100-remaining)*frac*frac
+		}
+		return &SLODetail{
+			Name: id, Type: "metric", TargetPct: target, TimeframeDays: 30,
+			AttainmentPct: att, BudgetRemainingPct: remaining,
+			BurnRate: (100 - att) / (100 - target), Burndown: burndown,
 		}, nil
 	}
 	return nil, nil

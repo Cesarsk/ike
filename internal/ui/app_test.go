@@ -151,6 +151,12 @@ func TestAppSmoke(t *testing.T) {
 
 	typeCmd(sim, ":slos")
 	waitFor(t, sim, "SLOs(all)")
+	// SLO detail: structured attainment + error-budget burndown + burn rate.
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "burn rate:")
+	waitFor(t, sim, "error-budget burndown")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "SLOs(all)")
 	// SLO type filter (t cycles metric → monitor → time_slice → all) and
 	// sorting (s cycles column, S reverses); title reflects both.
 	typeRunes(sim, "t")

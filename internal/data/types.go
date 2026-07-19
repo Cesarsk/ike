@@ -153,6 +153,23 @@ var IncidentStates = []string{"active", "stable", "resolved"}
 // IncidentSeverities are the severities an incident can be set to via 'v'.
 var IncidentSeverities = []string{"SEV-1", "SEV-2", "SEV-3", "SEV-4", "SEV-5"}
 
+// SLODetail is the structured SLO detail: configuration, live attainment,
+// error budget, burn rate and a budget burndown series over the timeframe.
+// Note explains a missing burndown (no history for this SLO type).
+type SLODetail struct {
+	Name               string
+	Type               string
+	TargetPct          float64
+	TimeframeDays      int
+	AttainmentPct      float64
+	BudgetRemainingPct float64
+	// BurnRate is the window-average burn rate: (1-attainment)/(1-target).
+	// 1.0 means burning exactly the budget; >1 means on track to breach.
+	BurnRate float64
+	Burndown []float64 // budget remaining %, oldest → newest
+	Note     string
+}
+
 // MetricSeries is a monitor's evaluated metric over a recent window — the
 // data behind the alert, for the monitor detail view. Note explains why
 // there's no sparkline (non-metric monitor, unparseable query, no data).

@@ -216,30 +216,90 @@ func (l *Live) sloStatus(ctx context.Context, id string) (any, error) {
 	hist, hresp, err := api.GetSLOHistory(ctx, id, from, to,
 		*datadogV1.NewGetSLOHistoryOptionalParameters())
 	l.track(hresp)
-	out := map[string]any{
-		"name": data.GetName(), "type": string(data.GetType()),
-		"target_pct": target, "timeframe_days": days,
+	out := &SLODetail{
+		Name: data.GetName(), Type: string(data.GetType()),
+		TargetPct: target, TimeframeDays: days,
 	}
 	if err != nil {
 		// Config still worth showing even if history is unavailable.
-		out["status"] = "history unavailable: " + err.Error()
+		out.Note = "history unavailable: " + err.Error()
 		return out, nil
 	}
 	hd := hist.GetData()
 	overall := hd.GetOverall()
 	attained := overall.GetSliValue()
-	out["attainment_pct"] = attained
+	out.AttainmentPct = attained
+	out.Burndown = sloBurndown(hd, target)
+	if len(out.Burndown) == 0 {
+		out.Note = "no history series for this SLO type — burndown unavailable"
+	}
+	if target > 0 && target < 100 {
+		out.BurnRate = (100 - attained) / (100 - target)
+	}
 	if target > 0 {
 		// Error budget consumed = (target-attained)/(100-target); >100% = breached.
 		if attained >= target {
-			out["error_budget_remaining_pct"] = 100.0
+			out.BudgetRemainingPct = 100.0
 		} else {
 			consumed := (target - attained) / (100 - target) * 100
-			out["error_budget_remaining_pct"] = 100 - consumed
+			if consumed > 100 {
+				consumed = 100
+			}
+			out.BudgetRemainingPct = 100 - consumed
 		}
-		out["meeting_target"] = attained >= target
 	}
 	return out, nil
+}
+
+// sloBurndown derives the error-budget-remaining series (oldest → newest) from
+// an SLO's history: the overall SLI history where present (monitor/time-slice
+// SLOs), else the cumulative numerator/denominator ratio (metric SLOs).
+func sloBurndown(hd datadogV1.SLOHistoryResponseData, target float64) []float64 {
+	if target <= 0 || target >= 100 {
+		return nil
+	}
+	remaining := func(sli float64) float64 {
+		if sli >= target {
+			return 100
+		}
+		consumed := (target - sli) / (100 - target) * 100
+		if consumed > 100 {
+			consumed = 100
+		}
+		return 100 - consumed
+	}
+	overall := hd.GetOverall()
+	if h := overall.GetHistory(); len(h) > 1 {
+		// Cumulative average of the instantaneous SLI approximates attainment
+		// over the window so far — the burndown of the budget.
+		var sum float64
+		out := make([]float64, 0, len(h))
+		for i, p := range h {
+			if len(p) < 2 {
+				continue
+			}
+			sum += p[1]
+			out = append(out, remaining(sum/float64(i+1)))
+		}
+		return out
+	}
+	series := hd.GetSeries()
+	numS, denS := series.GetNumerator(), series.GetDenominator()
+	num, den := numS.GetValues(), denS.GetValues()
+	if len(num) > 1 && len(num) == len(den) {
+		var cn, cd float64
+		out := make([]float64, 0, len(num))
+		for i := range num {
+			cn += num[i]
+			cd += den[i]
+			if cd == 0 {
+				continue
+			}
+			out = append(out, remaining(cn/cd*100))
+		}
+		return out
+	}
+	return nil
 }
 
 // SetIncidentField patches a single-value incident field — "state"
