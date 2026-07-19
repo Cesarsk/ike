@@ -240,6 +240,17 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Traces(")
 
+	// RUM view: browser events (views, actions, errors), '/' query filters.
+	typeCmd(sim, ":rum")
+	waitFor(t, sim, "RUM(")
+	waitFor(t, sim, "onboarding-web")
+	typeRunes(sim, "/")
+	press(sim, tcell.KeyCtrlU)
+	typeRunes(sim, "@type:error")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "TypeError") // only error events remain
+	press(sim, tcell.KeyEscape)
+
 	// Events feed: the "what changed" stream (deploys, alerts).
 	typeCmd(sim, ":events")
 	waitFor(t, sim, "Events(")

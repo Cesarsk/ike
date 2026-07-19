@@ -286,6 +286,14 @@ func Resources() []Resource {
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "prod",
 		},
 		{
+			// RUM events (views, actions, errors, sessions) — '/' is a RUM
+			// search query, digits 1-5 set the time window like logs.
+			Key: "rum", Title: "RUM",
+			Aliases: []string{"rum", "browser"},
+			Columns: []string{"TIME", "TYPE", "APPLICATION", "SERVICE", "DETAIL"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+		},
+		{
 			Key: "events", Title: "Events",
 			Aliases: []string{"events", "event", "ev"},
 			Columns: []string{"TIME", "TYPE", "SOURCE", "TITLE", "TAGS"},

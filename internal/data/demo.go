@@ -101,6 +101,8 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.services(), nil
 	case "events":
 		return d.events(), nil
+	case "rum":
+		return d.rum(query), nil
 	case "downtimes":
 		return d.downtimes(), nil
 	}
@@ -819,4 +821,44 @@ func (d *Demo) IncidentImpacts(_ context.Context, _ string) ([]string, error) {
 		"customer: checkout latency > 5s for EU traffic",
 		"service: payments-api error rate 12%",
 	}, nil
+}
+
+// rum synthesizes RUM events (views, actions, errors) so the :rum view is
+// demoable offline; the query filters by type:/service: like the real search.
+func (d *Demo) rum(query string) []Row {
+	var typeFilter string
+	for _, tok := range strings.Fields(strings.ToLower(query)) {
+		if strings.HasPrefix(tok, "@type:") {
+			typeFilter = strings.TrimPrefix(tok, "@type:")
+		}
+		if strings.HasPrefix(tok, "type:") {
+			typeFilter = strings.TrimPrefix(tok, "type:")
+		}
+	}
+	samples := []struct{ typ, app, svc, detail string }{
+		{"view", "onboarding-web", "onboarding-web", "/signup/step-2"},
+		{"action", "onboarding-web", "onboarding-web", "click on Continue"},
+		{"error", "onboarding-web", "onboarding-web", "TypeError: t.user is undefined"},
+		{"view", "trading-app", "trading-frontend", "/portfolio"},
+		{"action", "trading-app", "trading-frontend", "click on Buy"},
+		{"error", "trading-app", "trading-frontend", "NetworkError: /api/v1/quotes timed out"},
+		{"view", "onboarding-web", "onboarding-web", "/kyc/documents"},
+		{"session", "trading-app", "trading-frontend", "session 34m"},
+	}
+	var rows []Row
+	for i, e := range samples {
+		if typeFilter != "" && e.typ != typeFilter {
+			continue
+		}
+		ts := time.Now().Add(-time.Duration(90*i) * time.Second)
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("rum-%d", i),
+			Cells: []string{ts.Format("15:04:05"), e.typ, e.app, e.svc, e.detail},
+			Raw: map[string]any{
+				"type": e.typ, "application": e.app, "service": e.svc, "detail": e.detail,
+			},
+			URL: WebBase(d.site) + "/rum/explorer",
+		})
+	}
+	return rows
 }

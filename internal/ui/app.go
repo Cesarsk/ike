@@ -576,6 +576,8 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]<enter>traces for service  </>env (default prod)  <s>sort <S>reverse")
 		case "events":
 			lines = append(lines, "[gray]</>query  <Q>saved  window: <1>15m..<5>7d  <s>sort   (deploys, alerts, changes)")
+		case "rum":
+			lines = append(lines, "[gray]</>RUM query (e.g. @type:error)  window: <1>15m..<5>7d  <s>sort")
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:
@@ -937,7 +939,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.quickFilter(ev.Rune())
 			return nil
 		}
-		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" {
+		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" || a.res.Key == "rum" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -946,7 +948,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case '5':
-		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" {
+		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" || a.res.Key == "rum" {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -1799,7 +1801,7 @@ type ctxProvider struct {
 // rate-limit budget, so a fan-out costs one call per org, not N per org.
 var spanningResources = map[string]bool{
 	"monitors": true, "incidents": true, "slos": true, "downtimes": true,
-	"logs": true, "traces": true, "events": true, "services": true,
+	"logs": true, "traces": true, "events": true, "services": true, "rum": true,
 	"dashboards": true, "overview": true,
 }
 
