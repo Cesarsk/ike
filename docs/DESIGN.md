@@ -100,7 +100,46 @@ completion (facet API, rate-limited) is a possible later opt-in mode.
 
 ## Roadmap
 
-### Auth — its own milestone, the biggest single feature
+### Current focus — Datadog-native depth + UX (v0.2.x)
+
+The strategy: keep the k9s interaction model (that muscle memory is the point)
+and differentiate by going deeper into Datadog than a generic list/detail tool
+can. Decided 2026-07-18, in rough build order:
+
+1. **Cross-org rollup.** Activate *multiple* contexts from the `:ctx` page
+   (opt-in per context; exactly one active remains the default) and get a
+   rollup view that merges incidents/alerting monitors across every active org,
+   each row tagged with its org. The one real architecture change in the
+   package: several providers/caches alive at once, fetched in parallel, each
+   respecting its own org's rate-limit budget. k9s is structurally
+   single-context; this is ike's clearest differentiator.
+2. **Incident war room.** One incident-focused screen: commander, responders,
+   to-dos, impacts (`ListIncidentImpacts`), key fields — instead of a JSON
+   dump. The timeline stays out (no official create/read op — see below).
+3. **Richer structured detail views.** Replace the remaining raw-JSON detail
+   dumps with sectioned, Datadog-native layouts, extending the incident People
+   header + monitor metric-sparkline pattern to every view.
+4. **SLO error-budget burndown.** A burndown sparkline + burn rate on the SLO
+   detail — the `GetSLOHistory` series is already fetched for attainment.
+5. **RUM view.** Verified feasible in v2.62.0: `RUMApi` `ListRUMEvents` /
+   `AggregateRUMEvents` + `GetRUMApplications` — a `:rum` view with
+   server-side query, like logs.
+6. **Synthetics view.** Verified feasible: v1 `SyntheticsApi` `ListTests` +
+   latest API/browser results — test pass/fail at a glance.
+7. **Distinct visual identity.** A signature default palette + glyph set so
+   ike reads as ike in screenshots (the theme system already exists).
+8. **Fuzzy finder** overlay for resources and rows (client-side, zero API).
+
+Tentative (roadmapped, not committed): **watch mode** — run ike passively and
+raise a desktop notification on a new SEV-1 / monitor flip. Rate-limit
+sensitive; needs a deliberately cheap poll.
+
+Verified dead end: **service map / dependency graph** — the official client
+(checked v2.62.0) exposes no service-dependencies or service-map endpoint;
+same category as per-service stats. Revisit only if Datadog publishes one.
+Also deliberately skipped: first-run onboarding wizard.
+
+### Auth — its own milestone, the biggest single feature (after the current package)
 
 1. **OAuth2 login, pup-style**: `ike auth login --site <site> --subdomain <sub> --org <org>`.
    - **The flags map onto a named context.** `auth login` creates-or-updates a
