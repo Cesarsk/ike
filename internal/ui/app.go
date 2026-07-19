@@ -3186,10 +3186,19 @@ func (a *App) openDetail(tableRow int) {
 		var body string
 		switch detKey {
 		case "incidents":
-			// A People header (resolved handles) over the raw incident object —
-			// turning an opaque JSON dump into something readable at a glance.
+			// The war room: structured summary, people, impacts and to-dos in
+			// one screen, with the raw object at the bottom for completeness.
 			if d, ok := full.(*data.IncidentDetail); ok {
-				body = incidentPeopleHeader(d.People) + jsonIndent(d.Incident)
+				prov := a.providerFor(r)
+				todos, tErr := prov.IncidentTodos(context.Background(), r.ID)
+				impacts, iErr := prov.IncidentImpacts(context.Background(), r.ID)
+				if tErr != nil {
+					slog.Warn("war room: to-dos unavailable", "id", r.ID, "err", tErr)
+				}
+				if iErr != nil {
+					slog.Warn("war room: impacts unavailable", "id", r.ID, "err", iErr)
+				}
+				body = warRoomBody(r.ID, d, impacts, todos) + jsonIndent(d.Incident)
 			} else {
 				body = jsonIndent(full)
 			}
@@ -3241,6 +3250,65 @@ func jsonIndent(v any) string {
 		return "✗ " + err.Error()
 	}
 	return string(b)
+}
+
+// warRoomBody renders the incident war room: identity line, summary, people,
+// impacts, to-dos and non-empty fields — plain text (the detail view has
+// dynamic colours off), sections in triage order.
+func warRoomBody(id string, d *data.IncidentDetail, impacts []string, todos []data.Todo) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "━━ %s · %s · %s ━━\n", id, d.Severity, d.State)
+	if d.Title != "" {
+		b.WriteString("  " + d.Title + "\n")
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "  %-13s%s\n", "created:", d.Created)
+	impact := "no"
+	if d.CustomerImpacted {
+		impact = "YES"
+		if d.ImpactScope != "" {
+			impact += " · " + d.ImpactScope
+		}
+	}
+	fmt.Fprintf(&b, "  %-13s%s\n\n", "customer:", impact)
+
+	b.WriteString(incidentPeopleHeader(d.People))
+
+	b.WriteString("── impacts ──\n")
+	if len(impacts) == 0 {
+		b.WriteString("  (none declared)\n")
+	}
+	for _, im := range impacts {
+		b.WriteString("  • " + im + "\n")
+	}
+	b.WriteString("\n── to-dos ──\n")
+	if len(todos) == 0 {
+		b.WriteString("  (none — press esc, then T for the to-do panel)\n")
+	}
+	for _, t := range todos {
+		mark := "[ ]"
+		if t.Completed {
+			mark = "[x]"
+		}
+		line := "  " + mark + " " + t.Content
+		if len(t.Assignees) > 0 {
+			line += "   @" + strings.Join(t.Assignees, " @")
+		}
+		b.WriteString(line + "\n")
+	}
+	if len(d.Fields) > 0 {
+		b.WriteString("\n── fields ──\n")
+		keys := make([]string, 0, len(d.Fields))
+		for k := range d.Fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(&b, "  %-13s%s\n", k+":", d.Fields[k])
+		}
+	}
+	b.WriteString("\n── raw ──\n")
+	return b.String()
 }
 
 // incidentPeopleHeader renders the resolved People block shown above an

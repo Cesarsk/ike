@@ -181,7 +181,7 @@ func (l *Live) FetchDetail(ctx context.Context, key, id string) (any, error) {
 		if err != nil {
 			return nil, apiErr("incident detail", err)
 		}
-		return &IncidentDetail{People: incidentPeople(in), Incident: in}, nil
+		return incidentDetail(in), nil
 	case "slos":
 		return l.sloStatus(ctx, id)
 	}
@@ -461,6 +461,56 @@ func todoAssigneeHandles(as []datadogV2.IncidentTodoAssignee) []string {
 		}
 	}
 	return out
+}
+
+// incidentDetail builds the structured war-room summary from a fetched
+// incident: title/severity/state/created/impact plus every non-empty field,
+// alongside the resolved People and the raw object.
+func incidentDetail(in datadogV2.IncidentResponse) *IncidentDetail {
+	data := in.GetData()
+	attrs := data.GetAttributes()
+	fields := map[string]string{}
+	for name := range attrs.GetFields() {
+		if v := incidentField(attrs.GetFields(), name); v != "" {
+			fields[name] = v
+		}
+	}
+	return &IncidentDetail{
+		Title:            attrs.GetTitle(),
+		Severity:         string(attrs.GetSeverity()),
+		State:            incidentField(attrs.GetFields(), "state"),
+		Created:          attrs.GetCreated().Format(time.RFC3339),
+		CustomerImpacted: attrs.GetCustomerImpacted(),
+		ImpactScope:      attrs.GetCustomerImpactScope(),
+		Fields:           fields,
+		People:           incidentPeople(in),
+		Incident:         in,
+	}
+}
+
+// IncidentImpacts lists an incident's declared impacts, one line each.
+func (l *Live) IncidentImpacts(ctx context.Context, incidentID string) ([]string, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, httpresp, err := datadogV2.NewIncidentsApi(l.client).ListIncidentImpacts(ctx, incidentID)
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("incident impacts", err)
+	}
+	var out []string
+	for _, d := range resp.GetData() {
+		attrs := d.GetAttributes()
+		line := attrs.GetDescription()
+		if t := attrs.GetImpactType(); t != "" {
+			line = t + ": " + line
+		}
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out, nil
 }
 
 // incidentPeople resolves an incident's commander/created/declared/responders

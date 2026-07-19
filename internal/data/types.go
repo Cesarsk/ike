@@ -132,12 +132,19 @@ type IncidentPeople struct {
 	Responders []string
 }
 
-// IncidentDetail is what FetchDetail returns for an incident: the resolved
-// People (rendered as a header) plus the raw incident object (dumped as JSON).
-// One GetIncident call (with include=users) feeds both.
+// IncidentDetail is what FetchDetail returns for an incident: a structured
+// summary (the war-room header), the resolved People, and the raw incident
+// object. One GetIncident call (with include=users) feeds all of it.
 type IncidentDetail struct {
-	People   IncidentPeople
-	Incident any
+	Title            string
+	Severity         string
+	State            string
+	Created          string
+	CustomerImpacted bool
+	ImpactScope      string
+	Fields           map[string]string // non-empty single/multi-value fields
+	People           IncidentPeople
+	Incident         any
 }
 
 // IncidentStates are the states an incident can be moved to via 'r'.
@@ -204,6 +211,9 @@ type Provider interface {
 	SetIncidentTodoCompleted(ctx context.Context, incidentID string, todo Todo, done bool) error
 	// DeleteIncidentTodo removes a to-do from an incident. A write; UI-gated.
 	DeleteIncidentTodo(ctx context.Context, incidentID, todoID string) error
+	// IncidentImpacts lists an incident's declared impacts (description +
+	// type), for the war-room detail. On-demand.
+	IncidentImpacts(ctx context.Context, incidentID string) ([]string, error)
 	// Budget reports the last-seen API rate-limit state, one line per
 	// endpoint family (from X-RateLimit-* response headers).
 	Budget() []string

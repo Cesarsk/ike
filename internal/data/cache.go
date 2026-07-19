@@ -151,6 +151,11 @@ func (c *Cached) DeleteIncidentTodo(ctx context.Context, incidentID, todoID stri
 	return c.p.DeleteIncidentTodo(ctx, incidentID, todoID)
 }
 
+// IncidentImpacts is an on-demand detail fetch, uncached.
+func (c *Cached) IncidentImpacts(ctx context.Context, incidentID string) ([]string, error) {
+	return c.p.IncidentImpacts(ctx, incidentID)
+}
+
 // dropResource evicts all cache entries for a resource key.
 func (c *Cached) dropResource(key string) {
 	c.mu.Lock()

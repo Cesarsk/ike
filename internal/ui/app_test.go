@@ -128,12 +128,18 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape) // back to incidents
 	waitFor(t, sim, "Incidents(all)")
 
-	// Incident detail: the People header resolves commander + responders
-	// (read-only) above the raw object — no longer an opaque JSON dump.
+	// Incident detail is the war room: identity, summary, people, impacts,
+	// to-dos and fields in one screen (raw object at the bottom).
 	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "SEV-1")
 	waitFor(t, sim, "── people ──")
 	waitFor(t, sim, "responders:")
-	waitFor(t, sim, "bob") // a demo responder handle
+	waitFor(t, sim, "── impacts ──")
+	waitFor(t, sim, "checkout latency") // a demo impact line
+	press(sim, tcell.KeyPgDn)           // to-dos/fields are below the fold
+	waitFor(t, sim, "── to-dos ──")
+	waitFor(t, sim, "failover the primary") // the to-do added earlier survives
+	waitFor(t, sim, "── fields ──")
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Incidents(all)")
 

@@ -152,8 +152,15 @@ func (d *Demo) Dashboard(_ context.Context, id string) (*DashboardView, error) {
 func (d *Demo) FetchDetail(_ context.Context, key, id string) (any, error) {
 	switch key {
 	case "incidents":
-		// Mirror the live shape: resolved People header + the raw object.
+		// Mirror the live shape: structured war-room summary + People + raw.
 		return &IncidentDetail{
+			Title:            "Kong data plane returning 5xx in prod",
+			Severity:         "SEV-1",
+			State:            "active",
+			Created:          time.Now().Add(-42 * time.Minute).Format(time.RFC3339),
+			CustomerImpacted: true,
+			ImpactScope:      "checkout degraded for EU customers",
+			Fields:           map[string]string{"root_cause": "config rollout", "services": "kong-proxy, payments-api", "teams": "sre"},
 			People: IncidentPeople{
 				Commander:  "demo.user",
 				DeclaredBy: "alice",
@@ -798,4 +805,12 @@ func SortMonitors(rows []Row) {
 			}
 		}
 	}
+}
+
+// IncidentImpacts returns sample impacts so the war-room detail is demoable.
+func (d *Demo) IncidentImpacts(_ context.Context, _ string) ([]string, error) {
+	return []string{
+		"customer: checkout latency > 5s for EU traffic",
+		"service: payments-api error rate 12%",
+	}, nil
 }
