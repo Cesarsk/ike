@@ -3185,6 +3185,12 @@ func (a *App) openDetail(tableRow int) {
 		slog.Debug("detail fetched", "resource", res.Key, "id", r.ID)
 		var body string
 		switch detKey {
+		case "slos":
+			if d, ok := full.(*data.SLODetail); ok {
+				body = sloDetailBody(d)
+			} else {
+				body = jsonIndent(full)
+			}
 		case "incidents":
 			// The war room: structured summary, people, impacts and to-dos in
 			// one screen, with the raw object at the bottom for completeness.
@@ -3308,6 +3314,35 @@ func warRoomBody(id string, d *data.IncidentDetail, impacts []string, todos []da
 		}
 	}
 	b.WriteString("\n── raw ──\n")
+	return b.String()
+}
+
+// sloDetailBody renders the structured SLO detail: config, attainment, error
+// budget, burn rate and the budget burndown sparkline (plain text — the
+// detail view has dynamic colours off).
+func sloDetailBody(d *data.SLODetail) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "━━ %s ━━\n\n", d.Name)
+	fmt.Fprintf(&b, "  %-13s%s\n", "type:", d.Type)
+	fmt.Fprintf(&b, "  %-13s%.2f%% over %dd\n", "target:", d.TargetPct, d.TimeframeDays)
+	fmt.Fprintf(&b, "  %-13s%.3f%%\n", "attainment:", d.AttainmentPct)
+	fmt.Fprintf(&b, "  %-13s%.1f%%\n", "budget left:", d.BudgetRemainingPct)
+	if d.BurnRate > 0 {
+		verdict := "sustainable"
+		if d.BurnRate > 1 {
+			verdict = "ON TRACK TO BREACH"
+		}
+		fmt.Fprintf(&b, "  %-13s%.2fx (%s)\n", "burn rate:", d.BurnRate, verdict)
+	}
+	b.WriteString("\n── error-budget burndown ──\n")
+	if len(d.Burndown) > 1 {
+		fmt.Fprintf(&b, "  %s  now %.1f%%\n", data.Sparkline(d.Burndown), d.Burndown[len(d.Burndown)-1])
+		fmt.Fprintf(&b, "  window: last %dd, oldest → newest\n", d.TimeframeDays)
+	} else if d.Note != "" {
+		b.WriteString("  " + d.Note + "\n")
+	} else {
+		b.WriteString("  (no series)\n")
+	}
 	return b.String()
 }
 
