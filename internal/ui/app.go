@@ -111,6 +111,17 @@ var ctxResource = data.Resource{
 	Columns: []string{"ACTIVE", "NAME", "SITE", "KEYS"},
 }
 
+// overviewResource is the :overview pseudo-resource — cross-resource triage:
+// open incidents + alerting monitors, merged across every active org (worst
+// first). Served by a dedicated loader that reuses the per-resource caches,
+// so it costs nothing beyond the underlying incidents/monitors fetches.
+var overviewResource = data.Resource{
+	Key:     "overview",
+	Title:   "Overview",
+	Columns: []string{"TYPE", "STATUS", "TITLE", "CREATED"},
+	TTL:     60 * time.Second, AutoRefresh: true,
+}
+
 // App is the k9s-style shell: header (info + hints), one resource table,
 // a command/filter prompt and a status line.
 type App struct {
@@ -565,6 +576,8 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]<enter>traces for service  </>env (default prod)  <s>sort <S>reverse")
 		case "events":
 			lines = append(lines, "[gray]</>query  <Q>saved  window: <1>15m..<5>7d  <s>sort   (deploys, alerts, changes)")
+		case overviewResource.Key:
+			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:
 			lines = append(lines, "[gray]<enter>switch org  <space>activate for spanning  <a>add  <e>edit config  <ctrl-d>delete")
 		default:
@@ -1421,6 +1434,10 @@ func (a *App) execCommand(cmd string) {
 		a.showSettings()
 		return
 	}
+	if cmd == "overview" || cmd == "ov" {
+		a.switchResource(overviewResource)
+		return
+	}
 	if res, ok := data.ResourceByAlias(cmd); ok {
 		a.switchResource(res)
 		a.persistSession() // remember this view for the next session
@@ -1438,7 +1455,7 @@ func commandCompletions(prefix string) []string {
 	for _, r := range data.Resources() {
 		names = append(names, r.Key)
 	}
-	names = append(names, "ctx", "settings", "help", "quit")
+	names = append(names, "ctx", "overview", "settings", "help", "quit")
 	var out []string
 	for _, n := range names {
 		if strings.HasPrefix(n, prefix) {
@@ -1777,10 +1794,13 @@ type ctxProvider struct {
 	p    *data.Cached
 }
 
-// spanningResources are the views that merge rows across active orgs — the
-// cheap client-filtered lists (stage 1 of the multi-context spec).
+// spanningResources are the views that merge rows across active orgs. Every
+// provider-backed view spans (stage 2); each org spends only its own
+// rate-limit budget, so a fan-out costs one call per org, not N per org.
 var spanningResources = map[string]bool{
 	"monitors": true, "incidents": true, "slos": true, "downtimes": true,
+	"logs": true, "traces": true, "events": true, "services": true,
+	"dashboards": true, "overview": true,
 }
 
 // spanning reports whether the current view should fan out over active orgs.
@@ -2483,6 +2503,10 @@ func (a *App) load(force bool) {
 		a.applyFilter()
 		return
 	}
+	if a.res.Key == overviewResource.Key {
+		a.loadOverview(force)
+		return
+	}
 	if a.loading {
 		return
 	}
@@ -2576,24 +2600,146 @@ func (a *App) load(force bool) {
 }
 
 // mergeOrder restores a view's natural order after a cross-org merge: monitors
-// re-sort Alert-first; incidents newest-first by CREATED; other spanning views
-// keep the per-org grouping (already stable from the fan-out order).
+// re-sort Alert-first; time-lined views newest-first; name-keyed views
+// alphabetical; the rest keep the per-org grouping (stable fan-out order).
 func mergeOrder(key string, rows []data.Row) {
+	byCell := func(i int, desc bool) {
+		sort.SliceStable(rows, func(a, b int) bool {
+			ca, cb := "", ""
+			if len(rows[a].Cells) > i {
+				ca = rows[a].Cells[i]
+			}
+			if len(rows[b].Cells) > i {
+				cb = rows[b].Cells[i]
+			}
+			if desc {
+				return ca > cb
+			}
+			return ca < cb
+		})
+	}
 	switch key {
 	case "monitors":
 		data.SortMonitors(rows)
 	case "incidents":
-		sort.SliceStable(rows, func(i, j int) bool {
-			ci, cj := "", ""
-			if len(rows[i].Cells) > 5 {
-				ci = rows[i].Cells[5]
-			}
-			if len(rows[j].Cells) > 5 {
-				cj = rows[j].Cells[5]
-			}
-			return ci > cj // CREATED timestamps sort lexically, newest first
-		})
+		byCell(5, true) // CREATED, newest first (timestamps sort lexically)
+	case "logs", "traces", "events":
+		byCell(0, true) // TIME, newest first
+	case "services", "dashboards":
+		byCell(0, false) // SERVICE / TITLE, alphabetical
 	}
+}
+
+// loadOverview builds the :overview rows: open incidents + alerting monitors
+// from every active org, worst first. It reuses the per-org incidents/monitors
+// caches, so a refresh costs at most two calls per org.
+func (a *App) loadOverview(force bool) {
+	if a.loading {
+		return
+	}
+	a.loading = true
+	entries := a.activeEntries()
+	var incR, monR data.Resource
+	for _, r := range data.Resources() {
+		switch r.Key {
+		case "incidents":
+			incR = a.tuneResource(r)
+		case "monitors":
+			monR = a.tuneResource(r)
+		}
+	}
+	go func() {
+		var mu sync.Mutex
+		var out []data.Row
+		var firstErr error
+		var wg sync.WaitGroup
+		for _, e := range entries {
+			wg.Add(1)
+			go func(e ctxProvider) {
+				defer wg.Done()
+				incs, _, _, ierr := e.p.Fetch(context.Background(), incR, "", "", force)
+				mons, _, _, merr := e.p.Fetch(context.Background(), monR, "", "", force)
+				mu.Lock()
+				defer mu.Unlock()
+				for _, r := range incs {
+					if len(r.Cells) < 6 || strings.EqualFold(r.Cells[2], "resolved") {
+						continue
+					}
+					out = append(out, data.Row{
+						ID: r.ID, Ctx: e.name, URL: r.URL,
+						Cells: []string{"incident", r.Cells[1] + " " + r.Cells[2], r.Cells[3], r.Cells[5]},
+						Raw:   map[string]any{"kind": "incidents"},
+					})
+				}
+				for _, r := range mons {
+					if len(r.Cells) < 3 {
+						continue
+					}
+					state := r.Cells[0]
+					if state != "Alert" && state != "Warn" && state != "No Data" {
+						continue
+					}
+					out = append(out, data.Row{
+						ID: r.ID, Ctx: e.name, URL: r.URL, LogQuery: r.LogQuery, Muted: r.Muted,
+						Cells: []string{"monitor", state, r.Cells[2], ""},
+						Raw:   map[string]any{"kind": "monitors"},
+					})
+				}
+				if ierr != nil && firstErr == nil {
+					firstErr = fmt.Errorf("%s: %w", e.name, ierr)
+				}
+				if merr != nil && firstErr == nil {
+					firstErr = fmt.Errorf("%s: %w", e.name, merr)
+				}
+			}(e)
+		}
+		wg.Wait()
+		sort.SliceStable(out, func(i, j int) bool { return overviewRank(out[i]) < overviewRank(out[j]) })
+		err := firstErr
+		a.QueueUpdateDraw(func() {
+			a.loading = false
+			if a.res.Key != overviewResource.Key {
+				return // user navigated away while fetching
+			}
+			if err != nil {
+				a.flash("✗ "+err.Error(), true)
+				if data.ErrorIsRateLimit(err) && !a.paused {
+					a.paused = true
+					a.setHints()
+				}
+			}
+			a.rows = out
+			a.fetchedAt = time.Now()
+			a.applyFilter()
+			if err == nil {
+				a.flash(fmt.Sprintf("Overview: %d open across %d org(s)", len(out), len(entries)), false)
+			}
+		})
+	}()
+}
+
+// overviewRank orders overview rows worst-first: incidents by severity, then
+// monitors Alert > Warn > No Data.
+func overviewRank(r data.Row) int {
+	status := ""
+	if len(r.Cells) > 1 {
+		status = r.Cells[1]
+	}
+	switch {
+	case strings.HasPrefix(status, "SEV-1"):
+		return 0
+	case strings.HasPrefix(status, "SEV-2"):
+		return 1
+	case strings.HasPrefix(status, "SEV-3"):
+		return 2
+	case strings.HasPrefix(status, "SEV-"):
+		return 3
+	case status == "Alert":
+		return 10
+	case status == "Warn":
+		return 11
+	}
+	return 12
 }
 
 func (a *App) applyFilter() {
@@ -2801,6 +2947,20 @@ func rowColor(resKey string, r data.Row) tcell.Color {
 		key = strings.ToLower(r.Cells[0])
 	}
 	switch resKey {
+	case "overview":
+		status := ""
+		if len(r.Cells) > 1 {
+			status = strings.ToLower(r.Cells[1])
+		}
+		switch {
+		case strings.Contains(status, "sev-1"), strings.Contains(status, "active"), strings.Contains(status, "alert"):
+			return tcell.ColorRed
+		case strings.Contains(status, "warn"), strings.Contains(status, "stable"), strings.Contains(status, "sev-2"):
+			return tcell.ColorYellow
+		case strings.Contains(status, "no data"):
+			return tcell.ColorGray
+		}
+		return tcell.ColorLightGray
 	case "monitors":
 		switch key {
 		case "alert":
@@ -3001,9 +3161,19 @@ func (a *App) openDetail(tableRow int) {
 	// The list row is often only a summary (dashboards have no widgets in
 	// the listing) — upgrade to the full object on demand, in background,
 	// and swap it in if the user is still looking at this row.
+	// Overview rows resolve to their underlying resource kind so the detail
+	// (incident People header, monitor sparkline) matches the real object.
+	detKey := a.res.Key
+	if detKey == overviewResource.Key {
+		if raw, ok := r.Raw.(map[string]any); ok {
+			if k, _ := raw["kind"].(string); k != "" {
+				detKey = k
+			}
+		}
+	}
 	res := a.res
 	go func() {
-		full, err := a.providerFor(r).FetchDetail(context.Background(), res.Key, r.ID)
+		full, err := a.providerFor(r).FetchDetail(context.Background(), detKey, r.ID)
 		if err != nil {
 			slog.Warn("detail fetch failed", "resource", res.Key, "id", r.ID, "err", err)
 			a.QueueUpdateDraw(func() { a.flash("✗ full object: "+err.Error(), true) })
@@ -3014,7 +3184,7 @@ func (a *App) openDetail(tableRow int) {
 		}
 		slog.Debug("detail fetched", "resource", res.Key, "id", r.ID)
 		var body string
-		switch res.Key {
+		switch detKey {
 		case "incidents":
 			// A People header (resolved handles) over the raw incident object —
 			// turning an opaque JSON dump into something readable at a glance.

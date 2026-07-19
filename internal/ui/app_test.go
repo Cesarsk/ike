@@ -671,6 +671,20 @@ func TestMultiContextSpanning(t *testing.T) {
 	waitFor(t, sim, "CTX")
 	waitFor(t, sim, "IR-142")
 
+	// :overview merges open incidents + alerting monitors across both orgs,
+	// worst first (a SEV-1 incident above monitor alerts), CTX column shown.
+	typeCmd(sim, ":overview")
+	waitFor(t, sim, "Overview(")
+	waitFor(t, sim, "incident")
+	waitFor(t, sim, "monitor")
+	waitFor(t, sim, "CTX")
+	// enter on the top row (an incident) opens the real incident detail with
+	// the People header — the overview row resolved to its underlying kind.
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "── people ──")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Overview(")
+
 	// Deactivate → single-org UI back (no CTX column).
 	typeCmd(sim, ":ctx")
 	waitFor(t, sim, "demo-prod")
