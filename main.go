@@ -159,8 +159,18 @@ func main() {
 			cfg.CurrentView = view
 			return cfg.Save(config.Path())
 		}
+		// PersistActive saves a context's spanning activation (space in :ctx).
+		opts.PersistActive = func(context string, active bool) error {
+			c, ok := cfg.Contexts[context]
+			if !ok {
+				return fmt.Errorf("unknown context %q", context)
+			}
+			c.Active = active
+			cfg.Contexts[context] = c
+			return cfg.Save(config.Path())
+		}
 		for _, n := range cfg.Names() {
-			opts.Contexts = append(opts.Contexts, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n])})
+			opts.Contexts = append(opts.Contexts, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n]), Active: cfg.Contexts[n].Active})
 		}
 
 		store := config.KeyringStore{}
@@ -231,7 +241,7 @@ func main() {
 			cfg = cfg2 // factory/add/delete closures see the fresh config
 			var infos []ui.ContextInfo
 			for _, n := range cfg.Names() {
-				infos = append(infos, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n])})
+				infos = append(infos, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n]), Active: cfg.Contexts[n].Active})
 			}
 			return infos, nil
 		}

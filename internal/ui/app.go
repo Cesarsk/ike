@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -37,6 +38,9 @@ type ContextInfo struct {
 	Name string
 	Site string
 	Keys string // where the credentials come from, e.g. "$IKE_DEV_API_KEY"
+	// Active marks the context as explicitly activated for org-spanning views
+	// (space in :ctx). The current context is always implicitly active.
+	Active bool
 }
 
 // SavedQuery is a bookmarked, view-scoped query recalled via the 'Q' picker.
@@ -91,6 +95,9 @@ type Options struct {
 	// PersistSession remembers the active org + view across sessions, called as
 	// the user switches context or view (nil = don't persist, e.g. demo).
 	PersistSession func(context, view string) error
+	// PersistActive saves a context's explicit-activation flag (space in :ctx)
+	// to the config (nil = in-session only, e.g. demo).
+	PersistActive func(context string, active bool) error
 	// Version is shown on the startup splash (goreleaser ldflag; "dev" locally).
 	Version string
 }
@@ -108,11 +115,15 @@ var ctxResource = data.Resource{
 // a command/filter prompt and a status line.
 type App struct {
 	*tview.Application
-	provider     *data.Cached
+	provider *data.Cached
+	// providers holds one cache per active context (current + explicitly
+	// activated), keyed by context name. Spanning views fan out over it;
+	// providerFor routes row-scoped calls to the row's origin org.
+	providers    map[string]*data.Cached
 	opts         Options
 	theme        Theme
 	ctxInfos     []ContextInfo
-	current      string // active context name
+	current      string // current context name (always active)
 	refreshEvery time.Duration
 
 	content    *tview.Pages // "table" | "detail" | "help" | "ctxform" (+ "confirm" overlay)
@@ -142,6 +153,7 @@ type App struct {
 	editingSet  int          // settingRows index being edited (prompt in flight)
 
 	todoIncidentID string // incident whose to-dos the panel shows / to-do add in flight
+	todoCtx        string // that incident's origin context (multi-org routing)
 
 	colPick      *tview.List // the 'C' column picker
 	colPickView  string      // view whose columns the picker is editing
@@ -151,13 +163,14 @@ type App struct {
 	userPickFlex    *tview.Flex
 	userSearch      *tview.InputField
 	userPick        *tview.List
-	userPickItems   []data.User     // list rows, in display order
-	userPickOnPick  func(data.User) // what to do with the chosen user
-	userPickReturn  string          // page to return to on pick/cancel
-	userPickSeq     int             // drops stale async search results
-	userSearchTimer *time.Timer     // search debounce
-	pickSelf        *data.User      // cached acting user, pinned atop an empty search
-	pendTodoContent string          // to-do content awaiting an assignee pick
+	userPickItems   []data.User           // list rows, in display order
+	userPickOnPick  func(data.User)       // what to do with the chosen user
+	userPickReturn  string                // page to return to on pick/cancel
+	userPickSeq     int                   // drops stale async search results
+	userSearchTimer *time.Timer           // search debounce
+	userPickCtx     string                // org the picker searches (multi-org routing)
+	pickSelf        map[string]*data.User // acting user per org, pinned atop an empty search
+	pendTodoContent string                // to-do content awaiting an assignee pick
 
 	// todos: the incident to-do panel ('T')
 	todoList  *tview.List
@@ -225,12 +238,28 @@ func New(o Options) (*App, error) {
 	a := &App{
 		Application:  tview.NewApplication(),
 		provider:     data.NewCached(p),
+		providers:    map[string]*data.Cached{},
 		opts:         o,
 		ctxInfos:     o.Contexts,
 		current:      o.Current,
 		refreshEvery: o.Refresh,
 		queries:      map[string]string{},
 		history:      map[string][]string{},
+	}
+	a.providers[o.Current] = a.provider
+	// Bring up providers for contexts persisted as active. A failure only
+	// deactivates that context (with a log); it never blocks startup.
+	for i, c := range o.Contexts {
+		if !c.Active || c.Name == o.Current {
+			continue
+		}
+		ap, err := o.Factory(c.Name)
+		if err != nil {
+			slog.Warn("active context unavailable, deactivating", "context", c.Name, "err", err)
+			a.ctxInfos[i].Active = false
+			continue
+		}
+		a.providers[c.Name] = data.NewCached(ap)
 	}
 	a.build()
 	if startErr != nil {
@@ -537,7 +566,7 @@ func (a *App) setHints() {
 		case "events":
 			lines = append(lines, "[gray]</>query  <Q>saved  window: <1>15m..<5>7d  <s>sort   (deploys, alerts, changes)")
 		case ctxResource.Key:
-			lines = append(lines, "[gray]<enter>switch org  <a>add  <e>edit config  <ctrl-d>delete")
+			lines = append(lines, "[gray]<enter>switch org  <space>activate for spanning  <a>add  <e>edit config  <ctrl-d>delete")
 		default:
 			lines = append(lines, "[gray]<s>sort <S>reverse")
 		}
@@ -592,6 +621,9 @@ func (a *App) buildHelp() tview.Primitive {
 
  [orange]CONTEXTS (:ctx)
    [aqua]enter[white]         switch org (cache, budget and history are dropped — a hard boundary)
+   [aqua]space[white]         activate/deactivate a context for org-spanning — with several orgs
+                 active, monitors/incidents/SLOs/downtimes merge them all (CTX column;
+                 [aqua]*[white]=current, [aqua]●[white]=activated); actions on a row hit that row's org
    [aqua]a[white]             add a context (name, site, API/APP keys or access token → OS keychain)
    [aqua]e[white]             edit the config file in $EDITOR, then reload + re-validate
    [aqua]ctrl-d[white]        delete the selected context (asks first)
@@ -908,6 +940,13 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 'c':
 		a.copySelected()
 		return nil
+	case ' ':
+		if a.res.Key == ctxResource.Key {
+			if row, ok := a.selectedRow(); ok {
+				a.toggleContextActive(row.ID)
+			}
+			return nil
+		}
 	case 'm':
 		if a.res.Key == "monitors" {
 			if row, ok := a.selectedRow(); ok {
@@ -969,7 +1008,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 'T':
 		if a.res.Key == "incidents" {
 			if row, ok := a.selectedRow(); ok {
-				a.openTodoPanel(row.ID)
+				a.openTodoPanel(row)
 			}
 			return nil
 		}
@@ -1082,7 +1121,7 @@ func (a *App) confirmMuteMonitor(r data.Row) {
 				return
 			}
 			go func() {
-				err := a.provider.SetMonitorMute(context.Background(), r.ID, !r.Muted)
+				err := a.providerFor(r).SetMonitorMute(context.Background(), r.ID, !r.Muted)
 				a.QueueUpdateDraw(func() {
 					if err != nil {
 						a.flash("✗ "+err.Error(), true)
@@ -1314,7 +1353,9 @@ func (a *App) promptDone(key tcell.Key) {
 		}
 		inc := a.todoIncidentID
 		a.pendTodoContent = text
-		// Pick the assignee (self pinned on top) before creating the to-do.
+		// Pick the assignee (self pinned on top) before creating the to-do,
+		// searching the incident's own org.
+		a.userPickCtx = a.todoCtx
 		a.openUserPicker("Assign to-do · "+inc, func(u data.User) {
 			a.addTodoAssigned(inc, a.pendTodoContent, u.Handle)
 		})
@@ -1568,9 +1609,10 @@ func (a *App) loadTrace(traceID string) {
 	a.trace.SetTitle(fmt.Sprintf(" Trace/%s ", traceID))
 	a.trace.SetText("\n  [gray]reconstructing trace…").ScrollToBeginning()
 	a.showPage("trace")
+	prov := a.providerFor(a.detailRow) // the drilled-from row's org
 	go func() {
 		start := time.Now()
-		v, err := a.provider.Trace(context.Background(), traceID)
+		v, err := prov.Trace(context.Background(), traceID)
 		slog.Debug("trace render", "id", traceID, "took", time.Since(start).Round(time.Millisecond), "err", err)
 		a.QueueUpdateDraw(func() {
 			if a.page != "trace" || a.detailRow.TraceID != traceID {
@@ -1687,36 +1729,139 @@ func (a *App) showContexts() {
 func (a *App) contextRows() []data.Row {
 	rows := make([]data.Row, 0, len(a.ctxInfos))
 	for _, c := range a.ctxInfos {
-		active := ""
+		// "*" = current (always active); "●" = explicitly activated for
+		// spanning (space); "*●" = both.
+		marker := ""
 		if c.Name == a.current {
-			active = "*"
+			marker = "*"
+		}
+		if c.Active {
+			marker += "●"
 		}
 		rows = append(rows, data.Row{
 			ID:    c.Name,
-			Cells: []string{active, c.Name, c.Site, c.Keys},
-			Raw:   map[string]any{"name": c.Name, "site": c.Site, "keys": c.Keys},
+			Cells: []string{marker, c.Name, c.Site, c.Keys},
+			Raw:   map[string]any{"name": c.Name, "site": c.Site, "keys": c.Keys, "active": c.Active},
 		})
 	}
 	return rows
 }
 
-// switchContext tears down everything org-specific — provider, cache,
-// rate-limit state, navigation history — and starts fresh on the new org.
-// Different org means different data and a different API budget; nothing
-// may leak across the boundary.
+// ctxActive reports a context's explicit-activation flag (space in :ctx).
+func (a *App) ctxActive(name string) bool {
+	for _, c := range a.ctxInfos {
+		if c.Name == name {
+			return c.Active
+		}
+	}
+	return false
+}
+
+// activeEntries returns the active providers in stable order: the current
+// context first, then explicitly-activated contexts in config order.
+func (a *App) activeEntries() []ctxProvider {
+	out := []ctxProvider{{a.current, a.provider}}
+	for _, c := range a.ctxInfos {
+		if c.Name == a.current || !c.Active {
+			continue
+		}
+		if p, ok := a.providers[c.Name]; ok {
+			out = append(out, ctxProvider{c.Name, p})
+		}
+	}
+	return out
+}
+
+type ctxProvider struct {
+	name string
+	p    *data.Cached
+}
+
+// spanningResources are the views that merge rows across active orgs — the
+// cheap client-filtered lists (stage 1 of the multi-context spec).
+var spanningResources = map[string]bool{
+	"monitors": true, "incidents": true, "slos": true, "downtimes": true,
+}
+
+// spanning reports whether the current view should fan out over active orgs.
+func (a *App) spanning() bool {
+	return spanningResources[a.res.Key] && len(a.activeEntries()) > 1
+}
+
+// providerFor routes a row-scoped call (detail, drill-down, write) to the
+// row's origin org; rows without a Ctx belong to the current context.
+func (a *App) providerFor(r data.Row) *data.Cached {
+	if r.Ctx != "" {
+		if p, ok := a.providers[r.Ctx]; ok {
+			return p
+		}
+	}
+	return a.provider
+}
+
+// toggleContextActive flips a context's explicit activation (space in :ctx).
+// Activating brings up its provider; deactivating tears it down (unless it is
+// the current context, which stays active implicitly — the flag then only
+// controls whether it survives a current-context switch).
+func (a *App) toggleContextActive(name string) {
+	for i, c := range a.ctxInfos {
+		if c.Name != name {
+			continue
+		}
+		if !c.Active { // activate
+			if name != a.current {
+				p, err := a.opts.Factory(name)
+				if err != nil {
+					a.flash("✗ context "+name+": "+err.Error(), true)
+					return
+				}
+				a.providers[name] = data.NewCached(p)
+			}
+			a.ctxInfos[i].Active = true
+			a.flash("context "+name+" activated — spanning views merge it", false)
+		} else { // deactivate
+			a.ctxInfos[i].Active = false
+			if name != a.current {
+				delete(a.providers, name) // hard teardown, same boundary as a switch
+			}
+			a.flash("context "+name+" deactivated", false)
+		}
+		if a.opts.PersistActive != nil {
+			if err := a.opts.PersistActive(name, a.ctxInfos[i].Active); err != nil {
+				slog.Warn("persist active failed", "context", name, "err", err)
+			}
+		}
+		a.load(false) // refresh the :ctx table markers
+		return
+	}
+}
+
+// switchContext moves the current context. The target keeps its cache if it
+// was already active; the old current is torn down unless explicitly active
+// (space) — so single-active usage behaves exactly like the old hard switch,
+// while activated orgs survive. Navigation history and queries always reset.
 func (a *App) switchContext(name string) {
 	if name == a.current {
 		a.flash("already on context "+name, false)
 		return
 	}
-	p, err := a.opts.Factory(name)
-	if err != nil {
-		slog.Error("context switch failed", "to", name, "err", err)
-		a.flash("✗ context "+name+": "+err.Error(), true)
-		return
+	p, ok := a.providers[name]
+	if !ok {
+		np, err := a.opts.Factory(name)
+		if err != nil {
+			slog.Error("context switch failed", "to", name, "err", err)
+			a.flash("✗ context "+name+": "+err.Error(), true)
+			return
+		}
+		p = data.NewCached(np)
 	}
 	slog.Info("context switch", "from", a.current, "to", name)
-	a.provider = data.NewCached(p)
+	old := a.current
+	if !a.ctxActive(old) {
+		delete(a.providers, old)
+	}
+	a.providers[name] = p
+	a.provider = p
 	a.current = name
 	a.stack = nil
 	a.queries = map[string]string{}
@@ -2157,7 +2302,7 @@ func targetLabels(vals []string) []string {
 func (a *App) applyIncidentField(r data.Row, field, value, ok string) {
 	a.flash("setting "+r.ID+" "+field+" → "+value+" …", false)
 	go func() {
-		err := a.provider.SetIncidentField(context.Background(), r.ID, field, value)
+		err := a.providerFor(r).SetIncidentField(context.Background(), r.ID, field, value)
 		a.QueueUpdateDraw(func() {
 			if err != nil {
 				slog.Error("incident field change failed", "id", r.ID, "field", field, "value", value, "err", err)
@@ -2175,6 +2320,7 @@ func (a *App) applyIncidentField(r data.Row, field, value, ok string) {
 // assignCommanderFlow opens the user picker (current user pinned on top, so
 // Enter still means "take command") and, on a pick, confirms before writing.
 func (a *App) assignCommanderFlow(r data.Row) {
+	a.userPickCtx = r.Ctx
 	a.openUserPicker("Commander · "+r.ID, func(u data.User) {
 		a.showConfirm(
 			fmt.Sprintf("Assign %s commander to %s?\nThis writes to Datadog.", r.ID, u.Handle),
@@ -2191,7 +2337,7 @@ func (a *App) assignCommanderFlow(r data.Row) {
 func (a *App) applyAssignCommander(r data.Row, u data.User) {
 	a.flash("assigning "+r.ID+" commander …", false)
 	go func() {
-		err := a.provider.SetIncidentCommander(context.Background(), r.ID, u.ID)
+		err := a.providerFor(r).SetIncidentCommander(context.Background(), r.ID, u.ID)
 		a.QueueUpdateDraw(func() {
 			if err != nil {
 				slog.Error("assign commander failed", "id", r.ID, "user", u.ID, "err", err)
@@ -2210,7 +2356,7 @@ func (a *App) applyAssignCommander(r data.Row, u data.User) {
 func (a *App) addTodoAssigned(incidentID, content, handle string) {
 	a.flash("adding to-do to "+incidentID+" …", false)
 	go func() {
-		err := a.provider.AddIncidentTodo(context.Background(), incidentID, content, handle)
+		err := a.todoProv().AddIncidentTodo(context.Background(), incidentID, content, handle)
 		a.QueueUpdateDraw(func() {
 			if err != nil {
 				slog.Error("add to-do failed", "id", incidentID, "err", err)
@@ -2246,7 +2392,7 @@ func (a *App) confirmCancelDowntime(r data.Row) {
 func (a *App) applyCancelDowntime(r data.Row) {
 	a.flash("cancelling downtime "+r.ID+" …", false)
 	go func() {
-		err := a.provider.CancelDowntime(context.Background(), r.ID)
+		err := a.providerFor(r).CancelDowntime(context.Background(), r.ID)
 		a.QueueUpdateDraw(func() {
 			if err != nil {
 				slog.Error("downtime cancel failed", "id", r.ID, "err", err)
@@ -2343,10 +2489,59 @@ func (a *App) load(force bool) {
 	a.loading = true
 	res, q := a.res, a.queries[a.res.Key]
 	tr := a.timeRange()
+	entries := a.activeEntries()
+	span := spanningResources[res.Key] && len(entries) > 1
+	if !span {
+		entries = entries[:1] // current context only
+	}
 	go func() {
 		start := time.Now()
-		rows, at, cached, err := a.provider.Fetch(context.Background(), res, q, tr, force)
-		slog.Debug("fetch", "resource", res.Key, "query", q, "range", tr, "force", force,
+		type orgResult struct {
+			name   string
+			rows   []data.Row
+			at     time.Time
+			cached bool
+			err    error
+		}
+		results := make([]orgResult, len(entries))
+		var wg sync.WaitGroup
+		for i, e := range entries {
+			wg.Add(1)
+			go func(i int, e ctxProvider) {
+				defer wg.Done()
+				rows, at, cached, err := e.p.Fetch(context.Background(), res, q, tr, force)
+				for j := range rows {
+					rows[j].Ctx = e.name
+				}
+				results[i] = orgResult{e.name, rows, at, cached, err}
+			}(i, e)
+		}
+		wg.Wait()
+		var rows []data.Row
+		var at time.Time
+		cached := true
+		var firstErr error
+		for _, r := range results {
+			rows = append(rows, r.rows...)
+			if r.at.After(at) {
+				at = r.at
+			}
+			if !r.cached {
+				cached = false
+			}
+			if r.err != nil && firstErr == nil {
+				if len(entries) > 1 {
+					firstErr = fmt.Errorf("%s: %w", r.name, r.err)
+				} else {
+					firstErr = r.err
+				}
+			}
+		}
+		if span {
+			mergeOrder(res.Key, rows)
+		}
+		err := firstErr
+		slog.Debug("fetch", "resource", res.Key, "query", q, "range", tr, "force", force, "orgs", len(entries),
 			"rows", len(rows), "cached", cached, "took", time.Since(start).Round(time.Millisecond), "err", err)
 		a.QueueUpdateDraw(func() {
 			a.loading = false
@@ -2355,7 +2550,7 @@ func (a *App) load(force bool) {
 			}
 			if err != nil {
 				a.flash("✗ "+err.Error(), true)
-				// A 429 means the org's shared budget is exhausted — stop the
+				// A 429 means an org's shared budget is exhausted — stop the
 				// auto-refresh timer from making it worse.
 				if data.ErrorIsRateLimit(err) && !a.paused {
 					a.paused = true
@@ -2363,7 +2558,7 @@ func (a *App) load(force bool) {
 					slog.Warn("auto-refresh paused: rate limited")
 				}
 				if rows == nil {
-					return
+					return // no org returned anything (stale rows included)
 				}
 			}
 			a.rows = rows
@@ -2378,6 +2573,27 @@ func (a *App) load(force bool) {
 			}
 		})
 	}()
+}
+
+// mergeOrder restores a view's natural order after a cross-org merge: monitors
+// re-sort Alert-first; incidents newest-first by CREATED; other spanning views
+// keep the per-org grouping (already stable from the fan-out order).
+func mergeOrder(key string, rows []data.Row) {
+	switch key {
+	case "monitors":
+		data.SortMonitors(rows)
+	case "incidents":
+		sort.SliceStable(rows, func(i, j int) bool {
+			ci, cj := "", ""
+			if len(rows[i].Cells) > 5 {
+				ci = rows[i].Cells[5]
+			}
+			if len(rows[j].Cells) > 5 {
+				cj = rows[j].Cells[5]
+			}
+			return ci > cj // CREATED timestamps sort lexically, newest first
+		})
+	}
 }
 
 func (a *App) applyFilter() {
@@ -2493,6 +2709,13 @@ func (a *App) render() {
 	prevRow, _ := a.table.GetSelection()
 	a.table.Clear()
 	names, cidx := a.displayColumns()
+	if a.spanning() {
+		// Display-only CTX column, first, when >1 org is active. The sentinel
+		// index -1 reads Row.Ctx at render time — Row.Cells are never touched,
+		// so sorting, quick filters and positional reads are unaffected.
+		names = append([]string{"CTX"}, names...)
+		cidx = append([]int{-1}, cidx...)
+	}
 	for c, col := range names {
 		cell := tview.NewTableCell(col).
 			SetTextColor(tcell.ColorWhite).
@@ -2506,7 +2729,10 @@ func (a *App) render() {
 		color := rowColor(a.res.Key, r)
 		for c, ci := range cidx {
 			val := ""
-			if ci < len(r.Cells) {
+			switch {
+			case ci == -1:
+				val = r.Ctx
+			case ci < len(r.Cells):
 				val = r.Cells[ci]
 			}
 			if len(val) > 200 {
@@ -2640,6 +2866,18 @@ func (a *App) updateInfo() {
 		age = "loading…"
 	}
 	budget := formatBudget(a.provider.Budget())
+	if entries := a.activeEntries(); len(entries) > 1 {
+		// Several orgs active: one budget line per org, prefixed by context.
+		var lines []string
+		for _, e := range entries {
+			if b := formatBudget(e.p.Budget()); b != "-" {
+				lines = append(lines, tview.Escape(e.name)+": "+b)
+			}
+		}
+		if len(lines) > 0 {
+			budget = strings.Join(lines, "\n")
+		}
+	}
 	// Escape: context names like "staging" would otherwise parse as tview
 	// color tags inside this dynamic-colors TextView and vanish.
 	mode := tview.Escape(fmt.Sprintf("%s [%s]", a.provider.Mode(), a.current))
@@ -2765,7 +3003,7 @@ func (a *App) openDetail(tableRow int) {
 	// and swap it in if the user is still looking at this row.
 	res := a.res
 	go func() {
-		full, err := a.provider.FetchDetail(context.Background(), res.Key, r.ID)
+		full, err := a.providerFor(r).FetchDetail(context.Background(), res.Key, r.ID)
 		if err != nil {
 			slog.Warn("detail fetch failed", "resource", res.Key, "id", r.ID, "err", err)
 			a.QueueUpdateDraw(func() { a.flash("✗ full object: "+err.Error(), true) })
@@ -2789,7 +3027,7 @@ func (a *App) openDetail(tableRow int) {
 			// Prepend the evaluated metric as a sparkline — the data behind the
 			// alert, so the detail answers "why is it firing?".
 			body = jsonIndent(full)
-			if ms, mErr := a.provider.MonitorMetric(context.Background(), r.ID); mErr == nil {
+			if ms, mErr := a.providerFor(r).MonitorMetric(context.Background(), r.ID); mErr == nil {
 				body = monitorMetricHeader(ms) + body
 			}
 		default:
@@ -2881,7 +3119,7 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 	a.showPage("dashboard")
 	go func() {
 		start := time.Now()
-		view, err := a.provider.Dashboard(context.Background(), r.ID)
+		view, err := a.providerFor(r).Dashboard(context.Background(), r.ID)
 		slog.Debug("dashboard render", "id", r.ID, "took", time.Since(start).Round(time.Millisecond), "err", err)
 		a.QueueUpdateDraw(func() {
 			if a.page != "dashboard" || a.detailRow.ID != r.ID {

@@ -12,12 +12,13 @@ import (
 // openTodoPanel opens the to-do panel for an incident: it lists the incident's
 // to-dos and hosts add ('a'), toggle-complete ('c'/space/enter) and delete
 // ('d'). Pushes the nav stack so esc returns to the incidents table.
-func (a *App) openTodoPanel(incidentID string) {
-	a.todoIncidentID = incidentID
+func (a *App) openTodoPanel(r data.Row) {
+	a.todoIncidentID = r.ID
+	a.todoCtx = r.Ctx
 	a.pushNav()
 	a.todoItems = nil
 	a.todoList.Clear()
-	a.todoList.SetTitle(" To-dos · " + incidentID + "   <a>add  <c/space>done  <d>delete  <esc>back ")
+	a.todoList.SetTitle(" To-dos · " + r.ID + "   <a>add  <c/space>done  <d>delete  <esc>back ")
 	a.todoList.AddItem(tview.Escape("loading…"), "", 0, nil)
 	a.showPage("todos")
 	a.refreshTodos()
@@ -28,7 +29,7 @@ func (a *App) openTodoPanel(incidentID string) {
 func (a *App) refreshTodos() {
 	inc := a.todoIncidentID
 	go func() {
-		todos, err := a.provider.IncidentTodos(context.Background(), inc)
+		todos, err := a.todoProv().IncidentTodos(context.Background(), inc)
 		a.QueueUpdateDraw(func() {
 			if a.page != "todos" || a.todoIncidentID != inc {
 				return // navigated away / switched incident
@@ -100,7 +101,7 @@ func (a *App) toggleTodoComplete() {
 	done := !t.Completed
 	a.flash("updating to-do …", false)
 	go func() {
-		err := a.provider.SetIncidentTodoCompleted(context.Background(), inc, t, done)
+		err := a.todoProv().SetIncidentTodoCompleted(context.Background(), inc, t, done)
 		a.QueueUpdateDraw(func() {
 			if err != nil {
 				a.flash("✗ "+err.Error(), true)
@@ -132,7 +133,7 @@ func (a *App) deleteTodoFlow() {
 			}
 			a.flash("deleting to-do …", false)
 			go func() {
-				err := a.provider.DeleteIncidentTodo(context.Background(), inc, t.ID)
+				err := a.todoProv().DeleteIncidentTodo(context.Background(), inc, t.ID)
 				a.QueueUpdateDraw(func() {
 					if err != nil {
 						a.flash("✗ "+err.Error(), true)
@@ -143,4 +144,14 @@ func (a *App) deleteTodoFlow() {
 				})
 			}()
 		})
+}
+
+// todoProv routes to-do panel calls to the panel's incident's origin org.
+func (a *App) todoProv() *data.Cached {
+	if a.todoCtx != "" {
+		if p, ok := a.providers[a.todoCtx]; ok {
+			return p
+		}
+	}
+	return a.provider
 }

@@ -84,6 +84,10 @@ type Context struct {
 	TokenEnv  string `yaml:"token-env,omitempty"`
 	Keychain  bool   `yaml:"keychain,omitempty"`
 	Auth      string `yaml:"auth,omitempty"` // "" (key pair) or "token"
+	// Active marks the context as explicitly activated for org-spanning views
+	// (toggled with space in :ctx). The current context is always implicitly
+	// active; this flag keeps a context active across current-context switches.
+	Active bool `yaml:"active,omitempty"`
 	// SavedQueries are named, view-scoped queries the user has bookmarked in
 	// this org (recalled via the 'Q' picker). Per-context because a query
 	// only makes sense against the org whose services/tags it references.

@@ -24,6 +24,11 @@ type Row struct {
 	// injected trace_id attribute) and span rows. Empty = no trace to jump
 	// to. Drives the log/span → trace waterfall drill-down ('t').
 	TraceID string
+	// Ctx names the context (org) this row came from. With several contexts
+	// active, views span orgs and every detail fetch, drill-down and write
+	// must route to the row's origin org — this field carries that routing.
+	// Empty means the current context.
+	Ctx string
 }
 
 // Resource describes a navigable Datadog resource type.

@@ -297,7 +297,7 @@ func TestSaveRoundTrip(t *testing.T) {
 		CurrentView:    "incidents",
 		Contexts: map[string]Context{
 			"dev":  {Site: "datadoghq.eu", APIKeyEnv: "A", AppKeyEnv: "B"},
-			"prod": {Site: "datadoghq.com", Keychain: true},
+			"prod": {Site: "datadoghq.com", Keychain: true, Active: true},
 		},
 	}
 	if err := c.Save(p); err != nil {
@@ -312,6 +312,9 @@ func TestSaveRoundTrip(t *testing.T) {
 	}
 	if got.CurrentView != "incidents" {
 		t.Errorf("current-view not preserved: %q", got.CurrentView)
+	}
+	if !got.Contexts["prod"].Active || got.Contexts["dev"].Active {
+		t.Errorf("active flags not preserved: %+v", got.Contexts)
 	}
 	info, err := os.Stat(p)
 	if err != nil {

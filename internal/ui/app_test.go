@@ -622,6 +622,91 @@ func TestSessionRestore(t *testing.T) {
 	app2.Stop()
 }
 
+// TestMultiContextSpanning: space in :ctx activates a second org; spanning
+// views then show a CTX column with rows from both orgs and per-org budget
+// lines; deactivation restores the single-org UI; the activation is persisted
+// through the PersistActive callback; row-scoped calls route by Row.Ctx.
+func TestMultiContextSpanning(t *testing.T) {
+	sites := map[string]string{"demo-dev": "datadoghq.eu", "demo-prod": "datadoghq.com"}
+	var persisted []string
+	app, err := New(Options{
+		Contexts: []ContextInfo{
+			{Name: "demo-dev", Site: sites["demo-dev"], Keys: "built-in"},
+			{Name: "demo-prod", Site: sites["demo-prod"], Keys: "built-in"},
+		},
+		Current: "demo-dev",
+		Factory: func(name string) (data.Provider, error) { return data.NewDemo(sites[name]), nil },
+		PersistActive: func(name string, active bool) error {
+			persisted = append(persisted, fmt.Sprintf("%s=%v", name, active))
+			return nil
+		},
+		Refresh: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+
+	// Activate demo-prod for spanning (space on its row in :ctx).
+	typeCmd(sim, ":ctx")
+	waitFor(t, sim, "demo-prod")
+	press(sim, tcell.KeyDown) // demo-dev → demo-prod
+	typeRunes(sim, " ")
+	waitFor(t, sim, "demo-prod activated")
+	waitFor(t, sim, "●") // activation marker in the :ctx table
+
+	// Monitors now span both orgs: CTX column + rows tagged demo-prod, and
+	// the header shows one budget line per org.
+	typeCmd(sim, ":monitors")
+	waitFor(t, sim, "CTX")
+	waitFor(t, sim, "demo-prod")
+	waitFor(t, sim, "demo-dev:") // per-org budget line
+
+	// Incidents span too (both orgs ship IR-142 in demo data).
+	typeCmd(sim, ":incidents")
+	waitFor(t, sim, "CTX")
+	waitFor(t, sim, "IR-142")
+
+	// Deactivate → single-org UI back (no CTX column).
+	typeCmd(sim, ":ctx")
+	waitFor(t, sim, "demo-prod")
+	press(sim, tcell.KeyDown)
+	typeRunes(sim, " ")
+	waitFor(t, sim, "demo-prod deactivated")
+	typeCmd(sim, ":monitors")
+	waitFor(t, sim, "Monitors(all)")
+	waitForGone(t, sim, "CTX")
+
+	if len(persisted) != 2 || persisted[0] != "demo-prod=true" || persisted[1] != "demo-prod=false" {
+		t.Errorf("persisted activations = %v, want [demo-prod=true demo-prod=false]", persisted)
+	}
+	app.Stop()
+}
+
+// TestProviderRouting: rows carry their origin context and providerFor routes
+// to that org's provider, falling back to the current one.
+func TestProviderRouting(t *testing.T) {
+	dev := data.NewCached(data.NewDemo("datadoghq.eu"))
+	prod := data.NewCached(data.NewDemo("datadoghq.com"))
+	a := &App{provider: dev, current: "dev", providers: map[string]*data.Cached{"dev": dev, "prod": prod}}
+	if got := a.providerFor(data.Row{Ctx: "prod"}); got != prod {
+		t.Errorf("prod row routed to %v", got)
+	}
+	if got := a.providerFor(data.Row{Ctx: "dev"}); got != dev {
+		t.Errorf("dev row routed to %v", got)
+	}
+	if got := a.providerFor(data.Row{}); got != dev {
+		t.Errorf("untagged row should route to current")
+	}
+	if got := a.providerFor(data.Row{Ctx: "gone"}); got != dev {
+		t.Errorf("unknown ctx should fall back to current")
+	}
+}
+
 func newSim(t *testing.T) tcell.SimulationScreen {
 	t.Helper()
 	sim := tcell.NewSimulationScreen("UTF-8")

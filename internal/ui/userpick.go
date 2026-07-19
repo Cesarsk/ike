@@ -46,19 +46,23 @@ func (a *App) scheduleUserSearch() {
 // the pinned row) and queries the API, then renders on the main thread if the
 // result is still current.
 func (a *App) doUserSearch(query string, seq int) {
+	prov, ctx := a.pickProv()
 	var self *data.User
-	if a.pickSelf == nil {
-		if u, err := a.provider.CurrentUser(context.Background()); err == nil {
+	if a.pickSelf[ctx] == nil {
+		if u, err := prov.CurrentUser(context.Background()); err == nil {
 			self = &u
 		}
 	}
-	users, err := a.provider.ListUsers(context.Background(), query)
+	users, err := prov.ListUsers(context.Background(), query)
 	a.QueueUpdateDraw(func() {
 		if seq != a.userPickSeq || a.page != "userpick" {
 			return // superseded query, or the user navigated away
 		}
-		if self != nil && a.pickSelf == nil {
-			a.pickSelf = self // set on the UI thread
+		if self != nil && a.pickSelf[ctx] == nil {
+			if a.pickSelf == nil {
+				a.pickSelf = map[string]*data.User{}
+			}
+			a.pickSelf[ctx] = self // set on the UI thread
 		}
 		if err != nil {
 			a.flash("✗ users: "+err.Error(), true)
@@ -75,12 +79,14 @@ func (a *App) renderUserPick(query string, users []data.User) {
 	a.userPick.Clear()
 	a.userPickItems = a.userPickItems[:0]
 
+	_, ctx := a.pickProv()
+	self := a.pickSelf[ctx]
 	empty := strings.TrimSpace(query) == ""
-	if empty && a.pickSelf != nil {
-		a.appendUserRow(*a.pickSelf, true)
+	if empty && self != nil {
+		a.appendUserRow(*self, true)
 	}
 	for _, u := range users {
-		if empty && a.pickSelf != nil && u.ID == a.pickSelf.ID {
+		if empty && self != nil && u.ID == self.ID {
 			continue // already pinned
 		}
 		a.appendUserRow(u, false)
@@ -151,4 +157,15 @@ func (a *App) closeUserPick() {
 		ret = "table"
 	}
 	a.showPage(ret)
+}
+
+// pickProv resolves the org the picker searches (set by the opening flow) and
+// a stable cache key for the per-org acting-user pin.
+func (a *App) pickProv() (*data.Cached, string) {
+	if a.userPickCtx != "" {
+		if p, ok := a.providers[a.userPickCtx]; ok {
+			return p, a.userPickCtx
+		}
+	}
+	return a.provider, a.current
 }
