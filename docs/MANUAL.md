@@ -83,6 +83,11 @@ confirmation.
 across sessions, so the next `ike` lands there instead of the default context +
 monitors. `--context` / `$IKE_CONTEXT` still override the org at launch.
 
+**First run.** The very first launch opens a one-time **getting-started page**
+(connect an org, move around, filter, span orgs, act) — press `esc` to drop
+into the app. Reopen it any time with `:manual` (also `:instructions`); `?`
+stays the full key reference.
+
 ---
 
 ## Reading the screen
@@ -150,6 +155,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified. |
 | **Contexts** | `:ctx` | Your Datadog orgs — switch, add, edit, delete (see [contexts](#multiple-orgs-contexts--auth)). |
 | **Settings** | `:settings` | Theme, per-view cache TTLs and columns — edited live (see [settings](#settings-view)). |
+| **Getting started** | `:manual` | The first-run walkthrough, reopenable any time (also `:instructions`). |
 
 ### Per-view keys
 
@@ -292,7 +298,10 @@ more than one org active, every view merges rows from all of them and shows a
 alerting monitors across all of them. Details, drill-downs and writes on a row
 always go to that row's org, and the header shows one rate-limit budget line
 per org. Deactivating (space again) tears that org's cache down. The
-activation persists in the config (`active: true`).
+activation persists in the config (`active: true`). One rule: the org you are
+**driving** cannot leave the views — pressing `space` on it only controls
+whether it stays active after you switch away (ike tells you so in the status
+bar), and its row stays highlighted until you switch to another org.
 
 ---
 
@@ -427,6 +436,7 @@ contexts:
 | `auth` (per context) | Credential shape: unset = env key pair, `token` = keychain bearer token, `oauth` = browser login via `ike auth login` (keychain, auto-refresh). |
 | `org` (per context) | Human label recorded by `ike auth login --org`. |
 | `theme` | TUI colour palette: `ike` (the default), `default` (the original look), `mono`, `nord`, or `solarized`. Recolours the chrome (borders, titles, selection, accents) — status colours (alert red, ok green) are never themed. |
+| `intro-seen` | Set automatically after the one-time getting-started page shows; delete it to see the page again on the next launch (`:manual` reopens it any time). |
 
 **Available column names per view** (for `columns:`):
 

@@ -88,6 +88,9 @@ pass `--subdomain acme-dev`. The same flow is available inside the app: in
 `O` on its row to sign in. `O` also re-signs-in an OAuth context, or converts a
 key/token context to OAuth (it asks first).
 
+The first launch opens a short getting-started page inside the app; reopen it
+any time with `:manual`.
+
 ## The debugging loop
 
 ike is built around the loop your on-call actually runs. A monitor fires, so

@@ -116,6 +116,11 @@ type Options struct {
 	OAuthLogin func(name string) (ContextInfo, error)
 	// Version is shown on the startup splash (goreleaser ldflag; "dev" locally).
 	Version string
+	// FirstRun opens the getting-started page once at launch (reopen any time
+	// with :manual). MarkIntroSeen persists that it was shown, so the next
+	// session starts normally; nil = don't persist (demo mode never sets FirstRun).
+	FirstRun      bool
+	MarkIntroSeen func() error
 }
 
 // ctxResource is the :ctx pseudo-resource. It is rendered like any table but
@@ -174,11 +179,15 @@ type App struct {
 	// callback while the form is being (re)constructed.
 	editingCtx      string
 	ctxFormBuilding bool
-	confirm         *tview.Modal
-	savedQL         *tview.List  // the 'Q' saved-query picker
-	savedQV         string       // view the open picker is scoped to
-	savedQIt        []SavedQuery // items backing the picker, by list index
-	pendSaveQ       string       // query pending a name (save prompt in flight)
+	// introMarked: MarkIntroSeen already ran this session (first-run intro).
+	introMarked bool
+	// splashReturn is the page the startup splash covered, restored on dismiss.
+	splashReturn string
+	confirm      *tview.Modal
+	savedQL      *tview.List  // the 'Q' saved-query picker
+	savedQV      string       // view the open picker is scoped to
+	savedQIt     []SavedQuery // items backing the picker, by list index
+	pendSaveQ    string       // query pending a name (save prompt in flight)
 
 	settingsTbl *tview.Table // the :settings editor
 	settingRows []settingRow // editable settings, indexed by table data row
@@ -303,9 +312,17 @@ func New(o Options) (*App, error) {
 	if startErr != nil {
 		a.showContexts()
 		a.flash("✗ context "+o.Current+": "+startErr.Error()+" — press <a> to add a context", true)
+		if o.FirstRun {
+			a.showIntro() // one-time getting-started page; esc drops into :ctx
+		}
 	} else {
 		a.switchResource(initialResource(o.CurrentView)) // restore the last view
-		a.showSplash()                                   // brief logo over the loading view
+		if o.FirstRun {
+			// Shown BEFORE the splash: the splash restores the page it covered,
+			// so it dismisses into the getting-started page.
+			a.showIntro()
+		}
+		a.showSplash() // brief logo over the loading view
 	}
 	go a.ticker()
 	return a, nil
@@ -536,6 +553,7 @@ func (a *App) build() {
 		AddPage("todos", a.todoList, true, false).
 		AddPage("fuzzy", a.fuzzyFlex, true, false).
 		AddPage("help", a.buildHelp(), true, false).
+		AddPage("intro", a.buildIntro(), true, false).
 		AddPage("ctxform", ctxFormFlex, true, false).
 		AddPage("confirm", a.confirm, true, false)
 	a.page = "table"
@@ -703,6 +721,7 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]C[white]             (any table) column picker — [aqua]space[white] show/hide, [aqua]J/K[white] reorder; live + saved
    [aqua]:settings[white]     theme and per-view cache TTLs — applies live + saved to config
    [aqua]?[white]             this help (from any view)
+   [aqua]:manual[white]       the getting-started page (shown once on first run)
    [aqua]q[white]             back in detail/help; quit from a table view
    [aqua]ctrl-c[white]        quit — press twice to confirm (also :q :quit :exit)
 
@@ -710,6 +729,63 @@ func (a *App) buildHelp() tview.Primitive {
  [gray]The Budget header shows Datadog X-RateLimit headroom; a 429 auto-pauses refresh.
 `))
 	return tv
+}
+
+// buildIntro is the getting-started page: shown once on first run and
+// reopenable any time with :manual (or :instructions). Deliberately shorter
+// and more task-oriented than the full help (?).
+func (a *App) buildIntro() tview.Primitive {
+	tv := tview.NewTextView().SetDynamicColors(true)
+	tv.SetBorder(true).SetTitle(" Getting started ").SetTitleColor(a.theme.Title)
+	fmt.Fprint(tv, a.theme.recolor(`
+ [orange]ike — keep an eye on your Datadog, k9s-style.
+
+ [orange]1 · Connect an org[white]
+   [aqua]:ctx[white] then [aqua]a[white] adds a context. Pick the auth type — [aqua]Browser sign-in
+   (OAuth)[white] is the easy path: no keys to paste, tokens refresh themselves.
+   [aqua]O[white] on a row signs in again whenever needed.
+
+ [orange]2 · Look around[white]
+   [aqua]:monitors :incidents :slos :logs :traces :services :events :rum
+   :synthetics :downtimes :dashboards[white] switch views; [aqua]:overview[white] is
+   cross-org triage. [aqua]enter[white] drills into a row, [aqua]esc[white] goes back,
+   [aqua]o[white] opens the row in the Datadog web UI.
+
+ [orange]3 · Filter and find[white]
+   [aqua]/[white] filters the table — in logs, traces and events it is a full
+   Datadog query (server-side). [aqua]F[white] fuzzy-finds in the current view.
+
+ [orange]4 · Watch several orgs at once[white]
+   In [aqua]:ctx[white], [aqua]space[white] marks orgs active — active rows highlight and every
+   view merges them (the CTX column names each row's org). [aqua]enter[white]
+   switches org: marked orgs stay in, everything else drops out.
+
+ [orange]5 · Act — every write asks first[white]
+   [aqua]m[white] mute monitor · [aqua]r[white]/[aqua]v[white] incident state/severity · [aqua]I[white] commander ·
+   [aqua]T[white] to-dos · [aqua]x[white] cancel downtime
+
+ [gray]? opens the full key reference · :manual reopens this page any time.
+ [gray]No credentials yet? Quit and run ike --demo to explore with fake data.
+ [gray]<esc> starts you off.`))
+	return tv
+}
+
+// showIntro opens the getting-started page and, on a first run, persists that
+// it was shown so the next session starts normally.
+func (a *App) showIntro() {
+	if a.page == "intro" {
+		return
+	}
+	a.pushNav()
+	a.showPage("intro")
+	if a.opts.FirstRun && !a.introMarked {
+		a.introMarked = true
+		if a.opts.MarkIntroSeen != nil {
+			if err := a.opts.MarkIntroSeen(); err != nil {
+				slog.Warn("persist intro-seen failed", "err", err)
+			}
+		}
+	}
 }
 
 // ---- input ----------------------------------------------------------------
@@ -739,7 +815,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case "splash":
 		a.dismissSplash() // any key skips the splash (the key is swallowed)
 		return nil
-	case "help":
+	case "help", "intro":
 		if ev.Key() == tcell.KeyEscape || ev.Rune() == 'q' {
 			a.back()
 			return nil
@@ -1517,6 +1593,9 @@ func (a *App) execCommand(cmd string) {
 	case "help", "?":
 		a.showHelp()
 		return
+	case "manual", "instructions", "intro", "tutorial":
+		a.showIntro()
+		return
 	}
 	if cmd == "ctx" || cmd == "context" || cmd == "contexts" {
 		a.showContexts()
@@ -1547,7 +1626,7 @@ func commandCompletions(prefix string) []string {
 	for _, r := range data.Resources() {
 		names = append(names, r.Key)
 	}
-	names = append(names, "ctx", "overview", "settings", "help", "quit")
+	names = append(names, "ctx", "overview", "settings", "help", "manual", "quit")
 	var out []string
 	for _, n := range names {
 		if strings.HasPrefix(n, prefix) {
@@ -1942,13 +2021,21 @@ func (a *App) toggleContextActive(name string) {
 				a.providers[name] = data.NewCached(p)
 			}
 			a.ctxInfos[i].Active = true
-			a.flash("context "+name+" activated — spanning views merge it", false)
+			if name == a.current {
+				a.flash("context "+name+" marked — it will stay active when you switch to another org", false)
+			} else {
+				a.flash("context "+name+" activated — spanning views merge it", false)
+			}
 		} else { // deactivate
 			a.ctxInfos[i].Active = false
 			if name != a.current {
 				delete(a.providers, name) // hard teardown, same boundary as a switch
+				a.flash("context "+name+" deactivated", false)
+			} else {
+				// The driven org can't leave the views — its row stays "active".
+				// Without this message a space here looks like a no-op bug.
+				a.flash("context "+name+" stays active while you're driving it — it drops out when you switch away", false)
 			}
-			a.flash("context "+name+" deactivated", false)
 		}
 		if a.opts.PersistActive != nil {
 			if err := a.opts.PersistActive(name, a.ctxInfos[i].Active); err != nil {

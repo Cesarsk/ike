@@ -182,6 +182,12 @@ func main() {
 		}
 		opts.CurrentView = cfg.CurrentView
 		opts.Version = version
+		// One-time getting-started page; :manual reopens it later.
+		opts.FirstRun = !cfg.IntroSeen
+		opts.MarkIntroSeen = func() error {
+			cfg.IntroSeen = true
+			return cfg.Save(config.Path())
+		}
 		// PersistSession remembers the org + view across sessions, written as the
 		// user navigates (see ui.App.persistSession).
 		opts.PersistSession = func(context, view string) error {

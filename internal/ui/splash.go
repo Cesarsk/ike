@@ -59,8 +59,10 @@ func splashText(version string) string {
 
 // showSplash swaps in the full-screen logo over the (already loading) initial
 // view. It auto-dismisses after splashDuration; any keypress also dismisses it
-// (see the "splash" case in keys).
+// (see the "splash" case in keys). It remembers the page it covered so the
+// dismissal restores it (e.g. the first-run getting-started page).
 func (a *App) showSplash() {
+	a.splashReturn = a.page
 	a.splash.SetText(a.theme.recolor(splashText(a.opts.Version)))
 	a.page = "splash"
 	a.SetRoot(a.splashView, true)
@@ -71,13 +73,17 @@ func (a *App) showSplash() {
 	}()
 }
 
-// dismissSplash restores the normal layout and reveals the initial view.
-// Idempotent — the auto-dismiss timer and a keypress can both fire; whichever
-// is second is a no-op.
+// dismissSplash restores the normal layout and reveals the page the splash
+// covered. Idempotent — the auto-dismiss timer and a keypress can both fire;
+// whichever is second is a no-op.
 func (a *App) dismissSplash() {
 	if a.page != "splash" {
 		return
 	}
 	a.SetRoot(a.rootView, true)
-	a.showPage("table")
+	ret := a.splashReturn
+	if ret == "" || ret == "splash" {
+		ret = "table"
+	}
+	a.showPage(ret)
 }

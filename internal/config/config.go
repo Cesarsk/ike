@@ -127,6 +127,9 @@ type Config struct {
 	// Theme names a built-in colour palette for the TUI chrome (borders,
 	// titles, selection, accents). Unknown/empty falls back to "default".
 	Theme string `yaml:"theme,omitempty"`
+	// IntroSeen records that the one-time getting-started page was shown, so
+	// later sessions start straight in the app (:manual reopens it).
+	IntroSeen bool `yaml:"intro-seen,omitempty"`
 }
 
 // ResolvedTTLOverrides parses the TTL overrides into durations. Load has

@@ -595,6 +595,40 @@ func TestFormDropdownArrowNav(t *testing.T) {
 	app.Stop()
 }
 
+// TestFirstRunIntro: FirstRun shows the getting-started page once (after the
+// splash), persists intro-seen exactly once, and :manual reopens it any time.
+func TestFirstRunIntro(t *testing.T) {
+	marked := 0
+	app, err := New(Options{
+		Contexts:      []ContextInfo{{Name: "dev", Site: "datadoghq.eu", Keys: "built-in"}},
+		Current:       "dev",
+		Factory:       func(name string) (data.Provider, error) { return data.NewDemo("datadoghq.eu"), nil },
+		FirstRun:      true,
+		MarkIntroSeen: func() error { marked++; return nil },
+		Refresh:       time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	// The splash shows first, then dismisses INTO the getting-started page.
+	waitFor(t, sim, "Getting started")
+	waitFor(t, sim, "Connect an org")
+	press(sim, tcell.KeyEscape) // dismiss → the normal view
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":manual") // reopenable on demand
+	waitFor(t, sim, "Getting started")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Monitors(all)")
+	if marked != 1 {
+		t.Fatalf("MarkIntroSeen ran %d times, want exactly 1", marked)
+	}
+	app.Stop()
+}
+
 // TestDeleteContextDKey: 'd' on a :ctx row opens the delete confirm (a plain
 // alias for ctrl-d). demo-prod isn't the active context, so it's deletable.
 func TestDeleteContextDKey(t *testing.T) {
