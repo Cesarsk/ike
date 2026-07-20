@@ -266,9 +266,16 @@ func (s *Source) Token(ctx context.Context) (string, error) {
 	return fresh.Access, nil
 }
 
+// randomURLSafe returns n cryptographically-random bytes, URL-safe base64. It
+// backs the PKCE verifier and the OAuth state (CSRF token), so it fails closed:
+// a CSPRNG failure panics rather than let the flow proceed with predictable
+// material. (crypto/rand.Read does not error on supported Go, but security
+// material must never degrade silently.)
 func randomURLSafe(n int) string {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("ike/auth: crypto/rand failed, refusing to generate weak OAuth material: " + err.Error())
+	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
