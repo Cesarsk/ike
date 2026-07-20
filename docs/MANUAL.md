@@ -170,7 +170,8 @@ Switch to any view with `:` + its name or a shorter alias.
 - **SLOs** — `enter` shows live **attainment + error budget**; `t` cycles the
   type filter (metric / monitor / time_slice / all).
 - **Logs / Traces / Events** — `/` is a Datadog query; `1`–`5` set the time
-  window (15m / 1h / 4h / 1d / 7d). Logs also: `P` patterns, `t` → trace.
+  window (15m / 1h / 4h / 1d / 7d). Logs also: `P` patterns, `t` → trace,
+  `x` → surrounding context.
 - **Services** — lists your APM services for an environment; `/` sets the env
   (default `prod`), `enter` → that service's traces (`service:<name>`). Names
   only: Datadog's official API doesn't expose per-service request/error/latency
@@ -200,6 +201,12 @@ browser tab:
 The three views interconnect by `trace_id`. The jump needs APM log-injection
 (the `trace_id` present on your logs); a log without one gives you a clear "no
 trace_id" message rather than a broken jump.
+
+**Surrounding context.** On a log line, press **`x`** to see what happened
+around it: a ±5-minute window scoped to the same service and host, oldest
+first, with the selected line highlighted. `t` inside the panel jumps to that
+line's trace. It is a single query, not a live stream, so it spends one request
+and no ongoing budget.
 
 You can also enter the loop from the top: **`:services`** → `enter` on a
 service → its **traces** → a failing trace → its **logs**. Same loop, started
@@ -355,6 +362,7 @@ the error rather than blanking mid-incident.
 | `l` | Monitors, Traces | drill to logs |
 | `t` | Logs, Traces | drill to trace waterfall |
 | `t` | SLOs | cycle type filter |
+| `x` | Logs | surrounding context — a ±5m window around the line (one query) |
 | `P` | Logs | cluster into patterns |
 | `Q` | Logs/Traces/Events | saved-query picker (enter apply · `a` save · `d` delete) |
 | `F` | any table | fuzzy row finder: type a subsequence, `enter` jumps to the row |

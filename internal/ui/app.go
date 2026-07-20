@@ -169,6 +169,7 @@ type App struct {
 	dash       *tview.TextView
 	trace      *tview.TextView
 	patterns   *tview.TextView
+	logctx     *tview.TextView // surrounding-context panel (x in :logs)
 	splash     *tview.TextView // startup logo, auto-dismissed
 	rootView   tview.Primitive // the normal layout (header + content + footer)
 	splashView tview.Primitive // full-screen splash overlay (shown briefly at launch)
@@ -348,7 +349,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.logctx} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -460,6 +461,9 @@ func (a *App) build() {
 	a.patterns = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.patterns.SetBorder(true)
 
+	a.logctx = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.logctx.SetBorder(true)
+
 	a.splash = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	// Transparent so the splash inherits the terminal background instead of
 	// painting a differently-shaded rectangle behind the logo.
@@ -546,6 +550,7 @@ func (a *App) build() {
 		AddPage("dashboard", a.dash, true, false).
 		AddPage("trace", a.trace, true, false).
 		AddPage("patterns", a.patterns, true, false).
+		AddPage("logcontext", a.logctx, true, false).
 		AddPage("savedq", a.savedQL, true, false).
 		AddPage("settings", a.settingsTbl, true, false).
 		AddPage("colpick", a.colPick, true, false).
@@ -593,6 +598,10 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<esc>[white]back to logs  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help",
 		}
+	case "logcontext":
+		lines = []string{
+			"[aqua]<esc>[white]back to logs  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<t>[white]trace  [aqua]<?>[white]help",
+		}
 	case "help":
 		lines = []string{
 			"[aqua]<esc>[white]back  [aqua]<q>[white]back",
@@ -633,7 +642,7 @@ func (a *App) setHints() {
 		case "downtimes":
 			lines = append(lines, "[gray]<x>cancel downtime  <s>sort <S>reverse")
 		case "logs":
-			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <P>patterns  <Q>saved  window: <1>15m..<5>7d")
+			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <x>context  <P>patterns  <Q>saved  window: <1>15m..<5>7d")
 		case "traces":
 			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  <Q>saved  window: <1>15m..<5>7d")
 		case "services":
@@ -686,6 +695,8 @@ func (a *App) buildHelp() tview.Primitive {
    [aqua]l[white]             drill to logs — (monitor) its log query; (trace) that trace's logs
    [aqua]t[white]             drill to the trace waterfall — (logs/traces) the row's trace_id;
                  needs APM log-injection, else a clear "no trace_id"
+   [aqua]x[white]             (logs) surrounding context — a ±5m window around the line, same
+                 service/host, oldest first (one query, not a live stream)
 
  [orange]ACTIONS
    [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
@@ -892,6 +903,26 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
 			a.back()
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	case "logcontext":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == 't':
+			a.drillToTrace(a.detailRow) // jump to the anchor line's trace
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -1197,6 +1228,12 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		if a.res.Key == "downtimes" {
 			if row, ok := a.selectedRow(); ok {
 				a.confirmCancelDowntime(row)
+			}
+			return nil
+		}
+		if a.res.Key == "logs" {
+			if row, ok := a.selectedRow(); ok {
+				a.showLogContext(row) // conteXt: ±window around this line
 			}
 			return nil
 		}
@@ -1815,6 +1852,91 @@ func (a *App) loadTrace(traceID string) {
 	}()
 }
 
+// logContextWindowSecs is the ±half-width of the surrounding-context lens.
+const logContextWindowSecs = 300 // ±5 minutes
+
+// showLogContext opens the surrounding-context panel for a log row: the events
+// in a ±window around it, same service/host, oldest first. One search call, no
+// polling — the cheap half of live tail.
+func (a *App) showLogContext(r data.Row) {
+	a.pushNav()
+	a.detailRow = r
+	anchorID := r.ID
+	a.logctx.SetTitle(" Log context ")
+	a.logctx.SetText("\n  [gray]fetching surrounding context…").ScrollToBeginning()
+	a.showPage("logcontext")
+	prov := a.providerFor(r) // the drilled-from row's org
+	go func() {
+		v, err := prov.LogContext(context.Background(), r, logContextWindowSecs)
+		a.QueueUpdateDraw(func() {
+			if a.page != "logcontext" || a.detailRow.ID != anchorID {
+				return // navigated away
+			}
+			if err != nil {
+				a.logctx.SetText("\n  [red]✗ " + tview.Escape(err.Error()))
+				return
+			}
+			text, anchorLine := a.renderLogContext(v)
+			a.logctx.SetText(text)
+			// Center the highlighted anchor line in the viewport.
+			a.logctx.ScrollTo(max(0, anchorLine-5), 0)
+			a.logctx.SetTitle(fmt.Sprintf(" Log context · %s · ±%s [%d] ",
+				scopeLabel(v), v.Window.Round(time.Minute), len(v.Rows)))
+		})
+	}()
+}
+
+// scopeLabel names what the context query was scoped to for the panel title.
+func scopeLabel(v *data.LogContextView) string {
+	switch {
+	case v.Service != "" && v.Host != "":
+		return v.Service + "@" + v.Host
+	case v.Service != "":
+		return v.Service
+	case v.Host != "":
+		return v.Host
+	}
+	return "all services"
+}
+
+// renderLogContext draws the ±window as a time-ordered list, the anchor line
+// marked and highlighted. Returns the text and the 0-based line index of the
+// anchor so the caller can scroll it into view.
+func (a *App) renderLogContext(v *data.LogContextView) (string, int) {
+	var b strings.Builder
+	fmt.Fprintf(&b, " [orange::b]surrounding context[-:-:-] [gray]%s · ±%s · %d lines · <t> trace · <esc> back[-]\n",
+		tview.Escape(scopeLabel(v)), v.Window.Round(time.Minute), len(v.Rows))
+	b.WriteString(" [gray]one query, no polling — a bounded window, not a live stream[-]\n\n")
+	if len(v.Rows) == 0 {
+		b.WriteString("  [gray]no other log lines in this window[-]\n")
+		return b.String(), 0
+	}
+	anchorLine := 0
+	for i, r := range v.Rows {
+		ts, status, msg := cellAt(r, 0), cellAt(r, 1), cellAt(r, 4)
+		line := fmt.Sprintf("  %s  %-5s  %s", ts, statusTag(status), tview.Escape(clip(msg, 120)))
+		if r.ID == v.AnchorID {
+			anchorLine = i + 3 // header lines above
+			b.WriteString(" [black:orange]▶" + line + "[-:-:-]\n")
+			continue
+		}
+		b.WriteString("  " + line + "\n")
+	}
+	return b.String(), anchorLine
+}
+
+// statusTag colours a log status token for the context panel.
+func statusTag(s string) string {
+	switch strings.ToLower(s) {
+	case "error", "critical", "alert", "emergency":
+		return "[red]" + s + "[-]"
+	case "warn", "warning":
+		return "[yellow]" + s + "[-]"
+	default:
+		return "[gray]" + s + "[-]"
+	}
+}
+
 // renderTrace draws a span waterfall: each span indented by tree depth, with
 // a proportional offset+duration bar, service:resource, and error marker.
 func renderTrace(v *data.TraceView) string {
@@ -2181,6 +2303,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("trace") // pane still holds the rendered waterfall
 	case "patterns":
 		a.showPage("patterns") // pane still holds the rendered clusters
+	case "logcontext":
+		a.showPage("logcontext") // pane still holds the rendered context
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -2203,6 +2327,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.trace)
 	case "patterns":
 		a.SetFocus(a.patterns)
+	case "logcontext":
+		a.SetFocus(a.logctx)
 	case "savedq":
 		a.SetFocus(a.savedQL)
 	case "settings":

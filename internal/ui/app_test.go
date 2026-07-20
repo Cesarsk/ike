@@ -251,6 +251,13 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
+	// Surrounding context: x opens a ±window around the selected line; esc back.
+	typeRunes(sim, "x")
+	waitFor(t, sim, "surrounding context")
+	waitFor(t, sim, "not a live stream") // the bounded-window framing
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Logs(status:error · 15m)")
+
 	// Traces view: server query + t opens the waterfall for a span's trace.
 	typeCmd(sim, ":traces")
 	waitFor(t, sim, "Traces(")

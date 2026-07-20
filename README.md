@@ -97,7 +97,9 @@ ike is built around the loop your on-call actually runs. A monitor fires, so
 you jump to its **logs** (`l`), then to the failing request's **trace** (`t`,
 the span waterfall showing every service hop and where the error is), then back
 to the **logs** for that whole trace (`l`). Monitors, logs and traces all
-connect by `trace_id`, in the terminal, without opening a browser tab.
+connect by `trace_id`, in the terminal, without opening a browser tab. On any
+log line, `x` shows the **surrounding context**: a ±5-minute window around it
+from the same service, so you see what led up to the error.
 
 ## Why ike
 
@@ -118,6 +120,7 @@ The essentials (see the [full reference in the Manual](docs/MANUAL.md#keybinding
 | `/` | filter rows; in Logs/Traces/Events it is a Datadog search query (with autocomplete) |
 | `enter` | detail view (SLO error budget, dashboard widget grid, incident People header, …) |
 | `l` / `t` | drill to logs / to the trace waterfall (the debugging loop) |
+| `x` | (logs) surrounding context: a ±5m window around the selected line |
 | `esc` | back; also clears an active filter first |
 | `r` / `v` | incident: change state / severity (confirm-gated) |
 | `I` / `T` | incident: assign commander (searchable picker) / open the to-do panel |

@@ -175,9 +175,12 @@ one-time getting-started page (`:manual`).
 
 ### Near-term (rest of Tier 2)
 
-2. **Live log tail** (bounded polling + backoff — must not blow the 300/h logs
-   budget) **+ log → surrounding-context** (±N min, same host; needs
-   absolute-time-range plumbing through the fetch path).
+2. **Log surrounding-context — SHIPPED** (`x` on a log line): a single bounded
+   search for a ±5m window around the line, scoped to its service/host, oldest
+   first, rendered as its own panel. One call, no polling — the cheap, cost-safe
+   half of live tail. There is no streaming/tail endpoint in the client, so a
+   future **live tail** would be interval polling with a hard rate floor and
+   backoff off the shared per-org budget; deferred until there's demand.
 
 ### Longer-term
 
@@ -219,7 +222,8 @@ read-modify-write on `silenced`), ~~SLO attainment + error budget~~ (on
 column~~, ~~traces view + APM span search~~ (`:traces`), ~~log⇄trace
 correlation~~ (`t` → trace waterfall reconstructed from spans; `l` → the
 trace's logs), ~~events feed~~ (`:events`), ~~metric-behind-a-monitor~~ (detail
-sparkline), ~~log patterns~~ (`P`, zero-API clustering), ~~query history~~ (↑
+sparkline), ~~log patterns~~ (`P`, zero-API clustering), ~~log surrounding-context~~ (`x`,
+one bounded ±5m query around a line), ~~query history~~ (↑
 in the prompt), ~~429 rate-limit backoff~~ (auto-pauses auto-refresh),
 ~~double-ctrl-c quit~~, ~~unified trace timeline~~ (waterfall + all-services
 logs chronological), ~~downtimes list~~ (`:downtimes`), ~~downtimes cancel~~

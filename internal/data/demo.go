@@ -468,6 +468,62 @@ func (d *Demo) logs(query, timeRange string) []Row {
 	return rows
 }
 
+// LogContext synthesizes a plausible ±window of log lines around the anchor,
+// same service, oldest first, with the anchor line itself in the middle so the
+// surrounding-context panel is demoable and e2e-testable offline.
+func (d *Demo) LogContext(_ context.Context, anchor Row, windowSecs int) (*LogContextView, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if windowSecs <= 0 {
+		windowSecs = 300
+	}
+	win := time.Duration(windowSecs) * time.Second
+	raw, _ := anchor.Raw.(map[string]any)
+	svc, _ := raw["service"].(string)
+	host, _ := raw["host"].(string)
+	anchorMsg, _ := raw["message"].(string)
+	anchorStatus, _ := raw["status"].(string)
+	anchorTS := time.Now()
+	if s, ok := raw["timestamp"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			anchorTS = t
+		}
+	}
+	ctxMsgs := []struct{ status, msg string }{
+		{"info", "request received path=/api/v1/orders"},
+		{"info", "cache miss key=order:91422"},
+		{"info", "db query SELECT * FROM orders (48ms)"},
+		{"warn", "upstream slow: payments-api p95=1.2s"},
+		{"warn", "retry scheduled backoff=2s"},
+		{"info", "connection pool at 82% capacity"},
+		{"info", "request completed status=200 latency=210ms"},
+		{"info", "healthcheck ok component=scheduler"},
+	}
+	n := len(ctxMsgs) + 1 // +1 for the anchor line, placed in the middle
+	anchorIdx := n / 2
+	rows := make([]Row, 0, n)
+	mi := 0
+	for i := 0; i < n; i++ {
+		frac := float64(i) / float64(n-1)
+		ts := anchorTS.Add(time.Duration(-float64(win) + frac*2*float64(win)))
+		if i == anchorIdx {
+			rows = append(rows, Row{
+				ID:    anchor.ID,
+				Cells: []string{anchorTS.Local().Format("15:04:05.000"), anchorStatus, svc, host, anchorMsg},
+				Raw:   raw,
+			})
+			continue
+		}
+		m := ctxMsgs[mi]
+		mi++
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("%s-ctx-%d", anchor.ID, i),
+			Cells: []string{ts.Local().Format("15:04:05.000"), m.status, svc, host, m.msg},
+		})
+	}
+	return &LogContextView{AnchorID: anchor.ID, Service: svc, Host: host, Window: win, Rows: rows}, nil
+}
+
 // traceLogs synthesizes the logs correlated to one trace_id: one line per hop
 // of the demo trace chain, deepest hop erroring, all stamped with the trace id.
 // Deterministic (no jitter) so the trace → logs drill-down is stable to demo
