@@ -79,6 +79,17 @@ func main() {
 		opts.OAuthLogin = func(name string) (ui.ContextInfo, error) {
 			return ui.ContextInfo{Name: name, Site: sites[name], Keys: "in-memory (oauth)", Auth: "oauth"}, nil
 		}
+		opts.UpdateContext = func(name, authMode, site, _, _, _, _ string) (ui.ContextInfo, error) {
+			sites[name] = site
+			keys, auth := "in-memory", ""
+			switch authMode {
+			case "oauth":
+				keys, auth = "in-memory (oauth)", "oauth"
+			case "token":
+				keys, auth = "in-memory (token)", "token"
+			}
+			return ui.ContextInfo{Name: name, Site: site, Keys: keys, Auth: auth}, nil
+		}
 		opts.DeleteContext = func(name string) error {
 			delete(sites, name)
 			return nil
@@ -189,7 +200,7 @@ func main() {
 			if err != nil {
 				return ui.ContextInfo{}, err
 			}
-			return ui.ContextInfo{Name: name, Site: entry.Site, Keys: keysLabel(entry), Auth: entry.Auth, Active: entry.Active}, nil
+			return ui.ContextInfo{Name: name, Site: entry.Site, Keys: keysLabel(entry), Auth: entry.Auth, Subdomain: entry.Subdomain, Active: entry.Active}, nil
 		}
 		// AddOAuthContext creates a pending OAuth context (:ctx → a, Auth =
 		// browser sign-in): the entry is persisted now; tokens arrive when the
@@ -210,7 +221,7 @@ func main() {
 				delete(cfg.Contexts, name)
 				return ui.ContextInfo{}, err
 			}
-			return ui.ContextInfo{Name: name, Site: site, Keys: keysLabel(entry), Auth: "oauth"}, nil
+			return ui.ContextInfo{Name: name, Site: site, Keys: keysLabel(entry), Auth: "oauth", Subdomain: subdomain}, nil
 		}
 		// PersistActive saves a context's spanning activation (space in :ctx).
 		opts.PersistActive = func(context string, active bool) error {
@@ -223,7 +234,8 @@ func main() {
 			return cfg.Save(config.Path())
 		}
 		for _, n := range cfg.Names() {
-			opts.Contexts = append(opts.Contexts, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n]), Auth: cfg.Contexts[n].Auth, Active: cfg.Contexts[n].Active})
+			c := cfg.Contexts[n]
+			opts.Contexts = append(opts.Contexts, ui.ContextInfo{Name: n, Site: c.Site, Keys: keysLabel(c), Auth: c.Auth, Subdomain: c.Subdomain, Active: c.Active})
 		}
 
 		store := config.KeyringStore{}
@@ -289,21 +301,53 @@ func main() {
 				_ = store.Delete(name) // roll back the keychain entry
 				return ui.ContextInfo{}, err
 			}
-			return ui.ContextInfo{Name: name, Site: site, Keys: keysLabel(entry), Auth: entry.Auth}, nil
+			return ui.ContextInfo{Name: name, Site: site, Keys: keysLabel(entry), Auth: entry.Auth, Subdomain: entry.Subdomain}, nil
+		}
+		// UpdateContext edits an existing context from the :ctx form ('e'):
+		// change site/subdomain/auth type and (optionally) rotate credentials.
+		// Empty credential args mean "keep the stored secret".
+		opts.UpdateContext = func(name, authMode, site, apiKey, appKey, token, subdomain string) (ui.ContextInfo, error) {
+			c, ok := cfg.Contexts[name]
+			if !ok {
+				return ui.ContextInfo{}, fmt.Errorf("unknown context %q", name)
+			}
+			if !config.ValidSite(site) {
+				return ui.ContextInfo{}, fmt.Errorf("unknown site %q", site)
+			}
+			if !config.ValidSubdomain(subdomain) {
+				return ui.ContextInfo{}, fmt.Errorf("invalid subdomain %q — a single DNS label like acme-stage", subdomain)
+			}
+			prev := c
+			c.Site, c.Subdomain, c.Keychain = site, subdomain, true
+			c.APIKeyEnv, c.AppKeyEnv, c.TokenEnv = "", "", ""
+			switch authMode {
+			case "oauth":
+				c.Auth = "oauth"
+			case "token":
+				c.Auth = "token"
+				if token != "" {
+					if err := store.SetToken(name, token); err != nil {
+						return ui.ContextInfo{}, err
+					}
+				}
+			default: // keys
+				c.Auth = ""
+				if apiKey != "" && appKey != "" {
+					if err := store.Set(name, apiKey, appKey); err != nil {
+						return ui.ContextInfo{}, err
+					}
+				}
+			}
+			cfg.Contexts[name] = c
+			if err := cfg.Save(config.Path()); err != nil {
+				cfg.Contexts[name] = prev
+				return ui.ContextInfo{}, err
+			}
+			// Drop the current provider so the next switch rebuilds it with the
+			// new auth/site.
+			return ui.ContextInfo{Name: name, Site: c.Site, Keys: keysLabel(c), Auth: c.Auth, Subdomain: c.Subdomain, Active: c.Active}, nil
 		}
 		opts.ConfigPath = config.Path()
-		opts.ReloadContexts = func() ([]ui.ContextInfo, error) {
-			cfg2, err := config.Load(config.Path())
-			if err != nil {
-				return nil, err
-			}
-			cfg = cfg2 // factory/add/delete closures see the fresh config
-			var infos []ui.ContextInfo
-			for _, n := range cfg.Names() {
-				infos = append(infos, ui.ContextInfo{Name: n, Site: cfg.Contexts[n].Site, Keys: keysLabel(cfg.Contexts[n]), Auth: cfg.Contexts[n].Auth, Active: cfg.Contexts[n].Active})
-			}
-			return infos, nil
-		}
 		opts.DeleteContext = func(name string) error {
 			c, ok := cfg.Contexts[name]
 			if !ok {
