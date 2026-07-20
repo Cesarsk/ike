@@ -298,6 +298,7 @@ func TestSaveRoundTrip(t *testing.T) {
 		Contexts: map[string]Context{
 			"dev":  {Site: "datadoghq.eu", APIKeyEnv: "A", AppKeyEnv: "B"},
 			"prod": {Site: "datadoghq.com", Keychain: true, Active: true},
+			"uat":  {Site: "datadoghq.com", Keychain: true, Auth: "oauth", Org: "uat"},
 		},
 	}
 	if err := c.Save(p); err != nil {
@@ -307,8 +308,11 @@ func TestSaveRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.CurrentContext != "dev" || len(got.Contexts) != 2 || !got.Contexts["prod"].Keychain {
+	if got.CurrentContext != "dev" || len(got.Contexts) != 3 || !got.Contexts["prod"].Keychain {
 		t.Errorf("round trip mismatch: %+v", got)
+	}
+	if u := got.Contexts["uat"]; u.Auth != "oauth" || u.Org != "uat" || !u.Keychain {
+		t.Errorf("oauth context not preserved: %+v", u)
 	}
 	if got.CurrentView != "incidents" {
 		t.Errorf("current-view not preserved: %q", got.CurrentView)

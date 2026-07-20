@@ -65,6 +65,13 @@ orgs, see [contexts](#multiple-orgs-contexts--auth).
 > app never writes anything without a confirmation prompt (see
 > [Actions](#actions-writes)).
 
+**Or sign in through the browser (recommended).** `ike auth login --site
+datadoghq.eu --org myorg` opens Datadog's login page (SSO/2FA work as usual),
+stores OAuth tokens in the OS keychain under a context named after `--org`
+(override with `--context`), and refreshes them automatically from then on.
+Re-run the same command to rotate credentials. Orgs with a custom web
+subdomain add `--subdomain acme-dev` so the browser lands on the right org.
+
 **Splash + session restore.** On launch a brief full-screen `IKE` splash shows
 (with the version) while your first view loads underneath — it clears after
 ~1.2s or on any keypress. ike **reopens where you left off**: the last org
@@ -405,6 +412,8 @@ contexts:
 | `refresh-interval` | Auto-refresh cadence, e.g. `45s`, `0` to disable. |
 | `ttl-overrides.<view>` | Custom cache TTL per view (`logs`, `monitors`, …), Go duration; overrides the built-in default. |
 | `columns.<view>` | Column subset/order to display for a view, by name (below). Normally set via the in-app `C` picker; hand-editable too. Unknown names ignored; empty/all-unknown shows all. Display-only — sort/filter still see every column. |
+| `auth` (per context) | Credential shape: unset = env key pair, `token` = keychain bearer token, `oauth` = browser login via `ike auth login` (keychain, auto-refresh). |
+| `org` (per context) | Human label recorded by `ike auth login --org`. |
 | `theme` | TUI colour palette: `ike` (the default), `default` (the original look), `mono`, `nord`, or `solarized`. Recolours the chrome (borders, titles, selection, accents) — status colours (alert red, ok green) are never themed. |
 
 **Available column names per view** (for `columns:`):

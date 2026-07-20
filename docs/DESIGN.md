@@ -139,7 +139,7 @@ Verified dead end: **service map / dependency graph** — the official client
 same category as per-service stats. Revisit only if Datadog publishes one.
 Also deliberately skipped: first-run onboarding wizard.
 
-### Auth — its own milestone, the biggest single feature (after the current package)
+### Auth — SHIPPED as v0.3.0 (`ike auth login`)
 
 1. **OAuth2 login, pup-style**: `ike auth login --site <site> --subdomain <sub> --org <org>`.
    - **The flags map onto a named context.** `auth login` creates-or-updates a

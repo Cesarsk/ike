@@ -2,14 +2,20 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
+	"github.com/Cesarsk/ike/internal/auth"
 	"github.com/Cesarsk/ike/internal/config"
 	"github.com/Cesarsk/ike/internal/data"
 	"github.com/Cesarsk/ike/internal/ui"
@@ -19,6 +25,10 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "auth" {
+		runAuth(os.Args[2:])
+		return
+	}
 	showVersion := flag.Bool("version", false, "print version and exit")
 	demo := flag.Bool("demo", false, "run with built-in demo data (no credentials needed)")
 	ctxFlag := flag.String("context", "", "context to start on (overrides $IKE_CONTEXT and current-context)")
@@ -180,6 +190,12 @@ func main() {
 				return nil, fmt.Errorf("unknown context %q", name)
 			}
 			switch {
+			case c.Keychain && c.Auth == "oauth":
+				src, err := oauthSource(store, name, c.Site)
+				if err != nil {
+					return nil, err
+				}
+				return data.NewLiveTokenSource(c.Site, c.WebBase(), src), nil
 			case c.Keychain && c.Auth == "token":
 				token, err := store.GetToken(name)
 				if err != nil {
@@ -314,6 +330,8 @@ func setupLogging(path string, debug bool) {
 
 func keysLabel(c config.Context) string {
 	switch {
+	case c.Keychain && c.Auth == "oauth":
+		return "keychain (oauth)"
 	case c.Keychain && c.Auth == "token":
 		return "keychain (token)"
 	case c.Keychain:
@@ -328,4 +346,130 @@ func keysLabel(c config.Context) string {
 func fatal(msg string) {
 	fmt.Fprintln(os.Stderr, "ike:", msg)
 	os.Exit(1)
+}
+
+// oauthSource builds the lazy-refreshing token supplier for an OAuth context:
+// credentials come from the keychain, refreshed sets are persisted back.
+func oauthSource(store config.KeyringStore, name, site string) (func(context.Context) (string, error), error) {
+	blob, err := store.GetOAuth(name)
+	if err != nil {
+		return nil, fmt.Errorf("%w — run: ike auth login --context %s", err, name)
+	}
+	var creds auth.Credentials
+	if err := json.Unmarshal([]byte(blob), &creds); err != nil {
+		return nil, fmt.Errorf("stored oauth credentials unreadable — run: ike auth login --context %s", name)
+	}
+	src := auth.NewSource("https://api."+site, creds, func(c auth.Credentials) error {
+		b, err := json.Marshal(c)
+		if err != nil {
+			return err
+		}
+		return store.SetOAuth(name, string(b))
+	})
+	return src.Token, nil
+}
+
+// runAuth implements `ike auth login`: browser sign-in via OAuth2 + PKCE,
+// tokens to the OS keychain, and a context created or updated in the config.
+func runAuth(args []string) {
+	if len(args) == 0 || args[0] != "login" {
+		fmt.Fprintln(os.Stderr, "usage: ike auth login [--site <site>] [--subdomain <sub>] [--org <label>] [--context <name>]")
+		os.Exit(2)
+	}
+	fs := flag.NewFlagSet("auth login", flag.ExitOnError)
+	site := fs.String("site", "", "Datadog site (defaults to the context's site, else "+config.DefaultSite+")")
+	subdomain := fs.String("subdomain", "", "org's custom web subdomain (single DNS label), if it has one")
+	org := fs.String("org", "", "organization label; also the default context name")
+	ctxName := fs.String("context", "", "context to create or update (defaults to --org)")
+	_ = fs.Parse(args[1:])
+
+	name := *ctxName
+	if name == "" {
+		name = *org
+	}
+	if name == "" {
+		fatal("pass --org <label> or --context <name> so the login lands on a named context")
+	}
+
+	// Load the config if present; a missing file just means a fresh one.
+	cfg, err := config.Load(config.Path())
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			fatal(err.Error())
+		}
+		cfg = &config.Config{Contexts: map[string]config.Context{}}
+	}
+	entry := cfg.Contexts[name]
+	if *site != "" {
+		entry.Site = *site
+	}
+	if entry.Site == "" {
+		entry.Site = config.DefaultSite
+	}
+	if *subdomain != "" {
+		entry.Subdomain = *subdomain
+	}
+	if *org != "" {
+		entry.Org = *org
+	}
+	if !config.ValidSite(entry.Site) {
+		fatal(fmt.Sprintf("unknown site %q — refusing to send a login to an unrecognized host (valid: %v)", entry.Site, config.Sites))
+	}
+	if !config.ValidSubdomain(entry.Subdomain) {
+		fatal(fmt.Sprintf("invalid subdomain %q — a single DNS label like acme-stage", entry.Subdomain))
+	}
+
+	store := config.KeyringStore{}
+	ep := auth.EndpointsFor(entry.Site, entry.Subdomain)
+
+	// Reuse the registered client when this context logged in before;
+	// register a fresh one otherwise.
+	clientID := ""
+	if blob, err := store.GetOAuth(name); err == nil {
+		var prev auth.Credentials
+		if json.Unmarshal([]byte(blob), &prev) == nil {
+			clientID = prev.ClientID
+		}
+	}
+	if clientID == "" {
+		fmt.Println("registering ike with", ep.API, "…")
+		clientID, err = auth.Register(context.Background(), ep.API)
+		if err != nil {
+			fatal(err.Error())
+		}
+	}
+
+	fmt.Println("opening your browser to sign in — if it does not open, visit the printed URL")
+	tok, err := auth.Login(context.Background(), ep, clientID, func(u string) error {
+		fmt.Println(u)
+		return openBrowser(u)
+	})
+	if err != nil {
+		fatal(err.Error())
+	}
+
+	blob, _ := json.Marshal(auth.Credentials{ClientID: clientID, TokenSet: tok})
+	if err := store.SetOAuth(name, string(blob)); err != nil {
+		fatal(err.Error())
+	}
+	entry.Keychain = true
+	entry.Auth = "oauth"
+	cfg.Contexts[name] = entry
+	cfg.CurrentContext = name
+	if err := cfg.Save(config.Path()); err != nil {
+		fatal(err.Error())
+	}
+	fmt.Printf("signed in: context %q (site %s) — tokens in the OS keychain, refreshed automatically.\nrun `ike` to start.\n", name, entry.Site)
+}
+
+// openBrowser opens a URL with the platform opener; the URL is also printed
+// so a headless/remote session can open it manually.
+func openBrowser(u string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", u).Start()
+	case "linux":
+		return exec.Command("xdg-open", u).Start()
+	}
+	return fmt.Errorf("unsupported platform %s — open the URL manually", runtime.GOOS)
 }

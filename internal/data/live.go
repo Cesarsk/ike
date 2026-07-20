@@ -28,8 +28,11 @@ type Live struct {
 	apiKey string
 	appKey string
 	token  string // bearer/access token — used instead of the key pair
-	mu     sync.Mutex
-	limits map[string]string
+	// tokenSource supplies a fresh bearer token per request (OAuth contexts:
+	// lazy refresh lives behind it). Takes precedence over the static token.
+	tokenSource func(context.Context) (string, error)
+	mu          sync.Mutex
+	limits      map[string]string
 }
 
 func newLive(site, webBase string) *Live {
@@ -66,9 +69,30 @@ func NewLiveToken(site, webBase, token string) *Live {
 	return l
 }
 
+// NewLiveTokenSource authenticates through a per-request token supplier (the
+// OAuth path: the source refreshes lazily and hands back a valid token).
+func NewLiveTokenSource(site, webBase string, source func(context.Context) (string, error)) *Live {
+	l := newLive(site, webBase)
+	l.tokenSource = source
+	return l
+}
+
 // authCtx attaches this org's credentials and site to a request context.
 func (l *Live) authCtx(parent context.Context) context.Context {
 	var ctx context.Context
+	if l.tokenSource != nil {
+		tok, err := l.tokenSource(parent)
+		if err != nil {
+			// No way to return an error here without rippling through every
+			// call site; an empty bearer fails the request with a clear 4xx
+			// and the source's message is logged for the debug trail.
+			slog.Warn("oauth token unavailable", "err", err)
+		}
+		ctx = context.WithValue(parent, datadog.ContextAccessToken, tok)
+		return context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+			"site": l.site,
+		})
+	}
 	if l.token != "" {
 		ctx = context.WithValue(parent, datadog.ContextAccessToken, l.token)
 	} else {

@@ -132,6 +132,15 @@ Startup context selection precedence: `--context` flag →
 at all, the classic `DD_API_KEY`/`DD_APP_KEY`/`DD_SITE` env vars become an
 implicit `default` context, so pre-contexts usage keeps working.
 
+**OAuth login.** `ike auth login` implements the native flow proven by
+`hack/oauth-spike`: unauthenticated dynamic client registration, browser
+authorization with PKCE (S256) against the org's app host, a loopback callback
+on `127.0.0.1:53682`, and the token exchange. Tokens live in one keychain entry
+per context; the live provider gets a *token source* that refreshes lazily
+(within 60s of expiry, single-flight, persisted back). The config records only
+`{site, subdomain?, org?, keychain: true, auth: oauth}`. `internal/auth` is
+endpoint-injectable and covered end to end against httptest fakes.
+
 **Multi-context spanning.** Contexts activated with space in `:ctx` each get
 their own provider + TTL cache (a `providers` map keyed by context name; the
 current context is always active). Spanning views fan out one `Fetch` per

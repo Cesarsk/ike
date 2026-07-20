@@ -83,7 +83,10 @@ type Context struct {
 	AppKeyEnv string `yaml:"app-key-env,omitempty"`
 	TokenEnv  string `yaml:"token-env,omitempty"`
 	Keychain  bool   `yaml:"keychain,omitempty"`
-	Auth      string `yaml:"auth,omitempty"` // "" (key pair) or "token"
+	Auth      string `yaml:"auth,omitempty"` // "" (key pair), "token", or "oauth"
+	// Org is a human label for the organization, recorded by `ike auth login
+	// --org`; it names nothing security-relevant (site + credentials do that).
+	Org string `yaml:"org,omitempty"`
 	// Active marks the context as explicitly activated for org-spanning views
 	// (toggled with space in :ctx). The current context is always implicitly
 	// active; this flag keeps a context active across current-context switches.

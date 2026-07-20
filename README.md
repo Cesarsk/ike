@@ -71,10 +71,19 @@ go install github.com/Cesarsk/ike@latest
 # No credentials? Explore with demo data (ships two fake orgs, try :ctx):
 ike --demo
 
-# Live mode, single org, using the same env vars as dogshell and Terraform:
+# Sign in through your browser (OAuth2; no API keys, tokens auto-refresh):
+ike auth login --site datadoghq.eu --org myorg
+ike
+
+# Or classic env vars, same as dogshell and Terraform:
 export DD_API_KEY=...  DD_APP_KEY=...  DD_SITE=datadoghq.eu
 ike
 ```
+
+`ike auth login` opens Datadog's own login page (SSO and 2FA included), stores
+the tokens in your OS keychain tied to a named context, and refreshes them
+automatically. Re-run it any time to rotate. Orgs with a custom web subdomain
+pass `--subdomain acme-dev`.
 
 ## The debugging loop
 
