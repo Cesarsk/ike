@@ -97,12 +97,14 @@ either names the env vars that hold its credentials (`api-key-env` +
 `app-key-env`, or `token-env` for bearer/access-token auth), or is marked
 `keychain: true` with secrets in the OS keychain (macOS Keychain / Linux
 Secret Service). Strict YAML parsing rejects inline `api-key:` fields.
-Contexts can be managed in the TUI: `:ctx` → `a` opens an add form (masked
-fields for either the key pair or a token, with an inline guidance panel),
-`e` suspends into `$EDITOR` on the config file and reloads it on exit
-(k9s-style), `ctrl-d` deletes (confirm modal; active context protected).
-The UI performs these through injected `AddContext`/`DeleteContext`/
-`ReloadContexts` callbacks — it never touches YAML or the keychain itself.
+Contexts can be managed in the TUI: `:ctx` → `a` opens an add form whose
+Auth dropdown (OAuth / API+APP keys / access token) drives which fields
+show, with an inline guidance panel; `e` opens the same form pre-filled to
+edit the selected context (auth type, site, subdomain, or rotate secrets;
+empty secret fields keep the stored ones); `ctrl-d` deletes (confirm modal;
+active context protected). The UI performs these through injected
+`AddContext`/`AddOAuthContext`/`UpdateContext`/`OAuthLogin`/`DeleteContext`
+callbacks — it never touches YAML or the keychain itself.
 
 A switch is a hard boundary: different org means different data and a
 different rate-limit budget, so everything org-scoped is torn down.

@@ -407,22 +407,23 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "Add context")
 	waitFor(t, sim, "How to fill this in") // guidance panel is on screen
 
-	// Save with no input: the validation error must be visible on the form
-	// page itself, not just in the bottom status bar. Focus starts on the Auth
-	// dropdown; tab through all 7 fields to the Save button.
-	for i := 0; i < 7; i++ {
-		press(sim, tcell.KeyTab) // Auth, Name, Site, both keys, token, subdomain
+	// Default auth is OAuth: its fields are Name, Site, Subdomain (no key
+	// fields). Save with no name → the validation error shows on the form.
+	// From the Auth dropdown: Tab past Name, Site, Subdomain to the button.
+	for i := 0; i < 4; i++ {
+		press(sim, tcell.KeyTab)
 	}
-	press(sim, tcell.KeyEnter) // Save
+	press(sim, tcell.KeyEnter) // "Sign in with browser" button
 	waitFor(t, sim, "✗ Name is required")
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 4; i++ {
 		press(sim, tcell.KeyBacktab) // back to the Auth dropdown
 	}
 
-	// Pick "API + APP keys" (open the dropdown, move to option 2, select).
+	// Pick "API + APP keys": the key fields appear (dynamic form).
 	press(sim, tcell.KeyEnter)
 	press(sim, tcell.KeyDown)
 	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "API key")
 	press(sim, tcell.KeyTab)  // → Name
 	typeRunes(sim, "staging") // spaces would be legal too
 	press(sim, tcell.KeyTab)  // → Site dropdown (keep default US1)
@@ -430,7 +431,6 @@ func TestAppSmoke(t *testing.T) {
 	typeRunes(sim, "pasted-api-key")
 	press(sim, tcell.KeyTab) // → APP key
 	typeRunes(sim, "pasted-app-key")
-	press(sim, tcell.KeyTab) // → Access token (left empty: key-pair auth)
 	press(sim, tcell.KeyTab) // → Subdomain (optional, left empty)
 	press(sim, tcell.KeyTab) // → Save button
 	press(sim, tcell.KeyEnter)
@@ -506,26 +506,24 @@ func TestStartupWithBrokenContext(t *testing.T) {
 	app.Stop()
 }
 
-// TestEditConfigReload: 'e' in :ctx suspends into $EDITOR and reloads the
-// config afterwards. EDITOR=true makes the editor a no-op; the injected
-// ReloadContexts simulates the file having gained a context.
-func TestEditConfigReload(t *testing.T) {
-	t.Setenv("EDITOR", "true")
-	sim := tcell.NewSimulationScreen("UTF-8")
-	if err := sim.Init(); err != nil {
+// TestEditContextForm: 'e' in :ctx opens the pre-filled edit form (not vim);
+// saving a keychain context (no creds re-entered) persists via UpdateContext.
+func TestEditContextForm(t *testing.T) {
+	var updated string
+	app, err := New(Options{
+		Contexts: []ContextInfo{{Name: "dev", Site: "datadoghq.eu", Keys: "keychain", Auth: ""}},
+		Current:  "dev",
+		Factory:  func(name string) (data.Provider, error) { return data.NewDemo("datadoghq.eu"), nil },
+		UpdateContext: func(name, authMode, site, _, _, _, _ string) (ContextInfo, error) {
+			updated = name + ":" + authMode + ":" + site
+			return ContextInfo{Name: name, Site: site, Keys: "keychain", Auth: ""}, nil
+		},
+		Refresh: time.Minute,
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	sim.SetSize(140, 35)
-
-	app := newDemoApp(t)
-	app.opts.ConfigPath = "/dev/null"
-	app.opts.ReloadContexts = func() ([]ContextInfo, error) {
-		return []ContextInfo{
-			{Name: "demo-dev", Site: "datadoghq.eu", Keys: "built-in"},
-			{Name: "demo-prod", Site: "datadoghq.com", Keys: "built-in"},
-			{Name: "edited-in-vi", Site: "us5.datadoghq.com", Keys: "$NEW_VAR"},
-		}, nil
-	}
+	sim := newSim(t)
 	app.SetScreen(sim)
 	go func() { _ = app.Run() }()
 
@@ -533,8 +531,43 @@ func TestEditConfigReload(t *testing.T) {
 	typeCmd(sim, ":ctx")
 	waitFor(t, sim, "Contexts(all)")
 	typeRunes(sim, "e")
-	waitFor(t, sim, "config reloaded")
-	waitFor(t, sim, "edited-in-vi") // reloaded context appears in the table
+	waitFor(t, sim, "Edit context: dev") // pre-filled form, not $EDITOR
+	// Key-based context (mode "keys"), keychain-stored, so empty key fields
+	// keep the stored secret. Fields: Site, API key, APP key, Subdomain, Save.
+	press(sim, tcell.KeyTab) // → Site
+	press(sim, tcell.KeyTab) // → API key
+	press(sim, tcell.KeyTab) // → APP key
+	press(sim, tcell.KeyTab) // → Subdomain
+	press(sim, tcell.KeyTab) // → Save
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "context dev updated")
+	if updated != "dev:keys:datadoghq.eu" {
+		t.Fatalf("UpdateContext got %q, want dev:keys:datadoghq.eu", updated)
+	}
+	app.Stop()
+}
+
+// TestAddFormDynamicFields: switching the Auth dropdown swaps the form body.
+// The Save button text is unique to the form (the guidance panel mentions the
+// field names), so it's the reliable signal that the body rebuilt.
+func TestAddFormDynamicFields(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":ctx")
+	waitFor(t, sim, "Contexts(all)")
+	typeRunes(sim, "a")
+	waitFor(t, sim, "Add context")
+	waitFor(t, sim, "Sign in with browser") // OAuth default: the sign-in button
+	// Switch the Auth dropdown to "API + APP keys": the button becomes Save.
+	press(sim, tcell.KeyEnter) // open dropdown
+	press(sim, tcell.KeyDown)  // → API + APP keys
+	press(sim, tcell.KeyEnter) // select
+	waitForGone(t, sim, "Sign in with browser")
+	waitFor(t, sim, "Save")
 	app.Stop()
 }
 
@@ -849,10 +882,10 @@ func TestRowLoginConvertConfirm(t *testing.T) {
 	app.Stop()
 }
 
-// TestAddOAuthContext: the add form's OAuth choice creates a pending context
-// and points the user at 'O' — no browser opens at add time.
+// TestAddOAuthContext: the add form's OAuth choice (the default) creates the
+// context and signs in straight from the form's button.
 func TestAddOAuthContext(t *testing.T) {
-	var created string
+	var created, loggedIn string
 	app, err := New(Options{
 		Contexts: []ContextInfo{{Name: "dev", Site: "datadoghq.eu", Keys: "built-in"}},
 		Current:  "dev",
@@ -865,6 +898,7 @@ func TestAddOAuthContext(t *testing.T) {
 			return ContextInfo{Name: name, Site: site, Keys: "keychain (oauth)", Auth: "oauth"}, nil
 		},
 		OAuthLogin: func(name string) (ContextInfo, error) {
+			loggedIn = name
 			return ContextInfo{Name: name, Site: "datadoghq.eu", Keys: "keychain (oauth)", Auth: "oauth"}, nil
 		},
 		Refresh: time.Minute,
@@ -881,19 +915,17 @@ func TestAddOAuthContext(t *testing.T) {
 	waitFor(t, sim, "Contexts(all)")
 	typeRunes(sim, "a")
 	waitFor(t, sim, "Add context")
-	// Auth dropdown has focus, defaulting to "Browser sign-in (OAuth)"; leave it.
+	// Auth dropdown defaults to OAuth — no key/token fields. Fields are Name,
+	// Site, Subdomain; the button signs in.
 	press(sim, tcell.KeyTab) // → Name
 	typeRunes(sim, "staging-oauth")
 	press(sim, tcell.KeyTab) // → Site (keep default)
-	press(sim, tcell.KeyTab) // → API key (skip)
-	press(sim, tcell.KeyTab) // → APP key (skip)
-	press(sim, tcell.KeyTab) // → Access token (skip)
 	press(sim, tcell.KeyTab) // → Subdomain (skip)
-	press(sim, tcell.KeyTab) // → Save
+	press(sim, tcell.KeyTab) // → "Sign in with browser" button
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "context staging-oauth added — press O on it to sign in")
-	if created != "staging-oauth" {
-		t.Fatalf("AddOAuthContext called for %q, want staging-oauth", created)
+	waitFor(t, sim, "signed in — context staging-oauth ready")
+	if created != "staging-oauth" || loggedIn != "staging-oauth" {
+		t.Fatalf("created=%q loggedIn=%q, want staging-oauth for both", created, loggedIn)
 	}
 	waitFor(t, sim, "keychain (oauth)")
 	app.Stop()

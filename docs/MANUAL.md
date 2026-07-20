@@ -258,9 +258,9 @@ Inside the app, `:ctx` lists your orgs:
 | Key | Action |
 |-----|--------|
 | `enter` | **Switch** org. A hard boundary: cache, rate-limit budget and navigation history are all dropped — nothing leaks between orgs. On an OAuth context you haven't signed into yet, it prompts you to press `O`. |
-| `a` | **Add** a context via a form. Pick its **auth type** first: *Browser sign-in (OAuth)*, *API + APP keys*, or *Access token*. Keys/token are masked and go to the **OS keychain**; only `{site, keychain: true, auth}` is written to the config. An OAuth context is created pending — sign in with `O`. |
+| `a` | **Add** a context via a form. Pick its **auth type** first: *Browser sign-in (OAuth)*, *API + APP keys*, or *Access token* — the form's fields change to match. Keys/token are masked and go to the **OS keychain**; only `{site, keychain: true, auth}` is written to the config. OAuth signs in straight from the form's button. |
 | `O` | **Browser sign-in** for the selected context. On an OAuth row it signs in or refreshes; on a key/token row it offers to **convert** the context to OAuth (asks first). Tokens go to the OS keychain and refresh automatically. |
-| `e` | **Edit** the config file in `$EDITOR` (vi by default); on exit it's reloaded and re-validated. |
+| `e` | **Edit** the selected context in a form (same as add, pre-filled): change auth type, site, subdomain, or rotate credentials. Leave a secret field empty to keep the stored one. The name can't be changed here. |
 | `ctrl-d` | **Delete** the selected context (with confirmation; the active one is protected). |
 
 **Auth options per context:**

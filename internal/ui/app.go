@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -42,6 +41,9 @@ type ContextInfo struct {
 	// (access token), or "" (API+APP key pair / env). It decides how 'O' and a
 	// failed switch behave in :ctx.
 	Auth string
+	// Subdomain is the org's custom web subdomain (empty = app.<site>), shown
+	// so the edit form can pre-fill it.
+	Subdomain string
 	// Active marks the context as explicitly activated for org-spanning views
 	// (space in :ctx). The current context is always implicitly active.
 	Active bool
@@ -67,15 +69,15 @@ type Options struct {
 	Factory  ProviderFactory
 	// AddContext persists a TUI-added context. Exactly one of
 	// (apiKey, appKey) or token is provided; subdomain may be empty.
-	AddContext    func(name, site, apiKey, appKey, token, subdomain string) (ContextInfo, error)
+	AddContext func(name, site, apiKey, appKey, token, subdomain string) (ContextInfo, error)
+	// UpdateContext edits an existing context via the :ctx form ('e'). authMode
+	// is "oauth" | "keys" | "token"; for keys/token, empty credential args mean
+	// "keep the stored secret". nil = editing is unavailable (e.g. demo mode).
+	UpdateContext func(name, authMode, site, apiKey, appKey, token, subdomain string) (ContextInfo, error)
 	DeleteContext func(name string) error
-	// ConfigPath is the contexts file, opened by 'e' in :ctx via $EDITOR.
-	// Empty disables in-app editing (demo mode).
+	// ConfigPath is the contexts file (shown in :ctx); empty in demo mode.
 	ConfigPath string
-	// ReloadContexts re-reads the config after an edit and returns the
-	// fresh context list; an error keeps the previous in-memory state.
-	ReloadContexts func() ([]ContextInfo, error)
-	Refresh        time.Duration
+	Refresh    time.Duration
 	// TTLOverrides maps a resource key to a custom cache TTL from the config
 	// file, overriding the built-in default (empty = use defaults).
 	TTLOverrides map[string]time.Duration
@@ -122,7 +124,7 @@ type Options struct {
 var ctxResource = data.Resource{
 	Key:     "contexts",
 	Title:   "Contexts",
-	Columns: []string{"ACTIVE", "NAME", "SITE", "KEYS"},
+	Columns: []string{"ACTIVE", "NAME", "SITE", "AUTH", "KEYS"},
 }
 
 // overviewResource is the :overview pseudo-resource — cross-resource triage:
@@ -167,11 +169,16 @@ type App struct {
 	splashView tview.Primitive // full-screen splash overlay (shown briefly at launch)
 	ctxForm    *tview.Form
 	formErr    *tview.TextView
-	confirm    *tview.Modal
-	savedQL    *tview.List  // the 'Q' saved-query picker
-	savedQV    string       // view the open picker is scoped to
-	savedQIt   []SavedQuery // items backing the picker, by list index
-	pendSaveQ  string       // query pending a name (save prompt in flight)
+	// editingCtx is the context name being edited in the :ctx form ("" = adding
+	// a new one). ctxFormBuilding suppresses the Auth dropdown's rebuild
+	// callback while the form is being (re)constructed.
+	editingCtx      string
+	ctxFormBuilding bool
+	confirm         *tview.Modal
+	savedQL         *tview.List  // the 'Q' saved-query picker
+	savedQV         string       // view the open picker is scoped to
+	savedQIt        []SavedQuery // items backing the picker, by list index
+	pendSaveQ       string       // query pending a name (save prompt in flight)
 
 	settingsTbl *tview.Table // the :settings editor
 	settingRows []settingRow // editable settings, indexed by table data row
@@ -622,7 +629,7 @@ func (a *App) setHints() {
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:
-			lines = append(lines, "[gray]<enter>switch org  <space>activate for spanning  <O>browser sign-in  <a>add context  <e>edit config  <ctrl-d>delete")
+			lines = append(lines, "[gray]<enter>switch org  <space>activate for spanning  <O>browser sign-in  <a>add context  <e>edit  <ctrl-d>delete")
 		default:
 			lines = append(lines, "[gray]<s>sort <S>reverse")
 		}
@@ -686,8 +693,9 @@ func (a *App) buildHelp() tview.Primitive {
                  keychain and refresh automatically. On an OAuth row it signs in or
                  refreshes; on a key/token row it offers to convert it (asks first)
    [aqua]a[white]             add a context — pick its auth (browser sign-in, API/APP keys, or
-                 access token); credentials go to the OS keychain
-   [aqua]e[white]             edit the config file in $EDITOR, then reload + re-validate
+                 access token); the form's fields follow the choice
+   [aqua]e[white]             edit the selected context in a form (auth type, site, subdomain,
+                 credentials) — leave a secret field empty to keep the stored one
    [aqua]ctrl-d[white]        delete the selected context (asks first)
 
  [orange]OTHER
@@ -991,7 +999,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		}
 	case 'e':
 		if a.res.Key == ctxResource.Key {
-			a.editConfig()
+			a.openEditForm()
 			return nil
 		}
 	case 'l':
@@ -1832,11 +1840,23 @@ func (a *App) contextRows() []data.Row {
 		}
 		rows = append(rows, data.Row{
 			ID:    c.Name,
-			Cells: []string{marker, c.Name, c.Site, c.Keys},
-			Raw:   map[string]any{"name": c.Name, "site": c.Site, "keys": c.Keys, "active": c.Active},
+			Cells: []string{marker, c.Name, c.Site, authLabel(c.Auth), c.Keys},
+			Raw:   map[string]any{"name": c.Name, "site": c.Site, "auth": authLabel(c.Auth), "keys": c.Keys, "active": c.Active},
 		})
 	}
 	return rows
+}
+
+// authLabel is the :ctx AUTH column value for a stored auth shape.
+func authLabel(auth string) string {
+	switch auth {
+	case "oauth":
+		return "oauth"
+	case "token":
+		return "token"
+	default:
+		return "keys"
+	}
 }
 
 // ctxActive reports a context's explicit-activation flag (space in :ctx).
@@ -2123,38 +2143,172 @@ var siteRegions = map[string]string{
 	"ddog-gov.com":      "US1-FED",
 }
 
-// openCtxForm shows the add-context form (:ctx → a). Secret fields are
-// masked; in live mode the credentials are stored in the OS keychain,
-// never in the config file.
+// ctxAuthOptions are the auth shapes offered in the context form, in dropdown
+// order. Index 0 (OAuth) is the default and the recommended path. The indices
+// are the authMode contract with UpdateContext ("oauth"/"keys"/"token").
+var ctxAuthOptions = []string{"Browser sign-in (OAuth)", "API + APP keys", "Access token"}
+
+const authModeOAuth, authModeKeys, authModeToken = 0, 1, 2
+
+// authModeFor maps a stored Auth string to a dropdown index.
+func authModeFor(auth string) int {
+	switch auth {
+	case "oauth":
+		return authModeOAuth
+	case "token":
+		return authModeToken
+	default:
+		return authModeKeys
+	}
+}
+
+// authModeName maps a dropdown index to the authMode string UpdateContext takes.
+func authModeName(mode int) string {
+	switch mode {
+	case authModeOAuth:
+		return "oauth"
+	case authModeToken:
+		return "token"
+	default:
+		return "keys"
+	}
+}
+
+// openCtxForm shows the add-context form (:ctx → a): a new context, defaulting
+// to OAuth. Secret fields go to the OS keychain, never the config file.
 func (a *App) openCtxForm() {
 	if a.opts.AddContext == nil {
 		a.flash("adding contexts is not available in this mode", true)
 		return
 	}
+	a.showCtxForm("", authModeOAuth, ContextInfo{})
+}
+
+// openEditForm shows the edit form for the selected context (:ctx → e),
+// pre-filled and defaulting to its current auth type.
+func (a *App) openEditForm() {
+	if a.opts.UpdateContext == nil {
+		a.flash("editing contexts is not available in this mode", true)
+		return
+	}
+	r, ok := a.selectedRow()
+	if !ok {
+		return
+	}
+	var info ContextInfo
+	for _, c := range a.ctxInfos {
+		if c.Name == r.ID {
+			info = c
+		}
+	}
+	if info.Name == "" {
+		return
+	}
+	a.showCtxForm(info.Name, authModeFor(info.Auth), info)
+}
+
+// showCtxForm builds the shared add/edit context form. editing is "" when
+// adding; otherwise the name being edited (its Name field is locked). mode is
+// the initial Auth selection; v pre-fills the common fields.
+func (a *App) showCtxForm(editing string, mode int, v ContextInfo) {
 	a.pushNav()
 	a.formErr.SetText("")
+	a.editingCtx = editing
+	a.ctxForm.Clear(true)
+	a.ctxFormBuilding = true
+	a.ctxForm.AddDropDown("Auth", ctxAuthOptions, mode, func(_ string, idx int) {
+		if a.ctxFormBuilding {
+			return
+		}
+		// Preserve the common fields the user already filled, then rebuild the
+		// credential fields for the newly-chosen mode.
+		cur := ContextInfo{
+			Name:      a.ctxFieldText("Name"),
+			Site:      a.ctxSelectedSite(),
+			Subdomain: a.ctxFieldText("Subdomain (optional)"),
+		}
+		a.rebuildCtxBody(idx, cur)
+		a.SetFocus(a.ctxForm)
+	})
+	a.rebuildCtxBody(mode, v)
+	a.ctxFormBuilding = false
+	if editing == "" {
+		a.ctxForm.SetTitle(" Add context ")
+	} else {
+		a.ctxForm.SetTitle(" Edit context: " + editing + " ")
+	}
+	a.showPage("ctxform")
+}
+
+// rebuildCtxBody rebuilds the form's fields below the Auth dropdown for the
+// given mode. The dropdown at index 0 is never touched, so this is safe to
+// call from the dropdown's own selection callback.
+func (a *App) rebuildCtxBody(mode int, v ContextInfo) {
+	for a.ctxForm.GetFormItemCount() > 1 {
+		a.ctxForm.RemoveFormItem(a.ctxForm.GetFormItemCount() - 1)
+	}
+	a.ctxForm.ClearButtons()
+
 	labels := make([]string, len(config.Sites))
 	for i, s := range config.Sites {
 		labels[i] = fmt.Sprintf("%-17s (%s)", s, siteRegions[s])
 	}
-	a.ctxForm.Clear(true)
-	a.ctxForm.
-		AddDropDown("Auth", ctxAuthOptions, 0, nil).
-		AddInputField("Name", "", 30, nil, nil).
-		AddDropDown("Site", labels, 0, nil).
-		AddPasswordField("API key (for API keys)", "", 50, '*', nil).
-		AddPasswordField("APP key (for API keys)", "", 50, '*', nil).
-		AddPasswordField("Access token (for access token)", "", 50, '*', nil).
-		AddInputField("Subdomain (optional)", "", 30, nil, nil).
-		AddButton("Save", a.saveCtxForm).
-		AddButton("Cancel", a.back)
-	a.ctxForm.SetTitle(" Add context ")
-	a.showPage("ctxform")
+	siteIdx := 0
+	for i, s := range config.Sites {
+		if s == v.Site {
+			siteIdx = i
+		}
+	}
+
+	// When editing, the name is the keychain/config key (rename is out of
+	// scope) so it isn't an editable field — it's in the form title instead.
+	if a.editingCtx == "" {
+		a.ctxForm.AddInputField("Name", v.Name, 30, nil, nil)
+	}
+	a.ctxForm.AddDropDown("Site", labels, siteIdx, nil)
+	switch mode {
+	case authModeKeys:
+		a.ctxForm.
+			AddPasswordField("API key", "", 50, '*', nil).
+			AddPasswordField("APP key", "", 50, '*', nil)
+	case authModeToken:
+		a.ctxForm.AddPasswordField("Access token", "", 50, '*', nil)
+	}
+	a.ctxForm.AddInputField("Subdomain (optional)", v.Subdomain, 30, nil, nil)
+
+	save := "Save"
+	if mode == authModeOAuth {
+		if a.editingCtx == "" {
+			save = "Sign in with browser"
+		} else {
+			save = "Save & sign in"
+		}
+	}
+	a.ctxForm.AddButton(save, a.submitCtxForm).AddButton("Cancel", a.back)
 }
 
-// ctxAuthOptions are the auth shapes offered in the add-context form, in
-// dropdown order. Index 0 (OAuth) is the default and the recommended path.
-var ctxAuthOptions = []string{"Browser sign-in (OAuth)", "API + APP keys", "Access token"}
+// ctxFieldText reads an input/password field by label ("" if the field is
+// absent in the current mode).
+func (a *App) ctxFieldText(label string) string {
+	if it := a.ctxForm.GetFormItemByLabel(label); it != nil {
+		if inp, ok := it.(*tview.InputField); ok {
+			return inp.GetText()
+		}
+	}
+	return ""
+}
+
+// ctxSelectedSite returns the site chosen in the Site dropdown.
+func (a *App) ctxSelectedSite() string {
+	if it := a.ctxForm.GetFormItemByLabel("Site"); it != nil {
+		if dd, ok := it.(*tview.DropDown); ok {
+			if idx, _ := dd.GetCurrentOption(); idx >= 0 && idx < len(config.Sites) {
+				return config.Sites[idx]
+			}
+		}
+	}
+	return ""
+}
 
 // beginRowLogin runs the browser sign-in for the selected :ctx row ('O'). An
 // OAuth context signs in (or refreshes) directly; a key/token context is a
@@ -2238,36 +2392,47 @@ func (a *App) formError(msg string) {
 // word-wrap degrades gracefully in narrow terminals.
 const ctxFormGuidance = `[orange]How to fill this in[white]
 
-[aqua]Auth[white] — how this context signs in. Pick one:
+[aqua]Auth[white] — how this context signs in. The credential fields below change to match your choice:
 
-[yellow]Browser sign-in (OAuth)[white] (recommended) — no keys to paste. Save creates the context, then press [green]O[white] on its row to sign in through your browser. Tokens go to the OS keychain and refresh automatically. Leave the key/token fields empty.
+[yellow]Browser sign-in (OAuth)[white] (recommended) — no keys to paste. The button signs you in through your browser; tokens go to the OS keychain and refresh automatically.
 
 [yellow]API + APP keys[white] — fill BOTH key fields.
 [green]API key[white]: Organization Settings → API Keys (org-wide; ask an admin if you cannot create one).
 [green]APP key[white]: Personal Settings → Application Keys → New Key. Scope it read-only: monitors_read, incidents_read, slos_read, logs_read_data, dashboards_read.
 
-[yellow]Access token[white] — fill the Access token field with a bearer token (OAuth2 access token or PAT, e.g. from Datadog's pup CLI or your SSO tooling). Usually short-lived (~1h).
+[yellow]Access token[white] — a bearer token (OAuth2 access token or PAT, e.g. from Datadog's pup CLI or your SSO tooling). Usually short-lived (~1h).
 
-[aqua]Name[white] — anything you like ("Datadog Dev", "prod", …).
+[aqua]Name[white] — anything you like ("Datadog Dev", "prod", …). Locked when editing.
 
 [aqua]Site[white] — pick from the list (enter/space or click opens it). It matches the region in your Datadog URL: app.[green]datadoghq.eu[white] → datadoghq.eu.
 
 [aqua]Subdomain[white] — only if your org's web UI lives on a custom subdomain: for https://[green]acme-stage[white].datadoghq.eu enter [green]acme-stage[white]. Fixes 'open in Datadog' links; API calls are unaffected. Leave empty if your URL starts with app.
 
-[gray]Secrets go to the OS keychain (service "ike"), never into the config file. <esc> cancels.`
+[gray]When editing, leave a credential field empty to keep the stored secret. Secrets go to the OS keychain (service "ike"), never into the config file. <esc> cancels.`
 
-func (a *App) saveCtxForm() {
-	authIdx, _ := a.ctxForm.GetFormItem(0).(*tview.DropDown).GetCurrentOption()
-	name := strings.TrimSpace(a.ctxForm.GetFormItem(1).(*tview.InputField).GetText())
-	siteIdx, _ := a.ctxForm.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
-	if siteIdx < 0 || siteIdx >= len(config.Sites) {
-		siteIdx = 0
+// submitCtxForm validates and applies the :ctx form for both add and edit.
+// Fields are read by label because which credential fields exist depends on
+// the chosen auth mode.
+func (a *App) submitCtxForm() {
+	mode := authModeOAuth
+	if it := a.ctxForm.GetFormItemByLabel("Auth"); it != nil {
+		if dd, ok := it.(*tview.DropDown); ok {
+			mode, _ = dd.GetCurrentOption()
+		}
 	}
-	site := config.Sites[siteIdx]
-	apiKey := a.ctxForm.GetFormItem(3).(*tview.InputField).GetText()
-	appKey := a.ctxForm.GetFormItem(4).(*tview.InputField).GetText()
-	token := a.ctxForm.GetFormItem(5).(*tview.InputField).GetText()
-	subdomain := strings.TrimSpace(a.ctxForm.GetFormItem(6).(*tview.InputField).GetText())
+	editing := a.editingCtx
+	name := strings.TrimSpace(a.ctxFieldText("Name"))
+	if editing != "" {
+		name = editing // locked in edit mode
+	}
+	site := a.ctxSelectedSite()
+	if site == "" {
+		site = config.Sites[0]
+	}
+	apiKey := a.ctxFieldText("API key")
+	appKey := a.ctxFieldText("APP key")
+	token := a.ctxFieldText("Access token")
+	subdomain := strings.TrimSpace(a.ctxFieldText("Subdomain (optional)"))
 
 	if name == "" {
 		a.formError("Name is required")
@@ -2277,16 +2442,52 @@ func (a *App) saveCtxForm() {
 		a.formError("subdomain must be a single DNS label, e.g. acme-stage (from https://acme-stage." + site + ")")
 		return
 	}
-	for _, c := range a.ctxInfos {
-		if c.Name == name {
-			a.formError("context " + name + " already exists")
-			return
+	if editing == "" {
+		for _, c := range a.ctxInfos {
+			if c.Name == name {
+				a.formError("context " + name + " already exists")
+				return
+			}
 		}
 	}
 
-	// OAuth: create a pending context now; the browser sign-in happens when
-	// the user presses O on its row.
-	if authIdx == 0 {
+	// Whether the credential fields must be filled: always for a new key/token
+	// context; on edit, only when switching INTO a mode the context doesn't
+	// already store in the keychain (empty means "keep the stored secret").
+	credsRequired := true
+	if editing != "" {
+		for _, c := range a.ctxInfos {
+			if c.Name == editing && authModeFor(c.Auth) == mode && strings.HasPrefix(c.Keys, "keychain") {
+				credsRequired = false
+			}
+		}
+	}
+	if mode == authModeKeys && credsRequired && (apiKey == "" || appKey == "") {
+		a.formError("API keys selected: fill BOTH the API key and the APP key")
+		return
+	}
+	if mode == authModeToken && credsRequired && token == "" {
+		a.formError("access token selected: fill the Access token field")
+		return
+	}
+	if mode != authModeKeys {
+		apiKey, appKey = "", ""
+	}
+	if mode != authModeToken {
+		token = ""
+	}
+
+	if editing != "" {
+		a.submitEditCtx(mode, site, apiKey, appKey, token, subdomain)
+		return
+	}
+	a.submitAddCtx(mode, name, site, apiKey, appKey, token, subdomain)
+}
+
+// submitAddCtx handles the add path: OAuth creates a pending context and signs
+// in from the form; keys/token persist to the keychain.
+func (a *App) submitAddCtx(mode int, name, site, apiKey, appKey, token, subdomain string) {
+	if mode == authModeOAuth {
 		if a.opts.AddOAuthContext == nil {
 			a.formError("browser sign-in is not available in this mode")
 			return
@@ -2299,79 +2500,41 @@ func (a *App) saveCtxForm() {
 		slog.Info("oauth context added", "name", name, "site", site)
 		a.ctxInfos = append(a.ctxInfos, info)
 		a.back()
-		a.flash("context "+name+" added — press O on it to sign in", false)
+		a.startLogin(name) // the form's button IS the sign-in
 		return
-	}
-
-	auth := "key pair"
-	switch authIdx {
-	case 1: // API + APP keys
-		if apiKey == "" || appKey == "" {
-			a.formError("API keys selected: fill BOTH the API key and the APP key")
-			return
-		}
-		token = "" // ignore any stray token field
-	case 2: // access token
-		if token == "" {
-			a.formError("access token selected: fill the Access token field")
-			return
-		}
-		apiKey, appKey = "", "" // ignore any stray key fields
-		auth = "token"
 	}
 	info, err := a.opts.AddContext(name, site, apiKey, appKey, token, subdomain)
 	if err != nil {
 		a.formError(err.Error())
 		return
 	}
-	slog.Info("context added", "name", name, "site", site, "auth", auth)
+	slog.Info("context added", "name", name, "site", site, "auth", authModeName(mode))
 	a.ctxInfos = append(a.ctxInfos, info)
-	a.back() // pop to the :ctx table, which re-reads ctxInfos
+	a.back()
 	a.flash("context "+name+" added — enter on it to switch", false)
 }
 
-// editConfig suspends the TUI and opens the config file in $EDITOR
-// (k9s-style 'e'), then reloads and re-validates it.
-func (a *App) editConfig() {
-	if a.opts.ConfigPath == "" || a.opts.ReloadContexts == nil {
-		a.flash("no config file to edit in this mode", true)
-		return
-	}
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-	var runErr error
-	a.Suspend(func() {
-		cmd := exec.Command(editor, a.opts.ConfigPath)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		runErr = cmd.Run()
-	})
-	if runErr != nil {
-		slog.Error("editor failed", "editor", editor, "err", runErr)
-		a.flash("✗ "+editor+": "+runErr.Error(), true)
-		return
-	}
-	infos, err := a.opts.ReloadContexts()
+// submitEditCtx handles the edit path: UpdateContext persists the changes; an
+// OAuth edit also (re-)runs the browser sign-in.
+func (a *App) submitEditCtx(mode int, site, apiKey, appKey, token, subdomain string) {
+	name := a.editingCtx
+	info, err := a.opts.UpdateContext(name, authModeName(mode), site, apiKey, appKey, token, subdomain)
 	if err != nil {
-		slog.Error("config reload failed", "err", err)
-		a.flash("✗ config not reloaded: "+err.Error(), true)
+		a.formError(err.Error())
 		return
 	}
-	slog.Info("config reloaded after edit", "contexts", len(infos))
-	a.ctxInfos = infos
-	found := false
-	for _, c := range infos {
-		if c.Name == a.current {
-			found = true
+	slog.Info("context updated", "name", name, "site", site, "auth", authModeName(mode))
+	for i, c := range a.ctxInfos {
+		if c.Name == name {
+			a.ctxInfos[i] = info
 		}
 	}
-	a.load(false)
-	if !found {
-		a.flash("config reloaded — note: active context "+a.current+" is no longer defined", true)
+	a.back()
+	if mode == authModeOAuth {
+		a.startLogin(name)
 		return
 	}
-	a.flash("config reloaded", false)
+	a.flash("context "+name+" updated", false)
 }
 
 // confirmDeleteContext asks before removing the selected context (ctrl-d).
