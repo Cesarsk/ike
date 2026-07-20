@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -818,7 +819,10 @@ func TestMultiContextSpanning(t *testing.T) {
 	press(sim, tcell.KeyDown) // demo-dev → demo-prod
 	typeRunes(sim, " ")
 	waitFor(t, sim, "demo-prod activated")
-	waitFor(t, sim, "●") // activation marker in the :ctx table
+	// Both rows now read as active in the STATUS column: the current org is
+	// "active (current)", the space-activated one is "active".
+	waitFor(t, sim, "active (current)")
+	waitForMatch(t, sim, `active\s+demo-prod`)
 
 	// Monitors now span both orgs: CTX column + rows tagged demo-prod, and
 	// the header shows one budget line per org.
@@ -1119,6 +1123,21 @@ func waitFor(t *testing.T, sim tcell.SimulationScreen, want string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("screen never showed %q; screen was:\n%s", want, screenText(sim))
+}
+
+// waitForMatch waits until the screen matches a regexp — for assertions that
+// span table cells, where the padding between columns is variable-width.
+func waitForMatch(t *testing.T, sim tcell.SimulationScreen, pattern string) {
+	t.Helper()
+	re := regexp.MustCompile(pattern)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if re.MatchString(screenText(sim)) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("screen never matched %q; screen was:\n%s", pattern, screenText(sim))
 }
 
 // waitForGone waits until a substring is absent — used to confirm an async
