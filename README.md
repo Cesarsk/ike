@@ -27,8 +27,8 @@ already have from [k9s](https://k9scli.io): `:` to switch views, `/` to filter,
 
 <sub>Named after a dog named Ike. The command is `ike`; the job is keeping an eye on things.</sub>
 
-> **Status: real-org validated.** Ten views (monitors, incidents, SLOs, logs,
-> traces, services, events, RUM, downtimes, dashboards) plus `:overview`, a
+> **Status: real-org validated.** Eleven views (monitors, incidents, SLOs, logs,
+> traces, services, events, RUM, synthetics, downtimes, dashboards) plus `:overview`, a
 > cross-org triage screen. Views can span several Datadog orgs at once
 > (activate contexts with space in `:ctx`), log and trace correlation with a
 > unified request timeline, an incident war room (people, impacts, to-dos),
@@ -99,7 +99,7 @@ The essentials (see the [full reference in the Manual](docs/MANUAL.md#keybinding
 
 | Key | Action |
 |-----|--------|
-| `:` | switch view: `:monitors` `:incidents` `:slos` `:logs` `:traces` `:services` `:events` `:rum` `:downtimes` `:dashboards` `:overview` `:ctx` `:settings` |
+| `:` | switch view: `:monitors` `:incidents` `:slos` `:logs` `:traces` `:services` `:events` `:rum` `:synthetics` `:downtimes` `:dashboards` `:overview` `:ctx` `:settings` |
 | `/` | filter rows; in Logs/Traces/Events it is a Datadog search query (with autocomplete) |
 | `enter` | detail view (SLO error budget, dashboard widget grid, incident People header, …) |
 | `l` / `t` | drill to logs / to the trace waterfall (the debugging loop) |

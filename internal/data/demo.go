@@ -103,6 +103,8 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.events(), nil
 	case "rum":
 		return d.rum(query), nil
+	case "synthetics":
+		return d.synthetics(), nil
 	case "downtimes":
 		return d.downtimes(), nil
 	}
@@ -197,6 +199,19 @@ func (d *Demo) FetchDetail(_ context.Context, key, id string) (any, error) {
 			"resource":    key,
 			"full_object": true,
 			"note":        "demo: in live mode this is the complete object fetched on demand (widgets, options, timeline …)",
+		}, nil
+	case "synthetics":
+		results := make([]SynthResult, 6)
+		for i := range results {
+			results[i] = SynthResult{
+				CheckTime: time.Now().Add(-time.Duration(i*10) * time.Minute).Format(time.RFC3339),
+				Location:  []string{"aws:eu-central-1", "aws:us-east-1"}[i%2],
+				Passed:    i != 0, // newest run failed, the rest passed
+			}
+		}
+		return &SynthDetail{
+			Name: "login journey", Type: "browser", Status: "live",
+			PassRatePct: 83.3, Results: results,
 		}, nil
 	case "slos":
 		// Deterministic-ish fake attainment so the error-budget detail is
@@ -873,6 +888,27 @@ func (d *Demo) rum(query string) []Row {
 				"type": e.typ, "application": e.app, "service": e.svc, "detail": e.detail,
 			},
 			URL: WebBase(d.site) + "/rum/explorer",
+		})
+	}
+	return rows
+}
+
+// synthetics lists sample synthetic tests so the view is demoable offline.
+func (d *Demo) synthetics() []Row {
+	tests := []struct{ status, name, typ, locs, tags string }{
+		{"live", "login journey", "browser", "aws:eu-central-1,aws:us-east-1", "team:frontend,env:prod"},
+		{"live", "checkout api", "api", "aws:eu-central-1", "team:payments,env:prod"},
+		{"live", "quote latency", "api", "aws:eu-central-1,aws:ap-northeast-1", "team:trading,env:prod"},
+		{"paused", "legacy portal", "browser", "aws:us-east-1", "team:frontend,env:stage"},
+	}
+	rows := make([]Row, 0, len(tests))
+	for i, t := range tests {
+		id := fmt.Sprintf("syn-%d", i)
+		rows = append(rows, Row{
+			ID:    id,
+			Cells: []string{t.status, t.name, t.typ, t.locs, t.tags},
+			Raw:   map[string]any{"public_id": id, "name": t.name, "type": t.typ, "status": t.status},
+			URL:   WebBase(d.site) + "/synthetics/details/" + id,
 		})
 	}
 	return rows

@@ -247,7 +247,8 @@ alerting monitors, worst first), ~~incident war room~~ (people, impacts via
 burndown~~ (burn rate + burndown sparkline from `GetSLOHistory`), ~~RUM view~~
 (`:rum` via `ListRUMEvents`, server-side query), ~~fuzzy row finder~~ (`F`),
 ~~structured monitor detail~~, ~~ike signature palette~~ (default theme; the
-original look remains as `theme: default`).
+original look remains as `theme: default`), ~~synthetics view~~ (`:synthetics`
+— inventory via `ListTests`, per-test latest results + pass rate on enter).
 
 ## Traces & correlation
 

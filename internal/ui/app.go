@@ -603,6 +603,8 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]</>query  <Q>saved  window: <1>15m..<5>7d  <s>sort   (deploys, alerts, changes)")
 		case "rum":
 			lines = append(lines, "[gray]</>RUM query (e.g. @type:error)  window: <1>15m..<5>7d  <s>sort")
+		case "synthetics":
+			lines = append(lines, "[gray]<enter>latest results + pass rate  <s>sort <S>reverse")
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:
@@ -620,7 +622,7 @@ func (a *App) buildHelp() tview.Primitive {
 	fmt.Fprint(tv, a.theme.recolor(`
  [orange]NAVIGATION
    [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces services
-                 events rum downtimes dashboards (aliases: mon inc s l tr svc ev dt d)
+                 events rum synthetics downtimes dashboards (aliases: mon inc s l tr svc ev dt d syn)
                  — :overview (cross-org triage) / :ctx / :settings
    [aqua]enter[white]         detail — full object on demand; SLO error budget; monitor metric
                  sparkline; on a dashboard its widget grid; on logs/traces a row
@@ -1850,6 +1852,7 @@ type ctxProvider struct {
 var spanningResources = map[string]bool{
 	"monitors": true, "incidents": true, "slos": true, "downtimes": true,
 	"logs": true, "traces": true, "events": true, "services": true, "rum": true,
+	"synthetics": true,
 	"dashboards": true, "overview": true,
 }
 
@@ -3243,6 +3246,12 @@ func (a *App) openDetail(tableRow int) {
 			} else {
 				body = jsonIndent(full)
 			}
+		case "synthetics":
+			if d, ok := full.(*data.SynthDetail); ok {
+				body = synthDetailBody(r, d)
+			} else {
+				body = jsonIndent(full)
+			}
 		case "incidents":
 			// The war room: structured summary, people, impacts and to-dos in
 			// one screen, with the raw object at the bottom for completeness.
@@ -3396,6 +3405,31 @@ func monitorDetailBody(d *data.MonitorDetail) string {
 		}
 	}
 	b.WriteString("\n── raw ──\n")
+	return b.String()
+}
+
+// synthDetailBody renders a synthetic test's latest results: pass rate on
+// top, then one line per recent run (when, from where, PASS/FAIL).
+func synthDetailBody(r data.Row, d *data.SynthDetail) string {
+	var b strings.Builder
+	name := d.Name
+	if name == "" && len(r.Cells) > 1 {
+		name = r.Cells[1]
+	}
+	fmt.Fprintf(&b, "━━ %s ━━\n\n", name)
+	if d.Note != "" {
+		b.WriteString("  " + d.Note + "\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "  %-12s%.1f%% over the last %d runs\n\n", "pass rate:", d.PassRatePct, len(d.Results))
+	b.WriteString("── latest results ──\n")
+	for _, res := range d.Results {
+		verdict := "PASS"
+		if !res.Passed {
+			verdict = "FAIL"
+		}
+		fmt.Fprintf(&b, "  %s  %-22s %s\n", res.CheckTime, res.Location, verdict)
+	}
 	return b.String()
 }
 
