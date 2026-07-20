@@ -96,6 +96,15 @@ func Register(ctx context.Context, api string) (string, error) {
 	return reg.ClientID, nil
 }
 
+// listenCallback binds the loopback callback listener. A package hook so
+// tests can bind an ephemeral port (":0") instead of the fixed one — the
+// fixed port lingers in TIME_WAIT between runs and made back-to-back test
+// runs flake with "address already in use". Production always uses
+// CallbackAddr: the DCR-registered redirect URI depends on it.
+var listenCallback = func() (net.Listener, error) {
+	return net.Listen("tcp", CallbackAddr)
+}
+
 // Login runs the PKCE authorization-code flow: it starts the loopback
 // callback server, sends the user's browser to the authorize page via
 // openBrowser (injectable for tests), and exchanges the returned code for
@@ -105,12 +114,14 @@ func Login(ctx context.Context, ep Endpoints, clientID string, openBrowser func(
 	sum := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 	state := randomURLSafe(24)
-	redirect := "http://" + CallbackAddr + callbackPath
 
-	ln, err := net.Listen("tcp", CallbackAddr)
+	ln, err := listenCallback()
 	if err != nil {
 		return TokenSet{}, fmt.Errorf("callback listener: %w (is another login running?)", err)
 	}
+	// Derived from the listener, not the constant, so the authorize redirect
+	// always points at the port actually bound.
+	redirect := "http://" + ln.Addr().String() + callbackPath
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 	mux := http.NewServeMux()

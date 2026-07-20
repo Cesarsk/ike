@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -60,10 +60,36 @@ func TestRegister(t *testing.T) {
 	}
 }
 
+// ephemeralCallback rebinds the login callback to an ephemeral port for this
+// test. The fixed production port lingers in TIME_WAIT between runs, which
+// made back-to-back `go test` invocations flake with "address already in use".
+func ephemeralCallback(t *testing.T) {
+	t.Helper()
+	prev := listenCallback
+	listenCallback = func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") }
+	t.Cleanup(func() { listenCallback = prev })
+}
+
+// callbackURL rebuilds the loopback callback from the authorize URL's own
+// redirect_uri (which carries the actually-bound port) plus extra params.
+func callbackURL(t *testing.T, authorize, params string) string {
+	t.Helper()
+	parsed, err := url.Parse(authorize)
+	if err != nil {
+		t.Fatalf("authorize URL unparsable: %v", err)
+	}
+	q := parsed.Query()
+	if q.Get("redirect_uri") == "" {
+		t.Fatalf("authorize URL carries no redirect_uri: %q", authorize)
+	}
+	return q.Get("redirect_uri") + "?" + params + "&state=" + url.QueryEscape(q.Get("state"))
+}
+
 // TestLoginRoundTrip drives the whole PKCE flow with a stubbed "browser": the
 // opener parses the authorize URL and calls the loopback callback with a code,
 // exactly like a real browser redirect would.
 func TestLoginRoundTrip(t *testing.T) {
+	ephemeralCallback(t)
 	var gotVerifier string
 	srv := fakeDatadog(t, &gotVerifier)
 	defer srv.Close()
@@ -72,14 +98,8 @@ func TestLoginRoundTrip(t *testing.T) {
 	var authorizeURL string
 	openBrowser := func(u string) error {
 		authorizeURL = u
-		parsed, err := url.Parse(u)
-		if err != nil {
-			return err
-		}
-		q := parsed.Query()
 		// The "user logs in" and Datadog redirects back with code + state.
-		cb := fmt.Sprintf("http://%s%s?code=good-code&state=%s",
-			CallbackAddr, "/oauth/callback", q.Get("state"))
+		cb := callbackURL(t, u, "code=good-code")
 		go func() {
 			resp, err := http.Get(cb)
 			if err == nil {
@@ -110,6 +130,7 @@ func TestLoginRoundTrip(t *testing.T) {
 // org's subdomain host when one is set — not the API host. The token exchange
 // still goes to ep.API.
 func TestLoginUsesAppHost(t *testing.T) {
+	ephemeralCallback(t)
 	srv := fakeDatadog(t, nil)
 	defer srv.Close()
 	// App is a subdomain-shaped host the browser opener only parses (never
@@ -119,12 +140,7 @@ func TestLoginUsesAppHost(t *testing.T) {
 	var authorizeURL string
 	openBrowser := func(u string) error {
 		authorizeURL = u
-		parsed, err := url.Parse(u)
-		if err != nil {
-			return err
-		}
-		cb := fmt.Sprintf("http://%s/oauth/callback?code=good-code&state=%s",
-			CallbackAddr, parsed.Query().Get("state"))
+		cb := callbackURL(t, u, "code=good-code")
 		go func() {
 			if resp, err := http.Get(cb); err == nil {
 				resp.Body.Close()
@@ -141,13 +157,12 @@ func TestLoginUsesAppHost(t *testing.T) {
 }
 
 func TestLoginDenied(t *testing.T) {
+	ephemeralCallback(t)
 	srv := fakeDatadog(t, nil)
 	defer srv.Close()
 	ep := Endpoints{API: srv.URL, App: srv.URL}
 	openBrowser := func(u string) error {
-		parsed, _ := url.Parse(u)
-		cb := fmt.Sprintf("http://%s/oauth/callback?error=access_denied&state=%s",
-			CallbackAddr, parsed.Query().Get("state"))
+		cb := callbackURL(t, u, "error=access_denied")
 		go func() {
 			resp, err := http.Get(cb)
 			if err == nil {
