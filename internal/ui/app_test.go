@@ -894,6 +894,38 @@ func TestRowLoginOAuth(t *testing.T) {
 	app.Stop()
 }
 
+// TestOAuthOpensSubdomainHost: signing in a context with a custom subdomain
+// opens that subdomain's page (not app.<site>). The injected login blocks so
+// the "browser opened for …" flash stays visible long enough to assert on.
+func TestOAuthOpensSubdomainHost(t *testing.T) {
+	release := make(chan struct{})
+	app, err := New(Options{
+		Contexts: []ContextInfo{{Name: "dev", Site: "datadoghq.eu", Subdomain: "acme-dev", Keys: "keychain (oauth)", Auth: "oauth"}},
+		Current:  "dev",
+		Factory:  func(name string) (data.Provider, error) { return data.NewDemo("datadoghq.eu"), nil },
+		OAuthLogin: func(name string) (ContextInfo, error) {
+			<-release // hold so the transient "browser opened" flash is observable
+			return ContextInfo{Name: name, Site: "datadoghq.eu", Subdomain: "acme-dev", Keys: "keychain (oauth)", Auth: "oauth"}, nil
+		},
+		Refresh: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":ctx")
+	waitFor(t, sim, "Contexts(all)")
+	typeRunes(sim, "O")
+	waitFor(t, sim, "browser opened for dev → acme-dev.datadoghq.eu")
+	close(release)
+	waitFor(t, sim, "signed in — context dev ready")
+	app.Stop()
+}
+
 // TestRowLoginConvertConfirm: 'O' on a key/token row asks first, then converts
 // that context to OAuth once confirmed.
 func TestRowLoginConvertConfirm(t *testing.T) {

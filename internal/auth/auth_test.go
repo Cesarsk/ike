@@ -106,6 +106,40 @@ func TestLoginRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLoginUsesAppHost proves the authorize page is opened on ep.App — the
+// org's subdomain host when one is set — not the API host. The token exchange
+// still goes to ep.API.
+func TestLoginUsesAppHost(t *testing.T) {
+	srv := fakeDatadog(t, nil)
+	defer srv.Close()
+	// App is a subdomain-shaped host the browser opener only parses (never
+	// fetches); API is the reachable fake for the token exchange.
+	ep := Endpoints{API: srv.URL, App: "https://acme-dev.datadoghq.eu"}
+
+	var authorizeURL string
+	openBrowser := func(u string) error {
+		authorizeURL = u
+		parsed, err := url.Parse(u)
+		if err != nil {
+			return err
+		}
+		cb := fmt.Sprintf("http://%s/oauth/callback?code=good-code&state=%s",
+			CallbackAddr, parsed.Query().Get("state"))
+		go func() {
+			if resp, err := http.Get(cb); err == nil {
+				resp.Body.Close()
+			}
+		}()
+		return nil
+	}
+	if _, err := Login(context.Background(), ep, "fake-client", openBrowser); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(authorizeURL, "https://acme-dev.datadoghq.eu/oauth2/v1/authorize?") {
+		t.Fatalf("authorize URL must be on the subdomain host, got %q", authorizeURL)
+	}
+}
+
 func TestLoginDenied(t *testing.T) {
 	srv := fakeDatadog(t, nil)
 	defer srv.Close()

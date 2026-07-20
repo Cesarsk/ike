@@ -2381,9 +2381,10 @@ func (a *App) beginRowLogin() {
 }
 
 // startLogin kicks off the blocking browser flow for one context off the UI
-// thread and folds the refreshed info back into :ctx.
+// thread and folds the refreshed info back into :ctx. The flash names the host
+// being opened so it's clear the org's subdomain (not app.<site>) is used.
 func (a *App) startLogin(name string) {
-	a.flash("browser opened — complete the sign-in for "+name+" there …", false)
+	a.flash("browser opened for "+name+" → "+a.ctxAuthHost(name)+" — complete the sign-in there …", false)
 	go func() {
 		info, err := a.opts.OAuthLogin(name)
 		a.QueueUpdateDraw(func() {
@@ -2419,6 +2420,21 @@ func (a *App) ctxAuth(name string) string {
 	return ""
 }
 
+// ctxAuthHost is the browser host the OAuth sign-in opens for a context: its
+// custom subdomain when set, else app.<site>. Mirrors auth.EndpointsFor so the
+// flash matches the URL actually opened.
+func (a *App) ctxAuthHost(name string) string {
+	for _, c := range a.ctxInfos {
+		if c.Name == name {
+			if c.Subdomain != "" {
+				return c.Subdomain + "." + c.Site
+			}
+			return "app." + c.Site
+		}
+	}
+	return name
+}
+
 // formError shows a validation error inside the form page (and logs it) —
 // the bottom status bar alone is too easy to miss while filling fields.
 func (a *App) formError(msg string) {
@@ -2445,7 +2461,7 @@ const ctxFormGuidance = `[orange]How to fill this in[white]
 
 [aqua]Site[white] — pick from the list (enter/space or click opens it). It matches the region in your Datadog URL: app.[green]datadoghq.eu[white] → datadoghq.eu.
 
-[aqua]Subdomain[white] — only if your org's web UI lives on a custom subdomain: for https://[green]acme-stage[white].datadoghq.eu enter [green]acme-stage[white]. Fixes 'open in Datadog' links; API calls are unaffected. Leave empty if your URL starts with app.
+[aqua]Subdomain[white] — only if your org's web UI lives on a custom subdomain: for https://[green]acme-stage[white].datadoghq.eu enter [green]acme-stage[white]. The browser sign-in opens on this host, and 'open in Datadog' links use it; API calls are unaffected. Leave empty if your URL starts with app.
 
 [gray]When editing, leave a credential field empty to keep the stored secret. Secrets go to the OS keychain (service "ike"), never into the config file. <esc> cancels.`
 
