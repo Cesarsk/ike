@@ -137,7 +137,8 @@ sensitive; needs a deliberately cheap poll.
 Verified dead end: **service map / dependency graph** — the official client
 (checked v2.62.0) exposes no service-dependencies or service-map endpoint;
 same category as per-service stats. Revisit only if Datadog publishes one.
-Also deliberately skipped: first-run onboarding wizard.
+First-run onboarding was initially skipped, then shipped in v0.3.0 as the
+one-time getting-started page (`:manual`).
 
 ### Auth — SHIPPED as v0.3.0 (`ike auth login`)
 
