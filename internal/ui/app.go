@@ -3280,6 +3280,10 @@ func (a *App) render() {
 	for n, idx := range a.filtered {
 		r := a.rows[idx]
 		color := rowColor(a.res.Key, r)
+		// Active orgs in :ctx are a marked set — tint the whole row so a
+		// multi-selection reads at a glance (the cursor bar stays distinct:
+		// tview's selected style overrides cell styles on the selected row).
+		marked := a.res.Key == ctxResource.Key && len(r.Cells) > 0 && r.Cells[0] == "active"
 		for c, ci := range cidx {
 			val := ""
 			switch {
@@ -3294,6 +3298,9 @@ func (a *App) render() {
 			cell := tview.NewTableCell(tview.Escape(val)).
 				SetTextColor(color).
 				SetExpansion(expansion(names[c]))
+			if marked {
+				cell.SetBackgroundColor(a.theme.MarkBg).SetAttributes(tcell.AttrBold)
+			}
 			a.table.SetCell(n+1, c, cell)
 		}
 	}

@@ -17,13 +17,17 @@ type Theme struct {
 	Title    tcell.Color
 	SelectBg tcell.Color
 	SelectFg tcell.Color
-	FieldBg  tcell.Color
-	FieldFg  tcell.Color
-	Label    tcell.Color
-	Button   tcell.Color
-	Accent   string // section headers / labels in dynamic text (default "orange")
-	Key      string // key names in dynamic text (default "aqua")
-	Dim      string // secondary notes in dynamic text (default "gray")
+	// MarkBg tints rows that are "marked" (active orgs in :ctx) so a
+	// multi-selection reads as a set. Dimmer than SelectBg, so the cursor
+	// bar stays distinguishable on top of it.
+	MarkBg  tcell.Color
+	FieldBg tcell.Color
+	FieldFg tcell.Color
+	Label   tcell.Color
+	Button  tcell.Color
+	Accent  string // section headers / labels in dynamic text (default "orange")
+	Key     string // key names in dynamic text (default "aqua")
+	Dim     string // secondary notes in dynamic text (default "gray")
 }
 
 // themes are the built-in palettes. "ike" is the signature look (and what an
@@ -32,6 +36,7 @@ var themes = map[string]Theme{
 	"ike": {
 		Name: "ike", Border: tcell.ColorCoral, Title: tcell.ColorLightSalmon,
 		SelectBg: tcell.ColorDarkSlateGray, SelectFg: tcell.ColorWhite,
+		MarkBg:  tcell.NewRGBColor(58, 36, 30), // dim warm coral tint
 		FieldBg: tcell.ColorBlack, FieldFg: tcell.ColorMediumTurquoise,
 		Label: tcell.ColorCoral, Button: tcell.ColorCoral,
 		Accent: "coral", Key: "mediumturquoise", Dim: "gray",
@@ -39,6 +44,7 @@ var themes = map[string]Theme{
 	"default": {
 		Name: "default", Border: tcell.ColorDodgerBlue, Title: tcell.ColorOrange,
 		SelectBg: tcell.ColorDarkSlateGray, SelectFg: tcell.ColorWhite,
+		MarkBg:  tcell.NewRGBColor(24, 38, 58), // dim blue tint
 		FieldBg: tcell.ColorBlack, FieldFg: tcell.ColorAqua,
 		Label: tcell.ColorOrange, Button: tcell.ColorDodgerBlue,
 		Accent: "orange", Key: "aqua", Dim: "gray",
@@ -46,6 +52,7 @@ var themes = map[string]Theme{
 	"mono": {
 		Name: "mono", Border: tcell.ColorWhite, Title: tcell.ColorWhite,
 		SelectBg: tcell.ColorGray, SelectFg: tcell.ColorWhite,
+		MarkBg:  tcell.NewRGBColor(44, 44, 44), // dim gray tint
 		FieldBg: tcell.ColorBlack, FieldFg: tcell.ColorWhite,
 		Label: tcell.ColorWhite, Button: tcell.ColorGray,
 		Accent: "white", Key: "white", Dim: "gray",
@@ -53,6 +60,7 @@ var themes = map[string]Theme{
 	"nord": {
 		Name: "nord", Border: tcell.ColorSteelBlue, Title: tcell.ColorLightCyan,
 		SelectBg: tcell.ColorDarkSlateBlue, SelectFg: tcell.ColorWhite,
+		MarkBg:  tcell.NewRGBColor(46, 52, 64), // nord0 polar night
 		FieldBg: tcell.ColorBlack, FieldFg: tcell.ColorLightCyan,
 		Label: tcell.ColorLightCyan, Button: tcell.ColorSteelBlue,
 		Accent: "#88c0d0", Key: "#a3be8c", Dim: "gray",
@@ -60,6 +68,7 @@ var themes = map[string]Theme{
 	"solarized": {
 		Name: "solarized", Border: tcell.ColorDarkCyan, Title: tcell.ColorGoldenrod,
 		SelectBg: tcell.ColorDarkSlateGray, SelectFg: tcell.ColorWhite,
+		MarkBg:  tcell.NewRGBColor(7, 54, 66), // solarized base02
 		FieldBg: tcell.ColorBlack, FieldFg: tcell.ColorDarkCyan,
 		Label: tcell.ColorGoldenrod, Button: tcell.ColorDarkCyan,
 		Accent: "#b58900", Key: "#2aa198", Dim: "#657b83",

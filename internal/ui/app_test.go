@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 
@@ -823,6 +824,10 @@ func TestMultiContextSpanning(t *testing.T) {
 	// the space-marked one alike (no separate "current" state in the table).
 	waitForMatch(t, sim, `active\s+demo-dev`)
 	waitForMatch(t, sim, `active\s+demo-prod`)
+	// Active rows are tinted with the theme's mark background so the set reads
+	// at a glance. Assert on demo-dev: the cursor sits on demo-prod, whose row
+	// is drawn with the selection style instead.
+	waitForBg(t, sim, `active\s+demo-dev`, ResolveTheme("").MarkBg)
 
 	// Monitors now span both orgs: CTX column + rows tagged demo-prod, and
 	// the header shows one budget line per org.
@@ -1138,6 +1143,55 @@ func waitForMatch(t *testing.T, sim tcell.SimulationScreen, pattern string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("screen never matched %q; screen was:\n%s", pattern, screenText(sim))
+}
+
+// waitForBg waits until the screen matches a regexp AND the cell at the match
+// start is drawn with the wanted background — used to assert row tints (e.g.
+// the marked-active highlight in :ctx) that plain text scans can't see. Text
+// and styles come from ONE GetContents snapshot: the screen redraws between
+// separate calls, which would map text positions onto another frame's cells.
+func waitForBg(t *testing.T, sim tcell.SimulationScreen, pattern string, want tcell.Color) {
+	t.Helper()
+	re := regexp.MustCompile(pattern)
+	sample := func() (string, tcell.Color, bool) {
+		cells, w, _ := sim.GetContents()
+		var b strings.Builder
+		for i, c := range cells {
+			r := ' '
+			if len(c.Runes) > 0 {
+				r = c.Runes[0]
+			}
+			b.WriteRune(r)
+			if (i+1)%w == 0 {
+				b.WriteRune('\n')
+			}
+		}
+		txt := b.String()
+		loc := re.FindStringIndex(txt)
+		if loc == nil {
+			return txt, 0, false
+		}
+		// FindStringIndex returns BYTE offsets; the box-drawing borders are
+		// multi-byte runes, so convert to a rune offset before mapping to a
+		// cell (one rune per cell, plus one newline per row).
+		off := utf8.RuneCountInString(txt[:loc[0]])
+		idx := (off/(w+1))*w + off%(w+1)
+		_, bg, _ := cells[idx].Style.Decompose()
+		return txt, bg, true
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, bg, ok := sample(); ok && bg == want {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	txt, bg, ok := sample()
+	got := "no match"
+	if ok {
+		got = bg.CSS()
+	}
+	t.Fatalf("screen never showed %q with background %s (last saw %s); screen was:\n%s", pattern, want.CSS(), got, txt)
 }
 
 // waitForGone waits until a substring is absent — used to confirm an async

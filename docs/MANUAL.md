@@ -284,7 +284,8 @@ dotfiles get committed, so ike won't let you put a secret there.
 **Spanning several orgs at once.** In `:ctx`, press `space` on a context to
 **activate** it. The `ACTIVE` column shows exactly who participates: every
 active org reads `active` — the one you switched to with `enter` and any
-space-marked ones alike (the org you're driving is named in the header).
+space-marked ones alike (the org you're driving is named in the header) —
+and active rows are highlighted with a row tint so the set reads at a glance.
 Switching with `enter` keeps the space-marked orgs in and drops the rest. With
 more than one org active, every view merges rows from all of them and shows a
 `CTX` column naming each row's org; `:overview` triages open incidents and
