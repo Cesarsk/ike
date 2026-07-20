@@ -125,6 +125,7 @@ The essentials (see the [full reference in the Manual](docs/MANUAL.md#keybinding
 | `Q` / `C` | saved-query picker / column picker |
 | `F` | fuzzy row finder on any table |
 | `space` | in `:ctx`: activate a context so views span that org too |
+| `O` | in `:ctx`: browser sign-in (OAuth) for the selected org |
 | `?` | help, from any view |
 
 ## Multiple orgs (contexts)
@@ -148,9 +149,11 @@ contexts:
 
 - `:ctx` lists contexts; `enter` switches org. A switch drops the cache,
   rate-limit budget and navigation history, so nothing leaks between orgs.
-- Add a context from inside the app with `:ctx` then `a`: a form takes the name,
-  site, and either an API/APP key pair or a bearer token (all masked). Secrets
-  go to the OS keychain; only `{site, keychain: true}` is written to the file.
+- Add a context from inside the app with `:ctx` then `a`. The form asks how the
+  org signs in first: browser sign-in (OAuth), an API/APP key pair, or a bearer
+  token (key and token fields are masked). Secrets go to the OS keychain; only
+  `{site, keychain: true, auth}` is written to the file. `e` edits a context in
+  the same form later.
 - Secrets are always env-indirected or keychain-stored. Plaintext `api-key:`
   fields are rejected at parse time. With no config file at all, the classic
   `DD_API_KEY` / `DD_APP_KEY` / `DD_SITE` vars act as an implicit `default`
