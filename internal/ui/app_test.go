@@ -258,6 +258,16 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Traces(")
 
+	// Synthetics: inventory list; enter shows latest results + pass rate.
+	typeCmd(sim, ":synthetics")
+	waitFor(t, sim, "Synthetics(")
+	waitFor(t, sim, "login journey")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "pass rate:")
+	waitFor(t, sim, "FAIL") // the newest demo run failed
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Synthetics(")
+
 	// RUM view: browser events (views, actions, errors), '/' query filters.
 	typeCmd(sim, ":rum")
 	waitFor(t, sim, "RUM(")
@@ -267,7 +277,6 @@ func TestAppSmoke(t *testing.T) {
 	typeRunes(sim, "@type:error")
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "TypeError") // only error events remain
-	press(sim, tcell.KeyEscape)
 
 	// Events feed: the "what changed" stream (deploys, alerts).
 	typeCmd(sim, ":events")
@@ -285,7 +294,11 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "canceled") // status flips once the write applied + reloaded
 	press(sim, tcell.KeyEscape) // back to events
 	waitFor(t, sim, "Events(")
-	press(sim, tcell.KeyEscape) // back to traces (nav stack)
+	press(sim, tcell.KeyEscape) // back to rum (nav stack)
+	waitFor(t, sim, "RUM(")
+	press(sim, tcell.KeyEscape) // back to synthetics
+	waitFor(t, sim, "Synthetics(")
+	press(sim, tcell.KeyEscape) // back to traces
 	waitFor(t, sim, "Traces(")
 
 	// Back to monitors, then esc must pop the navigation stack back to the

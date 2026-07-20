@@ -170,6 +170,26 @@ type SLODetail struct {
 	Note     string
 }
 
+// SynthResult is one recent run of a synthetic test: when, from where, and
+// whether it passed.
+type SynthResult struct {
+	CheckTime string
+	Location  string
+	Passed    bool
+}
+
+// SynthDetail is the structured synthetic-test detail: identity plus its most
+// recent results and the pass rate over them.
+type SynthDetail struct {
+	Name        string
+	Type        string
+	Status      string
+	Message     string
+	PassRatePct float64
+	Results     []SynthResult // newest first
+	Note        string        // why results are missing
+}
+
 // MonitorDetail is the structured monitor detail: identity, config and the
 // alert message, with the raw object kept for completeness.
 type MonitorDetail struct {
@@ -297,6 +317,12 @@ func Resources() []Resource {
 			Aliases: []string{"services", "service", "svc"},
 			Columns: []string{"SERVICE"},
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "prod",
+		},
+		{
+			Key: "synthetics", Title: "Synthetics",
+			Aliases: []string{"synthetics", "synthetic", "syn"},
+			Columns: []string{"STATUS", "NAME", "TYPE", "LOCATIONS", "TAGS"},
+			TTL:     5 * time.Minute,
 		},
 		{
 			// RUM events (views, actions, errors, sessions) — '/' is a RUM
