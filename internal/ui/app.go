@@ -629,7 +629,7 @@ func (a *App) setHints() {
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:
-			lines = append(lines, "[gray]<enter>switch org  <space>activate for spanning  <O>browser sign-in  <a>add context  <e>edit  <ctrl-d>delete")
+			lines = append(lines, "[gray]<enter>switch org  <space>activate for spanning  <O>browser sign-in  <a>add context  <e>edit  <d>delete")
 		default:
 			lines = append(lines, "[gray]<s>sort <S>reverse")
 		}
@@ -696,7 +696,7 @@ func (a *App) buildHelp() tview.Primitive {
                  access token); the form's fields follow the choice
    [aqua]e[white]             edit the selected context in a form (auth type, site, subdomain,
                  credentials) — leave a secret field empty to keep the stored one
-   [aqua]ctrl-d[white]        delete the selected context (asks first)
+   [aqua]d[white] (or ctrl-d) delete the selected context (asks first)
 
  [orange]OTHER
    [aqua]C[white]             (any table) column picker — [aqua]space[white] show/hide, [aqua]J/K[white] reorder; live + saved
@@ -1003,6 +1003,11 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 'e':
 		if a.res.Key == ctxResource.Key {
 			a.openEditForm()
+			return nil
+		}
+	case 'd':
+		if a.res.Key == ctxResource.Key {
+			a.confirmDeleteContext() // plain-key alias for ctrl-d (confirm-gated)
 			return nil
 		}
 	case 'l':

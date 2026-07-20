@@ -261,7 +261,7 @@ Inside the app, `:ctx` lists your orgs:
 | `a` | **Add** a context via a form. Pick its **auth type** first: *Browser sign-in (OAuth)*, *API + APP keys*, or *Access token* — the form's fields change to match. Keys/token are masked and go to the **OS keychain**; only `{site, keychain: true, auth}` is written to the config. OAuth signs in straight from the form's button. |
 | `O` | **Browser sign-in** for the selected context. On an OAuth row it signs in or refreshes; on a key/token row it offers to **convert** the context to OAuth (asks first). Tokens go to the OS keychain and refresh automatically. |
 | `e` | **Edit** the selected context in a form (same as add, pre-filled): change auth type, site, subdomain, or rotate credentials. Leave a secret field empty to keep the stored one. The name can't be changed here. |
-| `ctrl-d` | **Delete** the selected context (with confirmation; the active one is protected). |
+| `d` (or `ctrl-d`) | **Delete** the selected context (with confirmation; the active one is protected). |
 
 **Auth options per context:**
 - **OAuth (browser sign-in)** — `ike auth login` or the in-app `O`; tokens live

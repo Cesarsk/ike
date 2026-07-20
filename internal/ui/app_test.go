@@ -593,6 +593,26 @@ func TestFormDropdownArrowNav(t *testing.T) {
 	app.Stop()
 }
 
+// TestDeleteContextDKey: 'd' on a :ctx row opens the delete confirm (a plain
+// alias for ctrl-d). demo-prod isn't the active context, so it's deletable.
+func TestDeleteContextDKey(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":ctx")
+	waitFor(t, sim, "Contexts(all)")
+	press(sim, tcell.KeyDown) // demo-dev (active) → demo-prod
+	typeRunes(sim, "d")
+	waitFor(t, sim, "Delete context")
+	press(sim, tcell.KeyRight) // Cancel → Delete
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "demo-prod deleted")
+	app.Stop()
+}
+
 // TestFormDropdownEscClosesList: with a dropdown open, <esc> closes the list
 // (the form stays); a second <esc> closes the form.
 func TestFormDropdownEscClosesList(t *testing.T) {
