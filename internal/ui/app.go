@@ -2230,6 +2230,9 @@ func (a *App) showCtxForm(editing string, mode int, v ContextInfo) {
 		a.rebuildCtxBody(idx, cur)
 		a.SetFocus(a.ctxForm)
 	})
+	if dd, ok := a.ctxForm.GetFormItemByLabel("Auth").(*tview.DropDown); ok {
+		dropdownNoArrowOpen(dd)
+	}
 	a.rebuildCtxBody(mode, v)
 	a.ctxFormBuilding = false
 	if editing == "" {
@@ -2266,6 +2269,9 @@ func (a *App) rebuildCtxBody(mode int, v ContextInfo) {
 		a.ctxForm.AddInputField("Name", v.Name, 30, nil, nil)
 	}
 	a.ctxForm.AddDropDown("Site", labels, siteIdx, nil)
+	if dd, ok := a.ctxForm.GetFormItemByLabel("Site").(*tview.DropDown); ok {
+		dropdownNoArrowOpen(dd)
+	}
 	switch mode {
 	case authModeKeys:
 		a.ctxForm.
@@ -2285,6 +2291,25 @@ func (a *App) rebuildCtxBody(mode int, v ContextInfo) {
 		}
 	}
 	a.ctxForm.AddButton(save, a.submitCtxForm).AddButton("Cancel", a.back)
+}
+
+// dropdownNoArrowOpen keeps a closed dropdown from opening on Up/Down — those
+// move between form fields like every other item instead (the list still opens
+// on enter or space). Once the list is open, arrows pass through to navigate
+// options as usual.
+func dropdownNoArrowOpen(dd *tview.DropDown) {
+	dd.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if dd.IsOpen() {
+			return ev
+		}
+		switch ev.Key() {
+		case tcell.KeyDown:
+			return tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+		case tcell.KeyUp:
+			return tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone)
+		}
+		return ev
+	})
 }
 
 // ctxFieldText reads an input/password field by label ("" if the field is

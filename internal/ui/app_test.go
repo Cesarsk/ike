@@ -571,6 +571,28 @@ func TestAddFormDynamicFields(t *testing.T) {
 	app.Stop()
 }
 
+// TestFormDropdownArrowNav: Down on a closed dropdown moves to the next field
+// (it does NOT open the list); the list opens only on enter/space. Verified by
+// typing after Down and seeing the text land in the Name field.
+func TestFormDropdownArrowNav(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":ctx")
+	waitFor(t, sim, "Contexts(all)")
+	typeRunes(sim, "a")
+	waitFor(t, sim, "Add context")
+	// Focus starts on the Auth dropdown (closed). Down must move to Name, not
+	// open the list — so typed text lands in the Name field.
+	press(sim, tcell.KeyDown)
+	typeRunes(sim, "movedtoname")
+	waitFor(t, sim, "movedtoname")
+	app.Stop()
+}
+
 // newDemoApp builds an App with two offline demo contexts, mirroring what
 // `ike --demo` wires up in main.go — including in-memory add/delete.
 func TestProjectColumns(t *testing.T) {
