@@ -593,6 +593,32 @@ func TestFormDropdownArrowNav(t *testing.T) {
 	app.Stop()
 }
 
+// TestFormDropdownEscClosesList: with a dropdown open, <esc> closes the list
+// (the form stays); a second <esc> closes the form.
+func TestFormDropdownEscClosesList(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":ctx")
+	waitFor(t, sim, "Contexts(all)")
+	typeRunes(sim, "a")
+	waitFor(t, sim, "Add context")
+	press(sim, tcell.KeyEnter)  // open the Auth dropdown
+	press(sim, tcell.KeyEscape) // closes the list, NOT the form
+	waitFor(t, sim, "Add context")
+	// Type into the (now-focused) Auth dropdown's field would be odd; instead
+	// prove the form is still up by tabbing to Name and typing.
+	press(sim, tcell.KeyTab)
+	typeRunes(sim, "stillhere")
+	waitFor(t, sim, "stillhere")
+	press(sim, tcell.KeyEscape) // now closes the form
+	waitFor(t, sim, "Contexts(all)")
+	app.Stop()
+}
+
 // newDemoApp builds an App with two offline demo contexts, mirroring what
 // `ike --demo` wires up in main.go — including in-memory add/delete.
 func TestProjectColumns(t *testing.T) {

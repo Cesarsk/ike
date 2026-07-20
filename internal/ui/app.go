@@ -746,6 +746,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		return ev
 	case "ctxform":
 		if ev.Key() == tcell.KeyEscape {
+			if a.ctxDropdownOpen() {
+				return ev // an open dropdown closes itself first; keep the form
+			}
 			a.back()
 			return nil
 		}
@@ -2291,6 +2294,17 @@ func (a *App) rebuildCtxBody(mode int, v ContextInfo) {
 		}
 	}
 	a.ctxForm.AddButton(save, a.submitCtxForm).AddButton("Cancel", a.back)
+}
+
+// ctxDropdownOpen reports whether either dropdown in the context form has its
+// list open — used so <esc> closes the list before it closes the form.
+func (a *App) ctxDropdownOpen() bool {
+	for _, label := range []string{"Auth", "Site"} {
+		if dd, ok := a.ctxForm.GetFormItemByLabel(label).(*tview.DropDown); ok && dd.IsOpen() {
+			return true
+		}
+	}
+	return false
 }
 
 // dropdownNoArrowOpen keeps a closed dropdown from opening on Up/Down — those
