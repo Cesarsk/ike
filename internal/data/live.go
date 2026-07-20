@@ -1289,6 +1289,80 @@ func (l *Live) logs(ctx context.Context, query, timeRange string) ([]Row, error)
 	return rows, nil
 }
 
+// LogContext fetches the log events in a ±window around the anchor line,
+// scoped to the same service (and host, when known), oldest first. It is a
+// single bounded search — never polls — so it is cheap and rate-limit-safe.
+func (l *Live) LogContext(ctx context.Context, anchor Row, windowSecs int) (*LogContextView, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	lg, ok := anchor.Raw.(datadogV2.Log)
+	if !ok {
+		return nil, fmt.Errorf("log context: this row is not a log")
+	}
+	attrs := lg.GetAttributes()
+	anchorTS := attrs.GetTimestamp()
+	svc, host := attrs.GetService(), attrs.GetHost()
+
+	if windowSecs <= 0 {
+		windowSecs = 300 // ±5 minutes
+	}
+	win := time.Duration(windowSecs) * time.Second
+	from, to := anchorTS.Add(-win), anchorTS.Add(win)
+
+	var parts []string
+	if svc != "" {
+		parts = append(parts, "service:"+quoteFacet(svc))
+	}
+	if host != "" {
+		parts = append(parts, "host:"+quoteFacet(host))
+	}
+	query := "*"
+	if len(parts) > 0 {
+		query = strings.Join(parts, " ")
+	}
+
+	body := datadogV2.LogsListRequest{
+		Filter: &datadogV2.LogsQueryFilter{
+			Query: datadog.PtrString(query),
+			From:  datadog.PtrString(strconv.FormatInt(from.UnixMilli(), 10)),
+			To:    datadog.PtrString(strconv.FormatInt(to.UnixMilli(), 10)),
+		},
+		Sort: datadogV2.LOGSSORT_TIMESTAMP_ASCENDING.Ptr(),
+		Page: &datadogV2.LogsListRequestPage{Limit: datadog.PtrInt32(200)},
+	}
+	resp, httpresp, err := datadogV2.NewLogsApi(l.client).ListLogs(ctx,
+		*datadogV2.NewListLogsOptionalParameters().WithBody(body))
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("log context", err)
+	}
+	data := resp.GetData()
+	rows := make([]Row, 0, len(data))
+	for _, e := range data {
+		a := e.GetAttributes()
+		msg := a.GetMessage()
+		if i := strings.IndexByte(msg, '\n'); i >= 0 {
+			msg = msg[:i]
+		}
+		rows = append(rows, Row{
+			ID:      e.GetId(),
+			Cells:   []string{a.GetTimestamp().Local().Format("15:04:05.000"), a.GetStatus(), a.GetService(), a.GetHost(), msg},
+			Raw:     e,
+			TraceID: traceIDFromAttrs(a.GetAttributes()),
+		})
+	}
+	return &LogContextView{AnchorID: anchor.ID, Service: svc, Host: host, Window: win, Rows: rows}, nil
+}
+
+// quoteFacet quotes a Datadog facet value so spaces or special characters in a
+// service/host name can't break out of the search term.
+func quoteFacet(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	return `"` + r.Replace(s) + `"`
+}
+
 // traceIDFromAttrs digs the trace id out of a log's nested attribute map.
 // Datadog APM log-injection puts it at "trace_id", "dd.trace_id", or nested
 // under "dd":{"trace_id"} depending on the tracer/config. Returns "" if the

@@ -60,6 +60,11 @@ func (c *Cached) Trace(ctx context.Context, traceID string) (*TraceView, error) 
 	return c.p.Trace(ctx, traceID)
 }
 
+// LogContext is an on-demand, single-call fetch, uncached.
+func (c *Cached) LogContext(ctx context.Context, anchor Row, windowSecs int) (*LogContextView, error) {
+	return c.p.LogContext(ctx, anchor, windowSecs)
+}
+
 // MonitorMetric is an on-demand detail fetch, uncached.
 func (c *Cached) MonitorMetric(ctx context.Context, id string) (*MetricSeries, error) {
 	return c.p.MonitorMetric(ctx, id)

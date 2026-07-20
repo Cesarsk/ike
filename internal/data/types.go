@@ -31,6 +31,17 @@ type Row struct {
 	Ctx string
 }
 
+// LogContextView is the surrounding-context lens for one log line: the events
+// in a bounded ±window around the anchor, from the same service/host, oldest
+// first. One API call, no polling — the cheap, cost-safe half of live tail.
+type LogContextView struct {
+	AnchorID string        // the selected log's id; rendered highlighted in Rows
+	Service  string        // scope of the context query ("" = any)
+	Host     string        // scope of the context query ("" = any)
+	Window   time.Duration // half-width: rows span [anchor-Window, anchor+Window]
+	Rows     []Row         // ascending by timestamp; log-shaped cells
+}
+
 // Resource describes a navigable Datadog resource type.
 type Resource struct {
 	Key         string
@@ -229,6 +240,10 @@ type Provider interface {
 	// Trace reconstructs a distributed trace from its spans (searched by
 	// trace_id) into a tree for waterfall rendering. Bounded/on-demand.
 	Trace(ctx context.Context, traceID string) (*TraceView, error)
+	// LogContext returns the log events in a ±windowSecs window around the
+	// anchor row, scoped to its service/host, oldest first. One search call,
+	// no polling. windowSecs<=0 uses a default.
+	LogContext(ctx context.Context, anchor Row, windowSecs int) (*LogContextView, error)
 	// MonitorMetric evaluates a monitor's metric query over a recent window
 	// so the detail view can show the data behind the alert. On-demand.
 	MonitorMetric(ctx context.Context, id string) (*MetricSeries, error)
