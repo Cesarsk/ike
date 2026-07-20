@@ -157,8 +157,15 @@ Also deliberately skipped: first-run onboarding wizard.
    - After login, `:ctx` lists the new context and switching uses the keychain
      token; refresh removes the ~1h rotation pain of the interim paste-a-token
      path (`token-env`/keychain token auth keeps working meanwhile).
-   - **Spike first**: confirm Datadog's DCR endpoint is usable from a Go client
-     before committing to the full flow.
+   - **Spike: PASSED (2026-07-20).** Dynamic client registration works
+     unauthenticated (`POST /api/v2/oauth2/register` → 201 with a `client_id`,
+     `authorization_code` + `refresh_token` grants, public client). The full
+     round-trip — browser authorize (`/oauth2/v1/authorize`, PKCE S256), local
+     callback, token exchange (`/oauth2/v1/token`), an authenticated
+     `current_user` call, and a token refresh — was validated against a real
+     org with `hack/oauth-spike`. Open design question for the build: which
+     permission scopes to request at authorize time so every ike view and
+     write works (the spike only proved `current_user`).
 
 ### Near-term (rest of Tier 2)
 
