@@ -204,9 +204,10 @@ trace_id" message rather than a broken jump.
 
 **Surrounding context.** On a log line, press **`x`** to see what happened
 around it: a ±5-minute window scoped to the same service and host, oldest
-first, with the selected line highlighted. `t` inside the panel jumps to that
-line's trace. It is a single query, not a live stream, so it spends one request
-and no ongoing budget.
+first, with the selected line marked. The panel is a table you browse with
+`↑/↓` (or `j/k`); `enter` expands the highlighted line to its full detail, and
+`t` jumps to that line's trace. It is a single query, not a live stream, so it
+spends one request and no ongoing budget.
 
 You can also enter the loop from the top: **`:services`** → `enter` on a
 service → its **traces** → a failing trace → its **logs**. Same loop, started

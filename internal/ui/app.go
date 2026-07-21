@@ -158,19 +158,24 @@ type App struct {
 	current      string // current context name (always active)
 	refreshEvery time.Duration
 
-	content    *tview.Pages // "table" | "detail" | "help" | "ctxform" (+ "confirm" overlay)
-	infoTV     *tview.TextView
-	hintTV     *tview.TextView
-	table      *tview.Table
-	prompt     *tview.InputField
-	status     *tview.TextView
-	footer     *tview.Pages
-	detail     *tview.TextView
-	dash       *tview.TextView
-	trace      *tview.TextView
-	patterns   *tview.TextView
-	logctx     *tview.TextView // surrounding-context panel (x in :logs)
-	splash     *tview.TextView // startup logo, auto-dismissed
+	content  *tview.Pages // "table" | "detail" | "help" | "ctxform" (+ "confirm" overlay)
+	infoTV   *tview.TextView
+	hintTV   *tview.TextView
+	table    *tview.Table
+	prompt   *tview.InputField
+	status   *tview.TextView
+	footer   *tview.Pages
+	detail   *tview.TextView
+	dash     *tview.TextView
+	trace    *tview.TextView
+	patterns *tview.TextView
+	splash   *tview.TextView // startup logo, auto-dismissed
+	// Log surrounding-context panel (x in :logs): a caption + a selectable
+	// table of the ±window, so lines can be navigated and expanded.
+	logCtxFlex *tview.Flex
+	logCtxCap  *tview.TextView
+	logCtxTbl  *tview.Table
+	logCtxRows []data.Row      // table data row i ↔ logCtxRows[i] (header is table row 0)
 	rootView   tview.Primitive // the normal layout (header + content + footer)
 	splashView tview.Primitive // full-screen splash overlay (shown briefly at launch)
 	ctxForm    *tview.Form
@@ -349,9 +354,14 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.logctx} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
+	}
+	if a.logCtxFlex != nil {
+		a.logCtxFlex.SetBorderColor(a.theme.Border)
+		a.logCtxFlex.SetTitleColor(a.theme.Title)
+		a.logCtxTbl.SetSelectedStyle(sel)
 	}
 	a.savedQL.SetBorderColor(a.theme.Border)
 	a.savedQL.SetTitleColor(a.theme.Title)
@@ -461,8 +471,13 @@ func (a *App) build() {
 	a.patterns = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.patterns.SetBorder(true)
 
-	a.logctx = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
-	a.logctx.SetBorder(true)
+	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
+	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
+	a.logCtxFlex = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.logCtxCap, 2, 0, false).
+		AddItem(a.logCtxTbl, 0, 1, true)
+	a.logCtxFlex.SetBorder(true).SetTitle(" Log context ")
 
 	a.splash = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	// Transparent so the splash inherits the terminal background instead of
@@ -550,7 +565,7 @@ func (a *App) build() {
 		AddPage("dashboard", a.dash, true, false).
 		AddPage("trace", a.trace, true, false).
 		AddPage("patterns", a.patterns, true, false).
-		AddPage("logcontext", a.logctx, true, false).
+		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
 		AddPage("settings", a.settingsTbl, true, false).
 		AddPage("colpick", a.colPick, true, false).
@@ -600,7 +615,7 @@ func (a *App) setHints() {
 		}
 	case "logcontext":
 		lines = []string{
-			"[aqua]<esc>[white]back to logs  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<t>[white]trace  [aqua]<?>[white]help",
+			"[aqua]<↑/↓ j/k>[white]move  [aqua]<enter>[white]expand  [aqua]<t>[white]trace  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",
 		}
 	case "help":
 		lines = []string{
@@ -922,7 +937,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.back()
 			return nil
 		case ev.Rune() == 't':
-			a.drillToTrace(a.detailRow) // jump to the anchor line's trace
+			if r, ok := a.logCtxSelected(); ok {
+				a.drillToTrace(r) // jump to the selected line's trace
+			}
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -1856,14 +1873,16 @@ func (a *App) loadTrace(traceID string) {
 const logContextWindowSecs = 300 // ±5 minutes
 
 // showLogContext opens the surrounding-context panel for a log row: the events
-// in a ±window around it, same service/host, oldest first. One search call, no
-// polling — the cheap half of live tail.
+// in a ±window around it, same service/host, oldest first, as a navigable
+// table. One search call, no polling — the cheap half of live tail.
 func (a *App) showLogContext(r data.Row) {
 	a.pushNav()
 	a.detailRow = r
 	anchorID := r.ID
-	a.logctx.SetTitle(" Log context ")
-	a.logctx.SetText("\n  [gray]fetching surrounding context…").ScrollToBeginning()
+	a.logCtxRows = nil
+	a.logCtxCap.SetText(a.theme.recolor(" [orange::b]surrounding context[-:-:-] [gray]fetching…[-]"))
+	a.logCtxTbl.Clear()
+	a.logCtxFlex.SetTitle(" Log context ")
 	a.showPage("logcontext")
 	prov := a.providerFor(r) // the drilled-from row's org
 	go func() {
@@ -1873,17 +1892,71 @@ func (a *App) showLogContext(r data.Row) {
 				return // navigated away
 			}
 			if err != nil {
-				a.logctx.SetText("\n  [red]✗ " + tview.Escape(err.Error()))
+				a.logCtxCap.SetText(a.theme.recolor(" [red]✗ " + tview.Escape(err.Error())))
 				return
 			}
-			text, anchorLine := a.renderLogContext(v)
-			a.logctx.SetText(text)
-			// Center the highlighted anchor line in the viewport.
-			a.logctx.ScrollTo(max(0, anchorLine-5), 0)
-			a.logctx.SetTitle(fmt.Sprintf(" Log context · %s · ±%s [%d] ",
-				scopeLabel(v), v.Window.Round(time.Minute), len(v.Rows)))
+			a.fillLogContext(v)
 		})
 	}()
+}
+
+// fillLogContext populates the context table and caption, selecting the anchor.
+func (a *App) fillLogContext(v *data.LogContextView) {
+	a.logCtxCap.SetText(a.theme.recolor(fmt.Sprintf(
+		" [orange::b]surrounding context[-:-:-] [gray]%s · ±%s · %d lines · <enter> expand · <t> trace · <esc> back\n one query, no polling — a bounded window, not a live stream[-]",
+		tview.Escape(scopeLabel(v)), v.Window.Round(time.Minute), len(v.Rows))))
+	a.logCtxFlex.SetTitle(fmt.Sprintf(" Log context · %s [%d] ", scopeLabel(v), len(v.Rows)))
+
+	a.logCtxTbl.Clear()
+	for c, h := range []string{"", "TIME", "LVL", "SERVICE", "HOST", "MESSAGE"} {
+		a.logCtxTbl.SetCell(0, c, tview.NewTableCell(h).
+			SetTextColor(tcell.ColorWhite).SetAttributes(tcell.AttrBold).SetSelectable(false))
+	}
+	a.logCtxRows = v.Rows
+	anchorTableRow := 1
+	for i, r := range v.Rows {
+		marker := ""
+		if r.ID == v.AnchorID {
+			marker = "▶"
+			anchorTableRow = i + 1
+		}
+		cells := []string{marker, cellAt(r, 0), cellAt(r, 1), cellAt(r, 2), cellAt(r, 3), clip(cellAt(r, 4), 200)}
+		for c, val := range cells {
+			cell := tview.NewTableCell(tview.Escape(val)).SetExpansion(boolToInt(c == 5))
+			if c == 2 {
+				cell.SetTextColor(statusColor(val))
+			}
+			a.logCtxTbl.SetCell(i+1, c, cell)
+		}
+	}
+	if len(v.Rows) == 0 {
+		a.logCtxTbl.SetCell(1, 0, tview.NewTableCell(" no other log lines in this window").SetSelectable(false))
+		return
+	}
+	a.logCtxTbl.Select(anchorTableRow, 0).ScrollToBeginning()
+}
+
+// logCtxSelected returns the log row under the cursor in the context table.
+func (a *App) logCtxSelected() (data.Row, bool) {
+	row, _ := a.logCtxTbl.GetSelection()
+	i := row - 1 // header is table row 0
+	if i < 0 || i >= len(a.logCtxRows) {
+		return data.Row{}, false
+	}
+	return a.logCtxRows[i], true
+}
+
+// expandLogCtx opens the full detail for the selected context line (enter).
+// Log rows are already the complete object, so this is a local render.
+func (a *App) expandLogCtx() {
+	r, ok := a.logCtxSelected()
+	if !ok {
+		return
+	}
+	a.pushNav()
+	a.detailRow = r
+	a.renderDetail(r)
+	a.showPage("detail")
 }
 
 // scopeLabel names what the context query was scoped to for the panel title.
@@ -1899,41 +1972,23 @@ func scopeLabel(v *data.LogContextView) string {
 	return "all services"
 }
 
-// renderLogContext draws the ±window as a time-ordered list, the anchor line
-// marked and highlighted. Returns the text and the 0-based line index of the
-// anchor so the caller can scroll it into view.
-func (a *App) renderLogContext(v *data.LogContextView) (string, int) {
-	var b strings.Builder
-	fmt.Fprintf(&b, " [orange::b]surrounding context[-:-:-] [gray]%s · ±%s · %d lines · <t> trace · <esc> back[-]\n",
-		tview.Escape(scopeLabel(v)), v.Window.Round(time.Minute), len(v.Rows))
-	b.WriteString(" [gray]one query, no polling — a bounded window, not a live stream[-]\n\n")
-	if len(v.Rows) == 0 {
-		b.WriteString("  [gray]no other log lines in this window[-]\n")
-		return b.String(), 0
+func boolToInt(b bool) int {
+	if b {
+		return 1
 	}
-	anchorLine := 0
-	for i, r := range v.Rows {
-		ts, status, msg := cellAt(r, 0), cellAt(r, 1), cellAt(r, 4)
-		line := fmt.Sprintf("  %s  %-5s  %s", ts, statusTag(status), tview.Escape(clip(msg, 120)))
-		if r.ID == v.AnchorID {
-			anchorLine = i + 3 // header lines above
-			b.WriteString(" [black:orange]▶" + line + "[-:-:-]\n")
-			continue
-		}
-		b.WriteString("  " + line + "\n")
-	}
-	return b.String(), anchorLine
+	return 0
 }
 
-// statusTag colours a log status token for the context panel.
-func statusTag(s string) string {
+// statusColor maps a log status token to its severity colour (never themed —
+// a warn must read yellow in every palette).
+func statusColor(s string) tcell.Color {
 	switch strings.ToLower(s) {
 	case "error", "critical", "alert", "emergency":
-		return "[red]" + s + "[-]"
+		return tcell.ColorRed
 	case "warn", "warning":
-		return "[yellow]" + s + "[-]"
+		return tcell.ColorYellow
 	default:
-		return "[gray]" + s + "[-]"
+		return tcell.ColorGray
 	}
 }
 
@@ -2328,7 +2383,7 @@ func (a *App) showPage(page string) {
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":
-		a.SetFocus(a.logctx)
+		a.SetFocus(a.logCtxTbl)
 	case "savedq":
 		a.SetFocus(a.savedQL)
 	case "settings":

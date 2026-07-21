@@ -251,11 +251,18 @@ func TestAppSmoke(t *testing.T) {
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
-	// Surrounding context: x opens a ±window around the selected line; esc back.
+	// Surrounding context: x opens a navigable ±window around the selected
+	// line; the table is browsable and enter expands a line to its detail.
 	typeRunes(sim, "x")
 	waitFor(t, sim, "surrounding context")
 	waitFor(t, sim, "not a live stream") // the bounded-window framing
-	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "MESSAGE")           // the table header — it's a real table now
+	press(sim, tcell.KeyDown)            // move off the anchor line
+	press(sim, tcell.KeyEnter)           // expand the selected log
+	waitFor(t, sim, "Log/log")           // the log detail view opened
+	press(sim, tcell.KeyEscape)          // back to the context panel
+	waitFor(t, sim, "surrounding context")
+	press(sim, tcell.KeyEscape) // back to logs
 	waitFor(t, sim, "Logs(status:error · 15m)")
 
 	// Traces view: server query + t opens the waterfall for a span's trace.
