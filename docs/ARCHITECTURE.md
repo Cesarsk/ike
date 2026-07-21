@@ -195,8 +195,8 @@ detail view.
 
 The diagram shows the core states; the same push/pop stack drives the other
 overlay pages too — the dashboard grid, the trace waterfall, log patterns
-(`P`), the log surrounding-context panel (`x`), the saved-query picker (`Q`),
-`:settings`, the column picker (`C`), the
+(`P`), the log surrounding-context panel (`x`), the cost panel (`:cost`), the
+saved-query picker (`Q`), `:settings`, the column picker (`C`), the
 searchable user picker (`I` / to-do assignee) and the incident to-do panel
 (`T`) — each pushes the prior view and esc pops it. The startup splash is the
 one exception: it is shown as its own transient full-screen root (a

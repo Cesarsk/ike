@@ -42,6 +42,26 @@ type LogContextView struct {
 	Rows     []Row         // ascending by timestamp; log-shaped cells
 }
 
+// CostView is one org's Datadog spend for the current month: what it has
+// accrued so far (Estimated) and the projected end-of-month total, with a
+// per-product breakdown. Amounts are in Currency (USD unless the org bills
+// otherwise). Lines are sorted highest-cost first.
+type CostView struct {
+	OrgName   string
+	Month     string // "2026-07"
+	Currency  string
+	Estimated float64
+	Projected float64
+	Lines     []CostLine
+}
+
+// CostLine is one product's slice of the bill (e.g. "infra_hosts").
+type CostLine struct {
+	Product   string
+	Estimated float64
+	Projected float64
+}
+
 // Resource describes a navigable Datadog resource type.
 type Resource struct {
 	Key         string
@@ -244,6 +264,11 @@ type Provider interface {
 	// anchor row, scoped to its service/host, oldest first. One search call,
 	// no polling. windowSecs<=0 uses a default.
 	LogContext(ctx context.Context, anchor Row, windowSecs int) (*LogContextView, error)
+	// Cost returns this org's Datadog spend for the current month (estimated
+	// so far + projected end-of-month), broken down by product. Read-only,
+	// heavily rate-limited and admin-scoped — a non-privileged user gets a
+	// permission error, which the UI surfaces as "needs usage_read".
+	Cost(ctx context.Context) (*CostView, error)
 	// MonitorMetric evaluates a monitor's metric query over a recent window
 	// so the detail view can show the data behind the alert. On-demand.
 	MonitorMetric(ctx context.Context, id string) (*MetricSeries, error)

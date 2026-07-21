@@ -31,6 +31,10 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<esc>[white]back to logs  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help",
 		}
+	case "cost":
+		lines = []string{
+			"[aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	case "logcontext":
 		lines = []string{
 			"[aqua]<↑/↓ j/k>[white]move  [aqua]<enter>[white]expand  [aqua]<t>[white]trace  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",
@@ -104,7 +108,8 @@ func (a *App) buildHelp() tview.Primitive {
  [orange]NAVIGATION
    [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces services
                  events rum synthetics downtimes dashboards (aliases: mon inc s l tr svc ev dt d syn)
-                 — :overview (cross-org triage) / :ctx / :settings
+                 — :overview (cross-org triage) / :cost (this org's Datadog spend)
+                 / :ctx / :settings
    [aqua]enter[white]         detail — full object on demand; SLO error budget; monitor metric
                  sparkline; on a dashboard its widget grid; on logs/traces a row
    [aqua]esc[white]           go back (navigation history, k9s-style); clears the active filter

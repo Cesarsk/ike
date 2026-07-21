@@ -1098,6 +1098,25 @@ func newSim(t *testing.T) tcell.SimulationScreen {
 	return sim
 }
 
+// TestCostView: :cost renders the org's spend breakdown (estimated + projected
+// by product) from the demo provider; esc returns.
+func TestCostView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":cost")
+	waitFor(t, sim, "Datadog spend")
+	waitFor(t, sim, "estimated so far")
+	waitFor(t, sim, "infra_hosts")
+	waitFor(t, sim, "$11,800") // demo estimated total, thousands-separated
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Monitors(all)")
+	app.Stop()
+}
+
 func newDemoApp(t *testing.T) *App {
 	t.Helper()
 	sites := map[string]string{"demo-dev": "datadoghq.eu", "demo-prod": "datadoghq.com"}

@@ -52,6 +52,7 @@ internal/ui/
   detail.go             detail + dashboard + structured-body renderers
   render.go             table render, row colour, header + rate-limit budget
   writes.go             confirm-gated write paths (mute, incident, downtime)
+  cost.go               :cost panel — Datadog spend (estimated + projected)
   help.go               hints line, help page, first-run getting-started page
   app_test.go           headless end-to-end smoke test (tcell SimulationScreen)
   screendump_test.go    README screenshot generator (IKE_DUMP=1)
@@ -190,6 +191,15 @@ one-time getting-started page (`:manual`).
    half of live tail. There is no streaming/tail endpoint in the client, so a
    future **live tail** would be interval polling with a hard rate floor and
    backoff off the shared per-org budget; deferred until there's demand.
+
+3. **Cost view — SHIPPED** (`:cost`): the current org's Datadog spend this
+   month (estimated + projected, by product) via `UsageMeteringApi`
+   `GetEstimatedCostByOrg` + `GetProjectedCost`, rendered as a read-only panel.
+   The usage/billing API is admin-scoped (`usage_read`), so a non-privileged
+   user gets a graceful "needs usage_read" message rather than a broken view —
+   an accepted trade-off (it's dark for non-admins). This is the Datadog bill,
+   not cloud (AWS/GCP/Azure) cost; Cloud Cost Management (cost-as-metrics) is a
+   possible later addition for orgs that have set it up.
 
 ### Longer-term
 

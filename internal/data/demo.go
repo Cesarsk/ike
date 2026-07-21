@@ -76,6 +76,33 @@ func NewDemo(site string) *Demo {
 func (d *Demo) Mode() string { return "demo" }
 func (d *Demo) Site() string { return d.site }
 
+// Cost synthesizes a plausible Datadog bill so the :cost view is demoable
+// offline. Per-product figures with a projection a bit above the estimate,
+// mirroring a real mid-month statement.
+func (d *Demo) Cost(_ context.Context) (*CostView, error) {
+	lines := []CostLine{
+		{Product: "infra_hosts", Estimated: 4820, Projected: 9100},
+		{Product: "logs_indexed", Estimated: 3110, Projected: 6250},
+		{Product: "apm_hosts", Estimated: 2040, Projected: 3900},
+		{Product: "custom_metrics", Estimated: 980, Projected: 1850},
+		{Product: "rum_sessions", Estimated: 610, Projected: 1200},
+		{Product: "synthetics", Estimated: 240, Projected: 470},
+	}
+	var est, proj float64
+	for _, l := range lines {
+		est += l.Estimated
+		proj += l.Projected
+	}
+	return &CostView{
+		OrgName:   "demo (" + d.site + ")",
+		Month:     time.Now().UTC().Format("2006-01"),
+		Currency:  "USD",
+		Estimated: est,
+		Projected: proj,
+		Lines:     lines,
+	}, nil
+}
+
 func (d *Demo) Budget() []string {
 	return []string{
 		"monitors 973/1000 per 10s",

@@ -151,6 +151,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
 | **Overview** | `:overview` `:ov` | Cross-resource triage: open incidents + alerting monitors from every active org, worst first. `enter` opens the real detail. |
+| **Cost** | `:cost` `:billing` | This org's Datadog spend this month: estimated so far + projected total, by product (read-only). Admin-scoped — see below. |
 | **Downtimes** | `:downtimes` `:dt` `:mutes` | Scheduled/active monitor mutes: status, scope, message, created. |
 | **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified. |
 | **Contexts** | `:ctx` | Your Datadog orgs — switch, add, edit, delete (see [contexts](#multiple-orgs-contexts--auth)). |
@@ -329,6 +330,22 @@ seconds — so ike is built around the limit, not in spite of it:
 
 If a fetch fails but ike has a cached copy, it serves the stale rows and shows
 the error rather than blanking mid-incident.
+
+---
+
+## Cost
+
+`:cost` (or `:billing`) shows the **current context's Datadog spend** for this
+month: what has accrued so far (estimated) and the projected end-of-month
+total, broken down by product (infra hosts, indexed logs, APM, RUM, and so
+on), sorted highest first. It is read-only, refreshed with `ctrl-r`, and `esc`
+returns. Switch org (`:ctx`) to see another org's spend.
+
+This is your **Datadog bill**, not your cloud (AWS/GCP/Azure) bill. It comes
+from Datadog's usage-metering API, which is **admin-scoped**: it needs the
+`usage_read` permission, usually limited to org admins. If your key or OAuth
+user lacks it, `:cost` shows a plain "needs `usage_read`" message instead of a
+raw error — the rest of ike is unaffected.
 
 ---
 

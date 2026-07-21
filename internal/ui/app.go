@@ -167,6 +167,7 @@ type App struct {
 	dash     *tview.TextView
 	trace    *tview.TextView
 	patterns *tview.TextView
+	cost     *tview.TextView // :cost — Datadog spend panel
 	splash   *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
@@ -352,7 +353,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.cost} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -469,6 +470,9 @@ func (a *App) build() {
 	a.patterns = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.patterns.SetBorder(true)
 
+	a.cost = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.cost.SetBorder(true)
+
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
@@ -562,6 +566,7 @@ func (a *App) build() {
 		AddPage("detail", a.detail, true, false).
 		AddPage("dashboard", a.dash, true, false).
 		AddPage("trace", a.trace, true, false).
+		AddPage("cost", a.cost, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -845,6 +850,26 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == 'l':
 			a.drillToLogs(a.detailRow) // trace → its logs (trace_id query)
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	case "cost":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			a.showCost() // re-fetch
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -1401,6 +1426,10 @@ func (a *App) execCommand(cmd string) {
 		a.switchResource(overviewResource)
 		return
 	}
+	if cmd == "cost" || cmd == "costs" || cmd == "billing" {
+		a.showCost()
+		return
+	}
 	if res, ok := data.ResourceByAlias(cmd); ok {
 		a.switchResource(res)
 		a.persistSession() // remember this view for the next session
@@ -1418,7 +1447,7 @@ func commandCompletions(prefix string) []string {
 	for _, r := range data.Resources() {
 		names = append(names, r.Key)
 	}
-	names = append(names, "ctx", "overview", "settings", "help", "manual", "quit")
+	names = append(names, "ctx", "overview", "cost", "settings", "help", "manual", "quit")
 	var out []string
 	for _, n := range names {
 		if strings.HasPrefix(n, prefix) {
@@ -1592,6 +1621,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("patterns") // pane still holds the rendered clusters
 	case "logcontext":
 		a.showPage("logcontext") // pane still holds the rendered context
+	case "cost":
+		a.showPage("cost") // pane still holds the rendered breakdown
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -1612,6 +1643,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.dash)
 	case "trace":
 		a.SetFocus(a.trace)
+	case "cost":
+		a.SetFocus(a.cost)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":
