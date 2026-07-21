@@ -651,7 +651,10 @@ func (d *Demo) spans(query string) []Row {
 	}
 	var rows []Row
 	for i := 0; i < 30; i++ {
-		hop := demoTraceChain[d.rnd.Intn(len(demoTraceChain))]
+		// Cycle the chain and space the timestamps evenly: every service is
+		// guaranteed on the first screen of rows, so tests and demos don't
+		// depend on how a random shuffle happened to land.
+		hop := demoTraceChain[i%len(demoTraceChain)]
 		if svcFilter != "" && hop.svc != svcFilter {
 			continue
 		}
@@ -661,7 +664,7 @@ func (d *Demo) spans(query string) []Row {
 			errMark = "error"
 		}
 		durUs := int64(500 + d.rnd.Intn(400000))
-		ts := time.Now().Add(-time.Duration(d.rnd.Intn(900)) * time.Second)
+		ts := time.Now().Add(-time.Duration(i*30) * time.Second)
 		tid := fmt.Sprintf("demo-trace-%d", 2000+i)
 		rows = append(rows, Row{
 			ID:       fmt.Sprintf("span-%d", i),
