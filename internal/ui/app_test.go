@@ -1099,7 +1099,9 @@ func newSim(t *testing.T) tcell.SimulationScreen {
 }
 
 // TestCostView: :cost renders the org's spend breakdown (estimated + projected
-// by product) from the demo provider; esc returns.
+// by product) from the demo provider; s toggles the sub-org view, 3 loads the
+// month trend, ] selects a closed month, / filters lines, esc clears the
+// filter and then returns.
 func TestCostView(t *testing.T) {
 	app := newDemoApp(t)
 	sim := newSim(t)
@@ -1112,6 +1114,28 @@ func TestCostView(t *testing.T) {
 	waitFor(t, sim, "estimated so far")
 	waitFor(t, sim, "infra_hosts")
 	waitFor(t, sim, "$11,800") // demo estimated total, thousands-separated
+
+	pressRune(sim, 's') // sub-org breakdown: an ORG column with the demo split
+	waitFor(t, sim, "ORG")
+	waitFor(t, sim, "demo-staging")
+	pressRune(sim, 's') // back to summary
+	waitFor(t, sim, "$11,800")
+
+	pressRune(sim, '3') // last 3 months: trend section + a closed-month total
+	waitFor(t, sim, "MONTH")
+	waitFor(t, sim, "(in progress)")
+	waitFor(t, sim, "$22,770") // demo closed-month total (full projected figure)
+
+	pressRune(sim, ']') // select the closed month: actuals, not an estimate
+	waitFor(t, sim, "month total")
+
+	pressRune(sim, '/') // client-side filter over the breakdown lines
+	typeRunes(sim, "logs")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "(1 match)")
+
+	press(sim, tcell.KeyEscape) // first esc clears the filter, stays on cost
+	waitFor(t, sim, "infra_hosts")
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Monitors(all)")
 	app.Stop()
@@ -1182,6 +1206,11 @@ func typeRunes(sim tcell.SimulationScreen, s string) {
 
 func press(sim tcell.SimulationScreen, k tcell.Key) {
 	sim.InjectKey(k, 0, tcell.ModNone)
+	time.Sleep(10 * time.Millisecond)
+}
+
+func pressRune(sim tcell.SimulationScreen, r rune) {
+	sim.InjectKey(tcell.KeyRune, r, tcell.ModNone)
 	time.Sleep(10 * time.Millisecond)
 }
 

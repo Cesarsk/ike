@@ -42,23 +42,39 @@ type LogContextView struct {
 	Rows     []Row         // ascending by timestamp; log-shaped cells
 }
 
-// CostView is one org's Datadog spend for the current month: what it has
-// accrued so far (Estimated) and the projected end-of-month total, with a
-// per-product breakdown. Amounts are in Currency (USD unless the org bills
-// otherwise). Lines are sorted highest-cost first.
+// CostOptions selects what slice of the bill to fetch: how many months back
+// (1 = current month only) and whether to break lines down per sub-org
+// instead of the parent-org summary.
+type CostOptions struct {
+	Months  int
+	SubOrgs bool
+}
+
+// CostView is one org's Datadog spend over a range of months, newest first.
+// Amounts are in Currency (USD unless the org bills otherwise).
 type CostView struct {
-	OrgName   string
+	OrgName  string
+	Currency string
+	Months   []CostMonth
+}
+
+// CostMonth is one month of the bill. For the current (open) month, Total is
+// the estimate accrued so far and Projected the end-of-month projection;
+// closed months carry the actual Total only. Lines are sorted highest first.
+type CostMonth struct {
 	Month     string // "2026-07"
-	Currency  string
-	Estimated float64
+	Current   bool
+	Total     float64
 	Projected float64
 	Lines     []CostLine
 }
 
-// CostLine is one product's slice of the bill (e.g. "infra_hosts").
+// CostLine is one product's slice of the bill (e.g. "infra_hosts"). Org is
+// set only in sub-org view, where the same product can appear once per org.
 type CostLine struct {
+	Org       string
 	Product   string
-	Estimated float64
+	Total     float64
 	Projected float64
 }
 
@@ -264,11 +280,12 @@ type Provider interface {
 	// anchor row, scoped to its service/host, oldest first. One search call,
 	// no polling. windowSecs<=0 uses a default.
 	LogContext(ctx context.Context, anchor Row, windowSecs int) (*LogContextView, error)
-	// Cost returns this org's Datadog spend for the current month (estimated
-	// so far + projected end-of-month), broken down by product. Read-only,
-	// heavily rate-limited and admin-scoped — a non-privileged user gets a
-	// permission error, which the UI surfaces as "needs usage_read".
-	Cost(ctx context.Context) (*CostView, error)
+	// Cost returns this org's Datadog spend (current month estimated +
+	// projected, plus closed-month history per CostOptions), broken down by
+	// product — or by sub-org and product. Read-only, heavily rate-limited
+	// and admin-scoped — a non-privileged user gets a permission error,
+	// which the UI surfaces as "needs usage_read".
+	Cost(ctx context.Context, o CostOptions) (*CostView, error)
 	// MonitorMetric evaluates a monitor's metric query over a recent window
 	// so the detail view can show the data behind the alert. On-demand.
 	MonitorMetric(ctx context.Context, id string) (*MetricSeries, error)

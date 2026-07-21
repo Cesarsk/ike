@@ -192,14 +192,19 @@ one-time getting-started page (`:manual`).
    future **live tail** would be interval polling with a hard rate floor and
    backoff off the shared per-org budget; deferred until there's demand.
 
-3. **Cost view — SHIPPED** (`:cost`): the current org's Datadog spend this
-   month (estimated + projected, by product) via `UsageMeteringApi`
-   `GetEstimatedCostByOrg` + `GetProjectedCost`, rendered as a read-only panel.
-   The usage/billing API is admin-scoped (`usage_read`), so a non-privileged
-   user gets a graceful "needs usage_read" message rather than a broken view —
-   an accepted trade-off (it's dark for non-admins). This is the Datadog bill,
-   not cloud (AWS/GCP/Azure) cost; Cloud Cost Management (cost-as-metrics) is a
-   possible later addition for orgs that have set it up.
+3. **Cost view — SHIPPED** (`:cost`): the current org's Datadog spend via
+   `UsageMeteringApi` — the current month (estimated + projected,
+   `GetEstimatedCostByOrg` + `GetProjectedCost`) plus up to 12 closed months
+   (`GetHistoricalCostByOrg`) rendered as a month trend with a selectable
+   month's per-product breakdown, an optional sub-org split (the API's
+   `view=sub-org`), and a client-side line filter. Read-only, at most three
+   bounded calls per fetch. The usage/billing API is admin-scoped
+   (`usage_read`), so a non-privileged user gets a graceful "needs usage_read"
+   message rather than a broken view — an accepted trade-off (it's dark for
+   non-admins). This is the Datadog bill, not cloud (AWS/GCP/Azure) cost;
+   Cloud Cost Management (cost-as-metrics) and tag-based cost attribution
+   (`GetMonthlyCostAttribution`, which needs cost-allocation tags configured)
+   are possible later additions for orgs that have set them up.
 
 ### Longer-term
 

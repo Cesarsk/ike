@@ -67,8 +67,8 @@ func (c *Cached) LogContext(ctx context.Context, anchor Row, windowSecs int) (*L
 
 // Cost passes through to the provider; the UI panel fetches it on demand and
 // the figures move at most daily, so caching lives in the UI's refresh cadence.
-func (c *Cached) Cost(ctx context.Context) (*CostView, error) {
-	return c.p.Cost(ctx)
+func (c *Cached) Cost(ctx context.Context, o CostOptions) (*CostView, error) {
+	return c.p.Cost(ctx, o)
 }
 
 // MonitorMetric is an on-demand detail fetch, uncached.

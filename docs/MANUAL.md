@@ -151,7 +151,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
 | **Overview** | `:overview` `:ov` | Cross-resource triage: open incidents + alerting monitors from every active org, worst first. `enter` opens the real detail. |
-| **Cost** | `:cost` `:billing` | This org's Datadog spend this month: estimated so far + projected total, by product (read-only). Admin-scoped — see below. |
+| **Cost** | `:cost` `:billing` | This org's Datadog spend: estimated + projected this month, up to 12 months of history with a trend, per-product or per-sub-org, filterable (read-only). Admin-scoped — see below. |
 | **Downtimes** | `:downtimes` `:dt` `:mutes` | Scheduled/active monitor mutes: status, scope, message, created. |
 | **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified. |
 | **Contexts** | `:ctx` | Your Datadog orgs — switch, add, edit, delete (see [contexts](#multiple-orgs-contexts--auth)). |
@@ -335,11 +335,27 @@ the error rather than blanking mid-incident.
 
 ## Cost
 
-`:cost` (or `:billing`) shows the **current context's Datadog spend** for this
-month: what has accrued so far (estimated) and the projected end-of-month
+`:cost` (or `:billing`) shows the **current context's Datadog spend**: what
+has accrued this month so far (estimated) and the projected end-of-month
 total, broken down by product (infra hosts, indexed logs, APM, RUM, and so
-on), sorted highest first. It is read-only, refreshed with `ctrl-r`, and `esc`
-returns. Switch org (`:ctx`) to see another org's spend.
+on), sorted highest first. It is read-only. Switch org (`:ctx`) to see another
+org's spend.
+
+Inside the panel:
+
+| Key | Action |
+|-----|--------|
+| `1` `3` `6` `y` | month range: this month only, last 3, last 6, last 12 |
+| `[` / `]` | select a newer / older month (its breakdown is shown below the trend) |
+| `/` | filter the breakdown lines by product or org name (client-side, live) |
+| `s` | toggle sub-org breakdown (adds an ORG column; parent orgs only) |
+| `ctrl-r` | re-fetch the current range |
+| `esc` | clear the filter if one is active, else back |
+
+With a range longer than one month, a **trend section** lists each month's
+total with a bar and the percentage change vs the month before (red = spend
+went up). The current month is marked *(in progress)*; its total is the
+estimate so far, while closed months show the actual billed total.
 
 This is your **Datadog bill**, not your cloud (AWS/GCP/Azure) bill. It comes
 from Datadog's usage-metering API, which is **admin-scoped**: it needs the

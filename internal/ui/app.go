@@ -25,9 +25,10 @@ const (
 	promptNone promptMode = iota
 	promptCmd
 	promptFilter
-	promptSaveQuery // naming the current query for the 'Q' picker
-	promptSettings  // typing a TTL/columns value in the :settings editor
-	promptTodo      // typing an incident to-do's content ('T')
+	promptSaveQuery  // naming the current query for the 'Q' picker
+	promptSettings   // typing a TTL/columns value in the :settings editor
+	promptTodo       // typing an incident to-do's content ('T')
+	promptCostFilter // client-side product/org filter on the :cost panel
 )
 
 // ContextInfo describes one selectable Datadog org context for the :ctx view.
@@ -168,7 +169,14 @@ type App struct {
 	trace    *tview.TextView
 	patterns *tview.TextView
 	cost     *tview.TextView // :cost — Datadog spend panel
-	splash   *tview.TextView // startup logo, auto-dismissed
+	// :cost panel state: the loaded view plus the local range / month
+	// selection / sub-org / filter knobs the key handler drives.
+	costView   *data.CostView
+	costMonths int             // fetch range: 1, 3, 6 or 12 months
+	costSel    int             // selected month index into costView.Months
+	costSubOrg bool            // "sub-org" API view instead of "summary"
+	costFilter string          // client-side substring filter over org/product
+	splash     *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
 	logCtxFlex *tview.Flex
@@ -419,9 +427,13 @@ func (a *App) build() {
 	a.prompt = tview.NewInputField()
 	a.prompt.SetDoneFunc(a.promptDone)
 	a.prompt.SetChangedFunc(func(text string) {
-		if a.promptM == promptFilter && !a.res.ServerQuery {
+		switch {
+		case a.promptM == promptFilter && !a.res.ServerQuery:
 			a.filter = text
 			a.applyFilter()
+		case a.promptM == promptCostFilter:
+			a.costFilter = text
+			a.renderCostPage()
 		}
 	})
 	a.prompt.SetAutocompleteFunc(func(current string) []string {
@@ -866,10 +878,40 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case "cost":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			if a.costFilter != "" {
+				a.costFilter = ""
+				a.renderCostPage()
+				return nil
+			}
 			a.back()
 			return nil
 		case ev.Key() == tcell.KeyCtrlR:
 			a.showCost() // re-fetch
+			return nil
+		case ev.Rune() == '1':
+			a.setCostRange(1)
+			return nil
+		case ev.Rune() == '3':
+			a.setCostRange(3)
+			return nil
+		case ev.Rune() == '6':
+			a.setCostRange(6)
+			return nil
+		case ev.Rune() == 'y':
+			a.setCostRange(12)
+			return nil
+		case ev.Rune() == 's':
+			a.costSubOrg = !a.costSubOrg
+			a.showCost()
+			return nil
+		case ev.Rune() == '[':
+			a.moveCostMonth(-1) // newer
+			return nil
+		case ev.Rune() == ']':
+			a.moveCostMonth(1) // older
+			return nil
+		case ev.Rune() == '/':
+			a.openPrompt(promptCostFilter)
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -1270,6 +1312,9 @@ func (a *App) openPrompt(m promptMode) {
 		}
 	case m == promptTodo:
 		a.prompt.SetLabel(" to-do for " + a.todoIncidentID + "> ")
+	case m == promptCostFilter:
+		a.prompt.SetLabel(" /")
+		prefill = a.costFilter // edit the active filter, don't retype
 	case a.res.ServerQuery:
 		a.prompt.SetLabel(" query> ")
 		prefill = a.queries[a.res.Key] // edit the current query, don't retype
@@ -1291,6 +1336,8 @@ func (a *App) closePrompt() {
 	switch a.page {
 	case "detail":
 		a.SetFocus(a.detail)
+	case "cost":
+		a.SetFocus(a.cost)
 	case "savedq":
 		a.SetFocus(a.savedQL)
 	case "settings":
@@ -1314,6 +1361,10 @@ func (a *App) promptDone(key tcell.Key) {
 			a.filter = ""
 			a.applyFilter()
 		}
+		if mode == promptCostFilter {
+			a.costFilter = ""
+			a.renderCostPage()
+		}
 		return
 	}
 	if key != tcell.KeyEnter {
@@ -1331,6 +1382,9 @@ func (a *App) promptDone(key tcell.Key) {
 			a.filter = text
 			a.applyFilter()
 		}
+	case promptCostFilter:
+		a.costFilter = text
+		a.renderCostPage()
 	case promptSaveQuery:
 		if text == "" || a.opts.SaveQuery == nil {
 			return

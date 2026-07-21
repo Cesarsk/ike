@@ -29,8 +29,8 @@ already have from [k9s](https://k9scli.io): `:` to switch views, `/` to filter,
 
 > **Status: real-org validated.** Eleven views (monitors, incidents, SLOs, logs,
 > traces, services, events, RUM, synthetics, downtimes, dashboards) plus `:overview`
-> (cross-org triage) and `:cost` (this org's Datadog spend, estimated + projected
-> by product). Views can span several Datadog orgs at once
+> (cross-org triage) and `:cost` (this org's Datadog spend: estimated + projected,
+> 12-month trend, per-product or per-sub-org). Views can span several Datadog orgs at once
 > (activate contexts with space in `:ctx`), log and trace correlation with a
 > unified request timeline, an incident war room (people, impacts, to-dos),
 > SLO error-budget burndowns, confirm-gated writes (mute a monitor, change

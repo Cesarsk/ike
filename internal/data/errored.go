@@ -31,7 +31,7 @@ func (e *Errored) Trace(context.Context, string) (*TraceView, error) {
 func (e *Errored) LogContext(context.Context, Row, int) (*LogContextView, error) {
 	return nil, e.err
 }
-func (e *Errored) Cost(context.Context) (*CostView, error) {
+func (e *Errored) Cost(context.Context, CostOptions) (*CostView, error) {
 	return nil, e.err
 }
 func (e *Errored) MonitorMetric(context.Context, string) (*MetricSeries, error) {

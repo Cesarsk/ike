@@ -77,30 +77,63 @@ func (d *Demo) Mode() string { return "demo" }
 func (d *Demo) Site() string { return d.site }
 
 // Cost synthesizes a plausible Datadog bill so the :cost view is demoable
-// offline. Per-product figures with a projection a bit above the estimate,
-// mirroring a real mid-month statement.
-func (d *Demo) Cost(_ context.Context) (*CostView, error) {
-	lines := []CostLine{
-		{Product: "infra_hosts", Estimated: 4820, Projected: 9100},
-		{Product: "logs_indexed", Estimated: 3110, Projected: 6250},
-		{Product: "apm_hosts", Estimated: 2040, Projected: 3900},
-		{Product: "custom_metrics", Estimated: 980, Projected: 1850},
-		{Product: "rum_sessions", Estimated: 610, Projected: 1200},
-		{Product: "synthetics", Estimated: 240, Projected: 470},
+// offline: the current month mid-statement (estimate + projection) plus
+// deterministic closed-month history with mild variation, and an optional
+// two-sub-org split mirroring the API's "sub-org" view.
+func (d *Demo) Cost(_ context.Context, o CostOptions) (*CostView, error) {
+	products := []CostLine{
+		{Product: "infra_hosts", Total: 4820, Projected: 9100},
+		{Product: "logs_indexed", Total: 3110, Projected: 6250},
+		{Product: "apm_hosts", Total: 2040, Projected: 3900},
+		{Product: "custom_metrics", Total: 980, Projected: 1850},
+		{Product: "rum_sessions", Total: 610, Projected: 1200},
+		{Product: "synthetics", Total: 240, Projected: 470},
 	}
-	var est, proj float64
-	for _, l := range lines {
-		est += l.Estimated
-		proj += l.Projected
+	months := o.Months
+	if months < 1 {
+		months = 1
 	}
-	return &CostView{
-		OrgName:   "demo (" + d.site + ")",
-		Month:     time.Now().UTC().Format("2006-01"),
-		Currency:  "USD",
-		Estimated: est,
-		Projected: proj,
-		Lines:     lines,
-	}, nil
+	if months > maxCostMonths {
+		months = maxCostMonths
+	}
+	now := time.Now().UTC()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	v := &CostView{OrgName: "demo (" + d.site + ")", Currency: "USD"}
+	for i := 0; i < months; i++ {
+		m := CostMonth{Month: monthStart.AddDate(0, -i, 0).Format("2006-01"), Current: i == 0}
+		// Closed months bill the full projected figure, scaled by a small
+		// deterministic wobble so the trend section has a shape.
+		scale := 1.0 + 0.06*float64((i*7)%5-2)
+		for _, p := range products {
+			total, projected := p.Total, p.Projected
+			if i > 0 {
+				total, projected = p.Projected*scale, 0
+			}
+			m.Lines = append(m.Lines, demoCostLines(p.Product, total, projected, o.SubOrgs)...)
+		}
+		for _, l := range m.Lines {
+			m.Total += l.Total
+			m.Projected += l.Projected
+		}
+		if i > 0 {
+			m.Projected = 0
+		}
+		v.Months = append(v.Months, m)
+	}
+	return v, nil
+}
+
+// demoCostLines returns one summary line, or a 70/30 prod/staging split in
+// sub-org view.
+func demoCostLines(product string, total, projected float64, subOrgs bool) []CostLine {
+	if !subOrgs {
+		return []CostLine{{Product: product, Total: total, Projected: projected}}
+	}
+	return []CostLine{
+		{Org: "demo-prod", Product: product, Total: total * 0.7, Projected: projected * 0.7},
+		{Org: "demo-staging", Product: product, Total: total * 0.3, Projected: projected * 0.3},
+	}
 }
 
 func (d *Demo) Budget() []string {
