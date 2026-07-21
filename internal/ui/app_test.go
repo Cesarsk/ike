@@ -1115,11 +1115,17 @@ func TestCostView(t *testing.T) {
 	waitFor(t, sim, "infra_hosts")
 	waitFor(t, sim, "$11,800") // demo estimated total, thousands-separated
 
+	press(sim, tcell.KeyEnter) // drill into the selected line's history
+	waitFor(t, sim, "month by month")
+	waitFor(t, sim, "only this month is loaded")
+	press(sim, tcell.KeyEscape) // back to the breakdown
+	waitFor(t, sim, "Datadog spend")
+
 	pressRune(sim, 's') // sub-org breakdown: an ORG column with the demo split
 	waitFor(t, sim, "ORG")
 	waitFor(t, sim, "demo-staging")
-	press(sim, tcell.KeyEnter) // focus the highest-cost sub-org
-	waitFor(t, sim, "(enter cycles)")
+	pressRune(sim, 'f') // focus the highest-cost sub-org
+	waitFor(t, sim, "(f cycles)")
 	waitFor(t, sim, "$8,260") // demo-prod's 70% share of the month
 	pressRune(sim, 's')       // back to summary (resets the focus too)
 	waitFor(t, sim, "$11,800")
@@ -1135,6 +1141,12 @@ func TestCostView(t *testing.T) {
 	waitFor(t, sim, "$25,695") // demo closed-month total
 	waitFor(t, sim, "+44%")    // logs_indexed spike vs the month before
 	waitFor(t, sim, "⚠")
+
+	press(sim, tcell.KeyEnter) // drill: per-month history with share of the bill
+	waitFor(t, sim, "month by month")
+	waitFor(t, sim, "SHARE")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Datadog spend")
 
 	pressRune(sim, '/') // client-side filter over the breakdown lines
 	typeRunes(sim, "logs")
@@ -1155,7 +1167,7 @@ func TestRenderCostRootGuard(t *testing.T) {
 		Month: "2026-07", Current: true, Total: 10,
 		Lines: []data.CostLine{{Org: "acme", Product: "infra_hosts", Total: 10}},
 	}}}
-	out := renderCost(costRender{view: v, subOrgs: true})
+	out := renderCostHead(costRender{view: v, subOrgs: true}, nil)
 	if !strings.Contains(out, "only one org visible") || !strings.Contains(out, "root organization") {
 		t.Fatalf("expected root-org guidance, got:\n%s", out)
 	}

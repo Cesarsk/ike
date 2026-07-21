@@ -347,9 +347,11 @@ Inside the panel:
 |-----|--------|
 | `1` `3` `6` `y` | month range: this month only, last 3, last 6, last 12 |
 | `[` / `]` | select a newer / older month (its breakdown is shown below the trend) |
+| `j` `k` / `↑` `↓` | move the selection through the breakdown rows |
+| `enter` | drill into the selected row: that product's month-by-month history, change, and share of the bill (from the loaded range — no extra API calls) |
 | `/` | filter the breakdown lines by product or org name (client-side, live) |
 | `s` | toggle sub-org breakdown (adds an ORG column; parent orgs only) |
-| `enter` | in sub-org mode: focus one sub-org's breakdown (cycles through them, then back to all) |
+| `f` | in sub-org mode: focus one sub-org's breakdown (cycles through them, then back to all) |
 | `o` | open the org's billing/usage page in the Datadog web UI |
 | `ctrl-r` | re-fetch the current range |
 | `esc` | clear the filter if one is active, else back |

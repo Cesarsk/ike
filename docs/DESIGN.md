@@ -52,7 +52,7 @@ internal/ui/
   detail.go             detail + dashboard + structured-body renderers
   render.go             table render, row colour, header + rate-limit budget
   writes.go             confirm-gated write paths (mute, incident, downtime)
-  cost.go               :cost panel — Datadog spend (estimated + projected)
+  cost.go               :cost panel — Datadog spend (trend, anomalies, drill-down)
   help.go               hints line, help page, first-run getting-started page
   app_test.go           headless end-to-end smoke test (tcell SimulationScreen)
   screendump_test.go    README screenshot generator (IKE_DUMP=1)
@@ -196,11 +196,13 @@ one-time getting-started page (`:manual`).
    `UsageMeteringApi` — the current month (estimated + projected,
    `GetEstimatedCostByOrg` + `GetProjectedCost`) plus up to 12 closed months
    (`GetHistoricalCostByOrg`) rendered as a month trend with a selectable
-   month's per-product breakdown, an optional sub-org split (the API's
-   `view=sub-org`, with enter cycling a single-org focus and a "needs the
-   root org" notice when no children are visible), a client-side line filter,
-   and `o` deep-linking to the billing/usage page. Read-only, at most three
-   bounded calls per fetch. **Anomalies are computed client-side** — Datadog
+   month's per-product breakdown as a selectable table (enter drills into a
+   row's month-by-month history with its share of the bill), an optional
+   sub-org split (the API's `view=sub-org`, with `f` cycling a single-org
+   focus and a "needs the root org" notice when no children are visible), a
+   client-side line filter, and `o` deep-linking to the billing/usage page.
+   Read-only, at most three bounded calls per fetch; the drill-down renders
+   entirely from data already loaded. **Anomalies are computed client-side** — Datadog
    has no billing-anomaly endpoint — as month-over-month per-line deltas,
    flagged only when both the relative (±30%) and absolute (≥$100) thresholds
    are cleared, so small lines can't spam the flag. The usage/billing API is admin-scoped

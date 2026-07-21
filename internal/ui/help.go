@@ -33,8 +33,12 @@ func (a *App) setHints() {
 		}
 	case "cost":
 		lines = []string{
-			"[aqua]<1/3/6/y>[white]range  [aqua]<[/]>[white]month  [aqua]</>[white]filter  [aqua]<s>[white]sub-orgs  [aqua]<enter>[white]focus org",
-			"[aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+			"[aqua]<1/3/6/y>[white]range  [aqua]<[/]>[white]month  [aqua]</>[white]filter  [aqua]<s>[white]sub-orgs  [aqua]<f>[white]focus org",
+			"[aqua]<enter>[white]product history  [aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
+	case "costprod":
+		lines = []string{
+			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back to the breakdown  [aqua]<?>[white]help",
 		}
 	case "logcontext":
 		lines = []string{

@@ -168,14 +168,20 @@ type App struct {
 	dash     *tview.TextView
 	trace    *tview.TextView
 	patterns *tview.TextView
-	cost     *tview.TextView // :cost — Datadog spend panel
-	// :cost panel state: the loaded view plus the local range / month
-	// selection / sub-org / filter knobs the key handler drives.
+	// :cost — Datadog spend panel: a header (totals, anomaly count, trend)
+	// over a selectable breakdown table whose rows drill into a per-product
+	// history page, plus the local range / month / sub-org / filter knobs
+	// the key handler drives.
+	costFlex     *tview.Flex
+	costHead     *tview.TextView
+	costTbl      *tview.Table
+	costProd     *tview.TextView // per-product drill-down ("costprod" page)
+	costRows     []costLineDelta // table data row i ↔ costRows[i] (header is row 0)
 	costView     *data.CostView
 	costMonths   int             // fetch range: 1, 3, 6 or 12 months
 	costSel      int             // selected month index into costView.Months
 	costSubOrg   bool            // "sub-org" API view instead of "summary"
-	costOrgFocus string          // sub-org focus ("" = all; enter cycles)
+	costOrgFocus string          // sub-org focus ("" = all; f cycles)
 	costFilter   string          // client-side substring filter over org/product
 	splash       *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
@@ -362,7 +368,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.cost} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -370,6 +376,11 @@ func (a *App) applyTheme() {
 		a.logCtxFlex.SetBorderColor(a.theme.Border)
 		a.logCtxFlex.SetTitleColor(a.theme.Title)
 		a.logCtxTbl.SetSelectedStyle(sel)
+	}
+	if a.costFlex != nil {
+		a.costFlex.SetBorderColor(a.theme.Border)
+		a.costFlex.SetTitleColor(a.theme.Title)
+		a.costTbl.SetSelectedStyle(sel)
 	}
 	a.savedQL.SetBorderColor(a.theme.Border)
 	a.savedQL.SetTitleColor(a.theme.Title)
@@ -483,8 +494,15 @@ func (a *App) build() {
 	a.patterns = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.patterns.SetBorder(true)
 
-	a.cost = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
-	a.cost.SetBorder(true)
+	a.costHead = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.costTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
+	a.costTbl.SetSelectedFunc(func(int, int) { a.openCostProduct() })
+	a.costFlex = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.costHead, 6, 0, false).
+		AddItem(a.costTbl, 0, 1, true)
+	a.costFlex.SetBorder(true).SetTitle(" Cost ")
+	a.costProd = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.costProd.SetBorder(true)
 
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
@@ -579,7 +597,8 @@ func (a *App) build() {
 		AddPage("detail", a.detail, true, false).
 		AddPage("dashboard", a.dash, true, false).
 		AddPage("trace", a.trace, true, false).
-		AddPage("cost", a.cost, true, false).
+		AddPage("cost", a.costFlex, true, false).
+		AddPage("costprod", a.costProd, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -906,6 +925,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showCost()
 			return nil
 		case ev.Key() == tcell.KeyEnter:
+			a.openCostProduct()
+			return nil
+		case ev.Rune() == 'f':
 			a.cycleCostOrg()
 			return nil
 		case ev.Rune() == 'o':
@@ -919,6 +941,23 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == '/':
 			a.openPrompt(promptCostFilter)
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	case "costprod":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -1344,7 +1383,7 @@ func (a *App) closePrompt() {
 	case "detail":
 		a.SetFocus(a.detail)
 	case "cost":
-		a.SetFocus(a.cost)
+		a.SetFocus(a.costTbl)
 	case "savedq":
 		a.SetFocus(a.savedQL)
 	case "settings":
@@ -1684,6 +1723,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("logcontext") // pane still holds the rendered context
 	case "cost":
 		a.showPage("cost") // pane still holds the rendered breakdown
+	case "costprod":
+		a.showPage("costprod")
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -1705,7 +1746,9 @@ func (a *App) showPage(page string) {
 	case "trace":
 		a.SetFocus(a.trace)
 	case "cost":
-		a.SetFocus(a.cost)
+		a.SetFocus(a.costTbl)
+	case "costprod":
+		a.SetFocus(a.costProd)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":
