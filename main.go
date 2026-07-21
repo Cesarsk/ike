@@ -199,7 +199,7 @@ func main() {
 		// (or re-logs-in) the selected context, reading its site/subdomain from
 		// the stored config. On a key/token context it converts it to OAuth.
 		opts.OAuthLogin = func(name string) (ui.ContextInfo, error) {
-			entry, err := loginContext(cfg, config.KeyringStore{}, name, "", "", "", func(u string) error {
+			entry, err := loginContext(cfg, config.KeyringStore{}, loginTarget{name: name}, func(u string) error {
 				slog.Info("oauth authorize", "url", u)
 				return openBrowser(u)
 			})
@@ -493,7 +493,7 @@ func runAuth(args []string) {
 		cfg = &config.Config{Contexts: map[string]config.Context{}}
 	}
 	fmt.Println("opening your browser to sign in — if it does not open, visit the printed URL")
-	entry, err := loginContext(cfg, config.KeyringStore{}, name, *site, *subdomain, *org, func(u string) error {
+	entry, err := loginContext(cfg, config.KeyringStore{}, loginTarget{name: name, site: *site, subdomain: *subdomain, org: *org}, func(u string) error {
 		fmt.Println(u)
 		return openBrowser(u)
 	})
@@ -507,27 +507,35 @@ func runAuth(args []string) {
 	fmt.Printf("signed in: context %q (site %s) — tokens in the OS keychain, refreshed automatically.\nrun `ike` to start.\n", name, entry.Site)
 }
 
+// loginTarget names the context an OAuth login lands on. site/subdomain/org
+// are merged onto the stored entry when non-empty (the TUI leaves them blank
+// and relies on the stored values; the CLI fills them from flags).
+type loginTarget struct {
+	name, site, subdomain, org string
+}
+
 // loginContext is the shared core of `ike auth login` and the TUI's :ctx `O`
 // form: merge the flags onto the named context entry, register (or reuse) the
 // OAuth client, run the browser flow, persist tokens to the keychain and the
 // entry to the config. openURL launches the authorize page (the CLI also
 // prints it; the TUI must not write to stdout).
-func loginContext(cfg *config.Config, store config.KeyringStore, name, site, subdomain, org string, openURL func(string) error) (config.Context, error) {
+func loginContext(cfg *config.Config, store config.KeyringStore, t loginTarget, openURL func(string) error) (config.Context, error) {
+	name := t.name
 	entry := cfg.Contexts[name]
 	// Remember the pre-login shape so we can clear stale credentials if this
 	// login converts a key/token context to OAuth.
 	converting := entry.Auth != "oauth" && (entry.Keychain || entry.APIKeyEnv != "" || entry.TokenEnv != "")
-	if site != "" {
-		entry.Site = site
+	if t.site != "" {
+		entry.Site = t.site
 	}
 	if entry.Site == "" {
 		entry.Site = config.DefaultSite
 	}
-	if subdomain != "" {
-		entry.Subdomain = subdomain
+	if t.subdomain != "" {
+		entry.Subdomain = t.subdomain
 	}
-	if org != "" {
-		entry.Org = org
+	if t.org != "" {
+		entry.Org = t.org
 	}
 	if !config.ValidSite(entry.Site) {
 		return entry, fmt.Errorf("unknown site %q — refusing to send a login to an unrecognized host (valid: %v)", entry.Site, config.Sites)

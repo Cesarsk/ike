@@ -6,6 +6,9 @@ import "context"
 // not be resolved at startup. Instead of exiting, the app opens on the :ctx
 // view with the resolution error, so a first-time user can add a context
 // (and paste keys) entirely from inside the TUI.
+// Errored satisfies Provider.
+var _ Provider = (*Errored)(nil)
+
 type Errored struct {
 	site string
 	err  error

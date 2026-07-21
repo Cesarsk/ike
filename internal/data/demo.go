@@ -14,6 +14,9 @@ import (
 // Demo is an offline Provider with plausible SRE-flavoured data so the TUI
 // can be exercised (and demoed) without Datadog credentials. States jitter
 // a little on every refresh to make auto-refresh visible.
+// Demo satisfies Provider.
+var _ Provider = (*Demo)(nil)
+
 type Demo struct {
 	site     string
 	mu       sync.Mutex

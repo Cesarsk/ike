@@ -21,6 +21,9 @@ import (
 // Live talks to the real Datadog API for one organization. Credentials are
 // injected per instance (resolved from a context's env vars by the caller),
 // so several Live providers for different orgs can coexist.
+// Live satisfies Provider.
+var _ Provider = (*Live)(nil)
+
 type Live struct {
 	client *datadog.APIClient
 	site   string
