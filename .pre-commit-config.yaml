@@ -1,0 +1,43 @@
+# Local pre-commit hooks — the same mechanical gates CI enforces, run before
+# the commit lands. Needs only the Go toolchain (no extra dependencies).
+#
+#   pip install pre-commit           # or: brew install pre-commit
+#   pre-commit install               # gofmt + vet + build on every commit
+#   pre-commit install --hook-type pre-push   # go test before every push
+#
+# These check the mechanical rules only (formatting, vet, build, tests). The
+# style rules in AGENTS.md (naming, Args/Res, file organization, comments) are
+# judgment calls a linter can't verify — code review owns those.
+repos:
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -l -w
+        language: system
+        types: [go]
+
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-build
+        name: go build
+        entry: go build ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      # The full suite (incl. the headless TUI e2e) is ~25s, so it runs before
+      # a push rather than on every commit — keeping the commit loop fast while
+      # still catching breakage before CI.
+      - id: go-test
+        name: go test
+        entry: go test ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]
