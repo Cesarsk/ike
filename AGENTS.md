@@ -19,9 +19,13 @@ IKE_DUMP=1 go test -run TestScreenDump ./internal/ui -v   # README screenshots
 
 Every change must leave `vet`, `gofmt -l` (no output) and `go test ./...`
 green — CI (`.github/workflows/ci.yaml`) enforces exactly these on
-ubuntu + macos. Releases: push a `v*` tag → goreleaser builds darwin/linux
-binaries and updates the Homebrew tap (see `.goreleaser.yaml`); do not tag
-without the maintainer's go-ahead.
+ubuntu + macos. `.pre-commit-config.yaml` runs the same gates locally
+(`pre-commit install` for gofmt/vet/build on commit; `pre-commit install
+--hook-type pre-push` adds the test suite before push) — mechanical checks
+only; the Go-style rules below are code-review's job, not a linter's.
+Releases: push a `v*` tag → goreleaser builds darwin/linux binaries and
+updates the Homebrew tap (see `.goreleaser.yaml`); do not tag without the
+maintainer's go-ahead.
 
 ## Hard rules
 

@@ -191,6 +191,9 @@ config file, which is hand-editable too. See the
 ```sh
 go test ./...                                             # includes a headless TUI smoke test
 IKE_DUMP=1 go test -run TestScreenDump ./internal/ui -v   # regenerate the README screens
+
+pre-commit install                        # gofmt + vet + build on every commit
+pre-commit install --hook-type pre-push   # run the test suite before pushing
 ```
 
 The TUI is tested end-to-end on a tcell `SimulationScreen`, so no pty is needed.
