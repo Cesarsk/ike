@@ -1217,6 +1217,23 @@ func TestBulkActions(t *testing.T) {
 	app.Stop()
 }
 
+// TestWatchMode: :watch toggles hands-off refresh; the header shows a WATCH
+// badge while on and clears when toggled off.
+func TestWatchMode(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":watch")
+	waitFor(t, sim, "watch on")
+	waitFor(t, sim, "WATCH") // header badge
+	typeCmd(sim, ":watch")
+	waitFor(t, sim, "watch off")
+	app.Stop()
+}
+
 // TestMenuView: :menu lists every command (built from the resource registry
 // plus the pseudo-commands), and enter on a row runs that command.
 func TestMenuView(t *testing.T) {

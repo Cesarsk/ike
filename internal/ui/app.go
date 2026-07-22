@@ -266,6 +266,9 @@ type App struct {
 	// Set when a load's result is applied, so an empty-state hint shows only
 	// after this view's own fetch lands — never during a switch or fetch.
 	loadedKey string
+	// watch: hands-off refresh mode (:watch). While on, the ticker refreshes
+	// the current view even if the resource isn't normally auto-refreshed.
+	watch bool
 	// marks is the bulk-selection set on a normal table (space toggles a row),
 	// keyed by rowKey (org-safe). Cleared on view switch / esc / after a bulk
 	// action. Drives the row tint and the m/r/x fan-out writes.
@@ -1682,6 +1685,10 @@ func (a *App) execCommand(cmd string) {
 		a.showMenu()
 		return
 	}
+	if cmd == "watch" || cmd == "w" {
+		a.toggleWatch()
+		return
+	}
 	if cmd == "cost" || cmd == "costs" || cmd == "billing" {
 		a.showCost()
 		return
@@ -1703,7 +1710,7 @@ func commandCompletions(prefix string) []string {
 	for _, r := range data.Resources() {
 		names = append(names, r.Key)
 	}
-	names = append(names, "ctx", "overview", "cost", "menu", "settings", "help", "manual", "quit")
+	names = append(names, "ctx", "overview", "cost", "menu", "watch", "settings", "help", "manual", "quit")
 	var out []string
 	for _, n := range names {
 		if strings.HasPrefix(n, prefix) {
@@ -2397,12 +2404,32 @@ func (a *App) ticker() {
 	t := time.NewTicker(a.refreshEvery)
 	defer t.Stop()
 	for range t.C {
-		if a.res.AutoRefresh && !a.loading && !a.paused {
+		if (a.res.AutoRefresh || a.watch) && a.page == "table" && !a.loading && !a.paused {
 			a.QueueUpdateDraw(func() { a.load(false) })
 		} else {
 			a.QueueUpdateDraw(a.updateInfo) // keep the Age counter moving
 		}
 	}
+}
+
+// toggleWatch turns hands-off "watch" mode on/off. While on, the ticker keeps
+// the current view refreshing on its natural per-view cadence even when the
+// resource isn't normally auto-refreshed — for leaving ike up on a wall. It
+// still respects the pause (p) and the 429 auto-pause, so it can't run the
+// budget down.
+func (a *App) toggleWatch() {
+	if a.refreshEvery <= 0 {
+		a.flash("watch needs a refresh interval (run with --refresh)", true)
+		return
+	}
+	a.watch = !a.watch
+	if a.watch {
+		a.flash(fmt.Sprintf("watch on — refreshing every %s (respects pause)", a.refreshEvery), false)
+	} else {
+		a.flash("watch off", false)
+	}
+	a.render()
+	a.setHints()
 }
 
 // toggleAutoRefresh pauses/resumes timer-driven refresh (ctrl-r still works).

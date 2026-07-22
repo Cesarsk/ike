@@ -240,6 +240,9 @@ func (a *App) updateInfo() {
 	case "help":
 		view = "Help"
 	}
+	if a.watch {
+		view += "  [red::b]● WATCH[-:-:-]"
+	}
 	a.infoTV.SetText(a.theme.recolor(fmt.Sprintf(
 		" [orange]Mode:[%s]   %s\n [orange]Site:[white]   %s\n [orange]View:[white]   %s\n [orange]Age:[white]    %s\n [orange]Budget:[white] %s",
 		modeColor, mode, a.provider.Site(), view, age, budget)))
