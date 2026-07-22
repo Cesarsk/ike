@@ -262,6 +262,10 @@ type App struct {
 	rows     []data.Row
 	filtered []int
 	filter   string // '/' text filter: substring across all cells
+	// loadedKey is the resource whose data currently populates rows/filtered.
+	// Set when a load's result is applied, so an empty-state hint shows only
+	// after this view's own fetch lands — never during a switch or fetch.
+	loadedKey string
 	// marks is the bulk-selection set on a normal table (space toggles a row),
 	// keyed by rowKey (org-safe). Cleared on view switch / esc / after a bulk
 	// action. Drives the row tint and the m/r/x fan-out writes.
@@ -2313,6 +2317,7 @@ func overviewRank(r data.Row) int {
 }
 
 func (a *App) applyFilter() {
+	a.loadedKey = a.res.Key // this view's data is now applied
 	a.filtered = a.filtered[:0]
 	for i, r := range a.rows {
 		if matchRow(r, a.colFilterCol, a.colFilterVal, a.filter) {
