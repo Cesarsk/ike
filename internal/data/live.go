@@ -171,6 +171,10 @@ func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, 
 		return l.teams(ctx)
 	case "oncall":
 		return l.oncallTeams(ctx)
+	case "security":
+		return l.securitySignals(ctx, query, timeRange)
+	case "notebooks":
+		return l.notebooks(ctx)
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }

@@ -46,6 +46,10 @@ func (a *App) openDetail(tableRow int) {
 		a.showTeamMembers(r) // enter on a team → its members + roles
 		return
 	}
+	if a.res.Key == "notebooks" {
+		a.showNotebook(r) // enter on a notebook → its rendered cells
+		return
+	}
 	a.pushNav()
 	a.renderDetail(r)
 	a.detailRow = r

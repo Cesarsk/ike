@@ -193,6 +193,9 @@ type App struct {
 	// :teams drill-in panel (enter on a team): the team's members + roles.
 	teamMembers *tview.TextView
 	teamRow     data.Row
+	// :notebooks reading panel (enter on a notebook): its rendered cells.
+	notebook    *tview.TextView
+	notebookRow data.Row
 	splash      *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
@@ -382,7 +385,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -524,6 +527,9 @@ func (a *App) build() {
 	a.teamMembers = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.teamMembers.SetBorder(true)
 
+	a.notebook = tview.NewTextView().SetDynamicColors(true).SetWrap(true)
+	a.notebook.SetBorder(true)
+
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
@@ -621,6 +627,7 @@ func (a *App) build() {
 		AddPage("costprod", a.costProd, true, false).
 		AddPage("oncall", a.onCall, true, false).
 		AddPage("teammembers", a.teamMembers, true, false).
+		AddPage("notebook", a.notebook, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -1038,6 +1045,29 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == 'o':
 			a.openTeamURL()
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	case "notebook":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			a.showNotebook(a.notebookRow) // re-fetch
+			return nil
+		case ev.Rune() == 'o':
+			a.openNotebookURL()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -1829,6 +1859,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("oncall") // pane still holds the rendered on-call
 	case "teammembers":
 		a.showPage("teammembers")
+	case "notebook":
+		a.showPage("notebook")
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -1857,6 +1889,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.onCall)
 	case "teammembers":
 		a.SetFocus(a.teamMembers)
+	case "notebook":
+		a.SetFocus(a.notebook)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":

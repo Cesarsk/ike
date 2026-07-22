@@ -49,6 +49,10 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
 		}
+	case "notebook":
+		lines = []string{
+			"[aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	case "logcontext":
 		lines = []string{
 			"[aqua]<↑/↓ j/k>[white]move  [aqua]<enter>[white]expand  [aqua]<t>[white]trace  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",
@@ -104,6 +108,10 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]</>RUM query (e.g. @type:error)  window: <1>15m..<5>7d  <s>sort")
 		case "synthetics":
 			lines = append(lines, "[gray]<enter>latest results + pass rate  <s>sort <S>reverse")
+		case "security":
+			lines = append(lines, "[gray]</>signals query  window: <1>15m..<5>7d  <enter>detail  <s>sort   (Cloud SIEM / CSM)")
+		case "notebooks":
+			lines = append(lines, "[gray]<enter>read the notebook  <s>sort <S>reverse   (runbooks, postmortems)")
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:

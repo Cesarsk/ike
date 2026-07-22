@@ -1098,6 +1098,47 @@ func newSim(t *testing.T) tcell.SimulationScreen {
 	return sim
 }
 
+// TestSecurityView: :security lists signals from the demo provider; a query
+// filters server-side; enter opens the generic detail.
+func TestSecurityView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":security")
+	waitFor(t, sim, "Security(")
+	waitFor(t, sim, "failed root logins")
+	waitFor(t, sim, "critical")
+	press(sim, tcell.KeyEnter)        // generic detail on the signal
+	waitFor(t, sim, "Security/sig-1") // detail title carries the signal id
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Security(")
+	app.Stop()
+}
+
+// TestNotebooksView: :notebooks lists notebooks; enter reads one, rendering
+// its markdown body; esc returns.
+func TestNotebooksView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":notebooks")
+	waitFor(t, sim, "Notebooks(")
+	waitFor(t, sim, "Payments API latency")
+
+	press(sim, tcell.KeyEnter) // read the first notebook
+	waitFor(t, sim, "Notebook ·")
+	waitFor(t, sim, "read replicas") // body text from a markdown cell
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Notebooks(")
+	app.Stop()
+}
+
 // TestBulkActions: space marks rows on a table, the title shows the count,
 // and 'm' mutes all marked monitors behind one confirm with a fan-out flash.
 func TestBulkActions(t *testing.T) {

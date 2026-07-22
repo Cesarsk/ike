@@ -55,6 +55,7 @@ internal/ui/
   cost.go               :cost panel — Datadog spend (trend, anomalies, drill-down)
   teams.go              :teams drill-in — a team's members + roles
   oncall.go             :oncall drill-in — who's on call now + escalation ladder
+  notebooks.go          :notebooks reading panel — a notebook's cells as text
   help.go               hints line, help page, first-run getting-started page
   app_test.go           headless end-to-end smoke test (tcell SimulationScreen)
   screendump_test.go    README screenshot generator (IKE_DUMP=1)
@@ -236,14 +237,24 @@ one-time getting-started page (`:manual`).
    session). All four are confirm-gated and faked in demo mode. Deeper reads
    (schedule names / rotations, per-step targets) are deferred: the read-side
    escalation-target type is a JSON:API union that this client version does
-   not expose cleanly, and it can't be validated without a live On-Call org. The response is JSON:API, so the responders and
-   escalations are references resolved against an `included[]` union of users
-   and escalations. Read-only, one bounded call per drill-in. On-Call is an
-   add-on product, so a team with no rotation, or an org without On-Call
-   enabled, renders an empty-state notice rather than an error. Paging writes
-   (`CreateOnCallPage` / acknowledge / escalate / resolve) exist in the client
-   and are a deliberate future step behind the confirm-gated write pattern;
-   they are held back because paging a human is a consequential action.
+   not expose cleanly, and it can't be validated without a live On-Call org.
+   On-Call is an add-on product, so a team with no rotation, or an org without
+   On-Call enabled, renders an empty-state notice rather than an error. Paging
+   routes to the region's On-Call cell host (not `api.<site>`), overridden per
+   operation; EU resolves exactly, US is best-effort against the default cell.
+
+6. **Security signals view — SHIPPED** (`:security`): Cloud SIEM / CSM signals
+   via `SecurityMonitoringApi.ListSecurityMonitoringSignals`, a ServerQuery
+   table like logs (the `/` query is a signals search, digit keys set the
+   window). Severity is pulled best-effort from a `severity:` tag — the typed
+   attributes only expose message/tags/timestamp; the rest rides in an untyped
+   `custom` bag. `enter` opens the generic signal detail. Read-only.
+
+7. **Notebooks view — SHIPPED** (`:notebooks`): the org's notebooks via the v1
+   `NotebooksApi` (`ListNotebooks`; `GetNotebook` on drill-in). `enter` reads a
+   notebook — its cells assembled into text, markdown verbatim and other cell
+   kinds noted as placeholders. Read-only; a nice home for runbooks and
+   postmortems next to the incident war room.
 
 ### Longer-term
 

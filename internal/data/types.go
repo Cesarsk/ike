@@ -117,6 +117,17 @@ type TeamMember struct {
 	Role   string
 }
 
+// NotebookView is one Datadog notebook rendered for reading: its metadata and
+// a plain-text body assembled from the notebook's cells (markdown verbatim,
+// other cell kinds noted as placeholders). URL deep-links to the web UI.
+type NotebookView struct {
+	Name   string
+	Author string
+	Status string
+	URL    string
+	Body   string
+}
+
 // Resource describes a navigable Datadog resource type.
 type Resource struct {
 	Key         string
@@ -333,6 +344,9 @@ type Provider interface {
 	// TeamMembers lists a team's members and their roles (one bounded call).
 	// Read-only. Drives the :teams drill-in.
 	TeamMembers(ctx context.Context, teamID string) ([]TeamMember, error)
+	// Notebook fetches one notebook and renders its cells to a readable body
+	// (one bounded call). Read-only. Drives the :notebooks drill-in.
+	Notebook(ctx context.Context, id string) (*NotebookView, error)
 	// PageTeam raises an On-Call page against a team (urgency "high"/"low").
 	// A write — the UI gates it behind a confirm and fakes it in demo mode.
 	// Returns the new page's id, used for the acknowledge/escalate/resolve
@@ -458,6 +472,20 @@ func Resources() []Resource {
 			Aliases: []string{"downtimes", "downtime", "dt", "mutes"},
 			Columns: []string{"STATUS", "SCOPE", "MESSAGE", "CREATED"},
 			TTL:     60 * time.Second,
+		},
+		{
+			// Cloud SIEM / CSM security signals. '/' is a signals search query
+			// (server-side); digits set the time window like logs.
+			Key: "security", Title: "Security",
+			Aliases: []string{"security", "signals", "sec", "siem"},
+			Columns: []string{"TIME", "SEVERITY", "TITLE", "TAGS"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+		},
+		{
+			Key: "notebooks", Title: "Notebooks",
+			Aliases: []string{"notebooks", "notebook", "nb", "runbooks"},
+			Columns: []string{"NAME", "AUTHOR", "STATUS", "MODIFIED"},
+			TTL:     5 * time.Minute,
 		},
 		{
 			Key: "teams", Title: "Teams",

@@ -150,6 +150,8 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Events** | `:events` `:ev` | The change stream: deploys, alerts, config changes. |
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
+| **Security** | `:security` `:signals` `:siem` | Cloud SIEM / CSM security signals: time, severity, title, tags. `/` is a signals search query; digit keys set the window. `enter` opens the signal. |
+| **Notebooks** | `:notebooks` `:nb` `:runbooks` | The org's notebooks (runbooks, postmortems): name, author, status, last modified. `enter` reads the notebook's text. |
 | **Overview** | `:overview` `:ov` | Cross-resource triage: open incidents + alerting monitors from every active org, worst first. `enter` opens the real detail. |
 | **Cost** | `:cost` `:billing` | This org's Datadog spend: estimated + projected this month, up to 12 months of history with a trend, per-product or per-sub-org, filterable (read-only). Admin-scoped, see below. |
 | **Teams** | `:teams` `:team` | The org's Datadog teams: name, handle, member count, description. `enter` on a team shows its members and their roles (read-only). |

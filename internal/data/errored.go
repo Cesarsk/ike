@@ -40,6 +40,9 @@ func (e *Errored) TeamOnCall(context.Context, string) (*OnCallDetail, error) {
 func (e *Errored) TeamMembers(context.Context, string) ([]TeamMember, error) {
 	return nil, e.err
 }
+func (e *Errored) Notebook(context.Context, string) (*NotebookView, error) {
+	return nil, e.err
+}
 func (e *Errored) PageTeam(context.Context, string, string, string, string) (string, error) {
 	return "", e.err
 }

@@ -82,6 +82,11 @@ func (c *Cached) TeamMembers(ctx context.Context, teamID string) ([]TeamMember, 
 	return c.p.TeamMembers(ctx, teamID)
 }
 
+// Notebook is an on-demand drill-in fetch, uncached.
+func (c *Cached) Notebook(ctx context.Context, id string) (*NotebookView, error) {
+	return c.p.Notebook(ctx, id)
+}
+
 // Paging passes straight through (writes are never cached); the affected
 // resource, if any, is invalidated by the caller.
 func (c *Cached) PageTeam(ctx context.Context, teamID, title, urgency, description string) (string, error) {

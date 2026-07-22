@@ -183,8 +183,82 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.teams(), nil
 	case "oncall":
 		return d.oncallTeams(), nil
+	case "security":
+		return d.securitySignals(query), nil
+	case "notebooks":
+		return d.notebooks(), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
+}
+
+// securitySignals synthesizes a few Cloud SIEM signals so the :security view
+// is demoable offline.
+func (d *Demo) securitySignals(query string) []Row {
+	sigs := []struct {
+		id, sev, title, tags string
+	}{
+		{"sig-1", "critical", "Multiple failed root logins from a single IP", "security:attack source:cloudtrail severity:critical"},
+		{"sig-2", "high", "IAM policy granting full admin created", "security:posture source:cloudtrail severity:high"},
+		{"sig-3", "medium", "Container running as privileged", "security:posture source:k8s severity:medium"},
+		{"sig-4", "low", "New SSH key added to an account", "security:activity source:cloudtrail severity:low"},
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(sigs))
+	for i, s := range sigs {
+		if q != "" && !strings.Contains(strings.ToLower(s.title+" "+s.tags), q) {
+			continue
+		}
+		ts := time.Now().Add(-time.Duration(i*37) * time.Minute)
+		rows = append(rows, Row{
+			ID:    s.id,
+			Cells: []string{ts.Format("2006-01-02 15:04"), s.sev, s.title, s.tags},
+			Raw:   map[string]any{"id": s.id, "severity": s.sev, "title": s.title, "tags": s.tags},
+			URL:   WebBase(d.site) + "/security",
+		})
+	}
+	return rows
+}
+
+// demoNotebooks backs the :notebooks list; demoNotebookBody holds a body per
+// notebook for the drill-in.
+var demoNotebooks = []struct {
+	id, name, author, status, body string
+}{
+	{"101", "Runbook: Payments API latency", "Alice Ng", "published",
+		"# Payments API latency\n\nWhen p99 latency alerts:\n\n1. Check the APM service page for the slow endpoint.\n2. Look at the RDS connection pool saturation.\n3. If the pool is exhausted, scale the read replicas.\n\n[timeseries chart]\n\nEscalate to the payments on-call if latency stays above 800ms for 15m."},
+	{"102", "Postmortem: 2026-06 Kong outage", "Bob Ito", "published",
+		"# Kong outage postmortem\n\n**Impact:** 22 minutes of elevated 5xx on the public API.\n\n**Root cause:** a config rollout dropped an upstream.\n\n**Action items:** add a canary check to the rollout pipeline."},
+	{"103", "Draft: On-call handbook", "Carol Diaz", "draft",
+		"# On-call handbook (draft)\n\nTODO: fill in the escalation matrix and the paging etiquette."},
+}
+
+func (d *Demo) notebooks() []Row {
+	rows := make([]Row, 0, len(demoNotebooks))
+	for i, nb := range demoNotebooks {
+		mod := time.Now().Add(-time.Duration(i*19) * time.Hour)
+		rows = append(rows, Row{
+			ID:    nb.id,
+			Cells: []string{nb.name, nb.author, nb.status, mod.Format("2006-01-02 15:04")},
+			URL:   WebBase(d.site) + "/notebook/" + nb.id,
+		})
+	}
+	return rows
+}
+
+// Notebook returns a demo notebook's rendered body.
+func (d *Demo) Notebook(_ context.Context, id string) (*NotebookView, error) {
+	for _, nb := range demoNotebooks {
+		if nb.id == id {
+			return &NotebookView{
+				Name: nb.name, Author: nb.author, Status: nb.status,
+				URL: WebBase(d.site) + "/notebook/" + id, Body: nb.body,
+			}, nil
+		}
+	}
+	return &NotebookView{Name: "notebook " + id, URL: WebBase(d.site) + "/notebook/" + id}, nil
 }
 
 // demoTeams backs the :teams and :oncall lists. "platform" deliberately has
