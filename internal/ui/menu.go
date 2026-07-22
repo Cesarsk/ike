@@ -32,6 +32,7 @@ var pseudoCommands = []menuCommand{
 	{name: ":cost", aliases: "costs, billing", opens: "This org's Datadog spend: trend, anomalies, drill-down", run: "cost"},
 	{name: ":ctx", aliases: "context, contexts", opens: "Your orgs: switch, span, add, edit, delete", run: "ctx"},
 	{name: ":menu", aliases: "commands, cmds, aliases", opens: "This command list", run: "menu"},
+	{name: ":watch", aliases: "w", opens: "Hands-off refresh mode for the current view (wall display)", run: "watch"},
 	{name: ":settings", aliases: "set, config", opens: "Theme and per-view cache TTLs", run: "settings"},
 	{name: ":manual", aliases: "instructions, intro", opens: "The getting-started walkthrough", run: "manual"},
 	{name: ":help", aliases: "?", opens: "Full keybinding reference", run: "help"},

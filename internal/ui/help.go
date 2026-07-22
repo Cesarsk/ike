@@ -198,6 +198,8 @@ func (a *App) buildHelp() tview.Primitive {
 
  [orange]OTHER
    [aqua]C[white]             (any table) column picker — [aqua]space[white] show/hide, [aqua]J/K[white] reorder; live + saved
+   [aqua]:watch[white]        hands-off refresh mode — keeps the current view updating on its
+                 cadence for a wall display (respects pause); header shows ● WATCH
    [aqua]:settings[white]     theme and per-view cache TTLs — applies live + saved to config
    [aqua]?[white]             this help (from any view)
    [aqua]:manual[white]       the getting-started page (shown once on first run)
