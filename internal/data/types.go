@@ -140,6 +140,10 @@ type Resource struct {
 	// search) instead of filtering the loaded rows client-side.
 	ServerQuery  bool
 	DefaultQuery string
+	// EmptyHint, when set, is shown in place of the table once a load
+	// completes with no rows — so an empty result reads as "nothing here"
+	// rather than a broken or still-loading view.
+	EmptyHint string
 }
 
 // Widget is one panel of a rendered dashboard: its title, type, primary
@@ -480,6 +484,8 @@ func Resources() []Resource {
 			Aliases: []string{"security", "signals", "sec", "siem"},
 			Columns: []string{"TIME", "SEVERITY", "TITLE", "TAGS"},
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			EmptyHint: "No security signals in the last 24h. Cloud SIEM / CSM may not be " +
+				"enabled for this org, or nothing matched the query.",
 		},
 		{
 			Key: "notebooks", Title: "Notebooks",

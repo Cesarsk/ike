@@ -1165,6 +1165,11 @@ func TestSecurityView(t *testing.T) {
 	waitFor(t, sim, "Security/sig-1") // detail title carries the signal id
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Security(")
+
+	// A query that matches nothing shows the empty-state hint, not a blank table.
+	typeRunes(sim, "/zzz-no-such-signal")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Cloud SIEM")
 	app.Stop()
 }
 

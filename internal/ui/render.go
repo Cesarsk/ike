@@ -64,6 +64,12 @@ func (a *App) render() {
 			a.table.SetCell(n+1, c, cell)
 		}
 	}
+	// Loaded-but-empty: show the resource's hint so a blank table doesn't read
+	// as broken. Gated on loadedKey so it never appears mid-switch or mid-fetch.
+	if len(a.filtered) == 0 && a.loadedKey == a.res.Key && a.res.EmptyHint != "" {
+		a.table.SetCell(1, 0, tview.NewTableCell("  "+a.res.EmptyHint).
+			SetTextColor(tcell.ColorGray).SetSelectable(false).SetExpansion(1))
+	}
 	var parts []string
 	if a.colFilterVal != "" && a.colFilterCol >= 0 && a.colFilterCol < len(a.res.Columns) {
 		parts = append(parts, strings.ToLower(a.res.Columns[a.colFilterCol])+":"+a.colFilterVal)
