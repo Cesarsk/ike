@@ -90,10 +90,15 @@ type OnCallDetail struct {
 }
 
 // OnCallLevel is one rung of the escalation policy: who gets paged at this
-// level if the level above it does not respond.
+// level if the level above it does not respond. DelayMin is how long after the
+// previous level this one fires (0 = immediately). Note labels a non-person
+// target (e.g. "via schedule", "team") when the responders were resolved from
+// one; it is empty for a plain user target.
 type OnCallLevel struct {
 	Level      int
+	DelayMin   int
 	Responders []OnCallResponder
+	Note       string
 }
 
 // OnCallResponder is a person in an on-call rotation or escalation step.
@@ -328,6 +333,17 @@ type Provider interface {
 	// TeamMembers lists a team's members and their roles (one bounded call).
 	// Read-only. Drives the :teams drill-in.
 	TeamMembers(ctx context.Context, teamID string) ([]TeamMember, error)
+	// PageTeam raises an On-Call page against a team (urgency "high"/"low").
+	// A write — the UI gates it behind a confirm and fakes it in demo mode.
+	// Returns the new page's id, used for the acknowledge/escalate/resolve
+	// lifecycle (there is no list-pages endpoint, so the id is only known
+	// here). Pages a human: handle with care.
+	PageTeam(ctx context.Context, teamID, title, urgency, description string) (string, error)
+	// AckPage / EscalatePage / ResolvePage drive a page's lifecycle by id.
+	// All writes, all confirm-gated in the UI, all faked in demo mode.
+	AckPage(ctx context.Context, pageID string) error
+	EscalatePage(ctx context.Context, pageID string) error
+	ResolvePage(ctx context.Context, pageID string) error
 	// MonitorMetric evaluates a monitor's metric query over a recent window
 	// so the detail view can show the data behind the alert. On-demand.
 	MonitorMetric(ctx context.Context, id string) (*MetricSeries, error)

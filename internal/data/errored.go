@@ -40,6 +40,12 @@ func (e *Errored) TeamOnCall(context.Context, string) (*OnCallDetail, error) {
 func (e *Errored) TeamMembers(context.Context, string) ([]TeamMember, error) {
 	return nil, e.err
 }
+func (e *Errored) PageTeam(context.Context, string, string, string, string) (string, error) {
+	return "", e.err
+}
+func (e *Errored) AckPage(context.Context, string) error      { return e.err }
+func (e *Errored) EscalatePage(context.Context, string) error { return e.err }
+func (e *Errored) ResolvePage(context.Context, string) error  { return e.err }
 func (e *Errored) MonitorMetric(context.Context, string) (*MetricSeries, error) {
 	return nil, e.err
 }

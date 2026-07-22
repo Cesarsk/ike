@@ -42,7 +42,8 @@ func (a *App) setHints() {
 		}
 	case "oncall":
 		lines = []string{
-			"[aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+			"[aqua]<p>[white]page  [aqua]<a>[white]ack  [aqua]<e>[white]escalate  [aqua]<r>[white]resolve  [aqua]<o>[white]open",
+			"[aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
 		}
 	case "teammembers":
 		lines = []string{

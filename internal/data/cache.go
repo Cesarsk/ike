@@ -82,6 +82,21 @@ func (c *Cached) TeamMembers(ctx context.Context, teamID string) ([]TeamMember, 
 	return c.p.TeamMembers(ctx, teamID)
 }
 
+// Paging passes straight through (writes are never cached); the affected
+// resource, if any, is invalidated by the caller.
+func (c *Cached) PageTeam(ctx context.Context, teamID, title, urgency, description string) (string, error) {
+	return c.p.PageTeam(ctx, teamID, title, urgency, description)
+}
+func (c *Cached) AckPage(ctx context.Context, pageID string) error {
+	return c.p.AckPage(ctx, pageID)
+}
+func (c *Cached) EscalatePage(ctx context.Context, pageID string) error {
+	return c.p.EscalatePage(ctx, pageID)
+}
+func (c *Cached) ResolvePage(ctx context.Context, pageID string) error {
+	return c.p.ResolvePage(ctx, pageID)
+}
+
 // MonitorMetric is an on-demand detail fetch, uncached.
 func (c *Cached) MonitorMetric(ctx context.Context, id string) (*MetricSeries, error) {
 	return c.p.MonitorMetric(ctx, id)

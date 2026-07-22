@@ -226,7 +226,17 @@ one-time getting-started page (`:manual`).
 5. **On-Call view — SHIPPED** (`:oncall`): teams from `TeamsApi.ListTeams` as
    the list (the On-Call API has no "list schedules" endpoint), and `enter` on
    a team fetches `OnCallApi.GetTeamOnCallUsers` to show who is on call now
-   plus the escalation ladder. The response is JSON:API, so the responders and
+   plus the escalation ladder. Each rung is best-effort enriched with its
+   escalate-after delay by following the team's routing rules to its
+   escalation policy (`GetOnCallTeamRoutingRules` → `GetOnCallEscalationPolicy`);
+   any miss just omits the delay. **Paging (`p` / `a` / `e` / `r`)** is the one
+   write here: `CreateOnCallPage` raises a page against the team, and
+   acknowledge / escalate / resolve drive its lifecycle by the returned id
+   (there is no list-pages endpoint, so ike acts on the page it raised this
+   session). All four are confirm-gated and faked in demo mode. Deeper reads
+   (schedule names / rotations, per-step targets) are deferred: the read-side
+   escalation-target type is a JSON:API union that this client version does
+   not expose cleanly, and it can't be validated without a live On-Call org. The response is JSON:API, so the responders and
    escalations are references resolved against an `included[]` union of users
    and escalations. Read-only, one bounded call per drill-in. On-Call is an
    add-on product, so a team with no rotation, or an org without On-Call

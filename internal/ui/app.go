@@ -29,6 +29,7 @@ const (
 	promptSettings   // typing a TTL/columns value in the :settings editor
 	promptTodo       // typing an incident to-do's content ('T')
 	promptCostFilter // client-side product/org filter on the :cost panel
+	promptPageTitle  // typing an On-Call page title ('p' on :oncall)
 )
 
 // ContextInfo describes one selectable Datadog org context for the :ctx view.
@@ -185,8 +186,10 @@ type App struct {
 	costFilter   string // client-side substring filter over org/product
 	// :oncall drill-in panel (enter on a team): who is on call now + the
 	// escalation ladder for onCallTeam, fetched on demand.
-	onCall     *tview.TextView
-	onCallTeam data.Row
+	onCall       *tview.TextView
+	onCallTeam   data.Row
+	onCallDetail *data.OnCallDetail // stored so paging can re-render without a re-fetch
+	onCallPageID string             // id of a page raised from the panel ("" = none)
 	// :teams drill-in panel (enter on a team): the team's members + roles.
 	teamMembers *tview.TextView
 	teamRow     data.Row
@@ -997,6 +1000,18 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		case ev.Rune() == 'o':
 			a.openOnCallURL()
 			return nil
+		case ev.Rune() == 'p':
+			a.startPageTeam() // page this team (confirm-gated)
+			return nil
+		case ev.Rune() == 'a':
+			a.pageAction("acknowledge") // no-op unless a page is in flight
+			return nil
+		case ev.Rune() == 'e':
+			a.pageAction("escalate")
+			return nil
+		case ev.Rune() == 'r':
+			a.pageAction("resolve")
+			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
 			return nil
@@ -1422,6 +1437,8 @@ func (a *App) openPrompt(m promptMode) {
 	case m == promptCostFilter:
 		a.prompt.SetLabel(" /")
 		prefill = a.costFilter // edit the active filter, don't retype
+	case m == promptPageTitle:
+		a.prompt.SetLabel(" page title> ")
 	case a.res.ServerQuery:
 		a.prompt.SetLabel(" query> ")
 		prefill = a.queries[a.res.Key] // edit the current query, don't retype
@@ -1445,6 +1462,8 @@ func (a *App) closePrompt() {
 		a.SetFocus(a.detail)
 	case "cost":
 		a.SetFocus(a.costTbl)
+	case "oncall":
+		a.SetFocus(a.onCall)
 	case "savedq":
 		a.SetFocus(a.savedQL)
 	case "settings":
@@ -1492,6 +1511,8 @@ func (a *App) promptDone(key tcell.Key) {
 	case promptCostFilter:
 		a.costFilter = text
 		a.renderCostPage()
+	case promptPageTitle:
+		a.confirmPageTeam(text)
 	case promptSaveQuery:
 		if text == "" || a.opts.SaveQuery == nil {
 			return

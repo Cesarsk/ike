@@ -16,6 +16,8 @@ import (
 func (a *App) showTeamOnCall(row data.Row) {
 	a.pushNav()
 	a.onCallTeam = row
+	a.onCallDetail = nil
+	a.onCallPageID = "" // a fresh open starts with no page in flight
 	cur := a.current
 	a.onCall.SetTitle(" On-Call ")
 	a.onCall.SetText(a.theme.recolor("\n  [gray]fetching on-call…")).ScrollToBeginning()
@@ -27,15 +29,25 @@ func (a *App) showTeamOnCall(row data.Row) {
 			if a.page != "oncall" || a.current != cur || a.onCallTeam.ID != row.ID {
 				return // navigated away
 			}
-			team := row.Cells[0]
 			if err != nil {
-				a.onCall.SetText(a.theme.recolor(renderOnCallError(team, err)))
+				a.onCall.SetText(a.theme.recolor(renderOnCallError(row.Cells[0], err)))
 				return
 			}
-			a.onCall.SetText(a.theme.recolor(renderOnCall(team, det)))
-			a.onCall.SetTitle(fmt.Sprintf(" On-Call · %s ", team))
+			a.onCallDetail = det
+			a.renderOnCallPanel()
 		})
 	}()
+}
+
+// renderOnCallPanel redraws the on-call panel from the stored detail plus the
+// current paging state, so paging actions can refresh without re-fetching.
+func (a *App) renderOnCallPanel() {
+	if a.onCallDetail == nil {
+		return
+	}
+	team := a.onCallTeam.Cells[0]
+	a.onCall.SetText(a.theme.recolor(renderOnCall(team, a.onCallDetail, a.onCallPageID))).ScrollToBeginning()
+	a.onCall.SetTitle(fmt.Sprintf(" On-Call · %s ", team))
 }
 
 // openOnCallURL opens the team's On-Call page in the Datadog web UI.
@@ -43,6 +55,89 @@ func (a *App) openOnCallURL() {
 	if a.onCallTeam.URL != "" {
 		a.openURL(a.onCallTeam.URL)
 	}
+}
+
+// startPageTeam prompts for a page title; promptDone runs the confirm + page.
+func (a *App) startPageTeam() {
+	if a.onCallDetail == nil {
+		return
+	}
+	a.openPrompt(promptPageTitle)
+}
+
+// confirmPageTeam is called from promptDone with the typed title: it confirms,
+// then raises a high-urgency page against the team. Paging wakes a human, so
+// it is always behind the confirm and faked in demo mode.
+func (a *App) confirmPageTeam(title string) {
+	if title == "" {
+		return
+	}
+	team := a.onCallTeam
+	a.showConfirm(
+		fmt.Sprintf("Page team %q, high urgency?\n\n  %q\n\nThis alerts whoever is on call right now.", team.Cells[0], title),
+		[]string{"Cancel", "Page"},
+		func(label string) {
+			if label != "Page" {
+				return
+			}
+			prov := a.providerFor(team)
+			go func() {
+				id, err := prov.PageTeam(context.Background(), team.ID, title, "high", "")
+				a.QueueUpdateDraw(func() {
+					if err != nil {
+						a.flash("✗ page: "+err.Error(), true)
+						return
+					}
+					a.onCallPageID = id
+					a.flash("paged "+team.Cells[0], false)
+					if a.page == "oncall" {
+						a.renderOnCallPanel()
+					}
+				})
+			}()
+		})
+}
+
+// pageAction runs an acknowledge/escalate/resolve on the page raised from this
+// panel, behind a confirm. A successful resolve clears the active page.
+func (a *App) pageAction(action string) {
+	if a.onCallPageID == "" {
+		return
+	}
+	id := a.onCallPageID
+	team := a.providerFor(a.onCallTeam)
+	label := strings.ToUpper(action[:1]) + action[1:]
+	a.showConfirm(fmt.Sprintf("%s page %s?", label, id),
+		[]string{"Cancel", label},
+		func(label string) {
+			if !strings.EqualFold(label, action) {
+				return
+			}
+			go func() {
+				var err error
+				switch action {
+				case "acknowledge":
+					err = team.AckPage(context.Background(), id)
+				case "escalate":
+					err = team.EscalatePage(context.Background(), id)
+				case "resolve":
+					err = team.ResolvePage(context.Background(), id)
+				}
+				a.QueueUpdateDraw(func() {
+					if err != nil {
+						a.flash("✗ "+action+": "+err.Error(), true)
+						return
+					}
+					a.flash(action+"d page", false)
+					if action == "resolve" {
+						a.onCallPageID = "" // page closed
+					}
+					if a.page == "oncall" {
+						a.renderOnCallPanel()
+					}
+				})
+			}()
+		})
 }
 
 // renderOnCallError explains a failed on-call fetch. On-Call is an add-on, so
@@ -62,15 +157,18 @@ func renderOnCallError(team string, err error) string {
 	return "\n  [red]✗ " + tview.Escape(msg)
 }
 
-// renderOnCall draws who is on call now and the escalation ladder.
-func renderOnCall(team string, d *data.OnCallDetail) string {
+// renderOnCall draws who is on call now, the escalation ladder (with per-step
+// delays where known), and the paging controls. pageID is set once a page has
+// been raised from this panel.
+func renderOnCall(team string, d *data.OnCallDetail, pageID string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, " [orange::b]On-Call[-:-:-] [gray]%s · read-only[-]\n\n", tview.Escape(team))
+	fmt.Fprintf(&b, " [orange::b]On-Call[-:-:-] [gray]%s · read-only except paging[-]\n\n", tview.Escape(team))
 
 	if len(d.OnCall) == 0 && len(d.Escalation) == 0 {
 		b.WriteString("  [gray]no on-call configured for this team[-]\n\n" +
 			"  [gray]set up a schedule and escalation policy in Datadog On-Call,\n" +
 			"  then it shows up here.[-]\n")
+		renderPaging(&b, pageID)
 		b.WriteString("\n [gray]<o> open in Datadog · <esc> back[-]\n")
 		return b.String()
 	}
@@ -90,12 +188,29 @@ func renderOnCall(team string, d *data.OnCallDetail) string {
 			for _, r := range lvl.Responders {
 				names = append(names, tview.Escape(r.Name))
 			}
-			fmt.Fprintf(&b, "    [gray]%d.[-] %s\n", lvl.Level, strings.Join(names, ", "))
+			delay := ""
+			if lvl.DelayMin > 0 {
+				delay = fmt.Sprintf(" [gray](after %dm)[-]", lvl.DelayMin)
+			}
+			fmt.Fprintf(&b, "    [gray]%d.[-] %s%s\n", lvl.Level, strings.Join(names, ", "), delay)
 		}
 	}
 
+	renderPaging(&b, pageID)
 	b.WriteString("\n [gray]<o> open in Datadog · <ctrl-r> refresh · <esc> back[-]\n")
 	return b.String()
+}
+
+// renderPaging draws the paging controls: a page prompt, or the lifecycle
+// actions once a page has been raised from this panel.
+func renderPaging(b *strings.Builder, pageID string) {
+	b.WriteString("\n  [aqua]paging[-]\n")
+	if pageID == "" {
+		b.WriteString("    [aqua]<p>[-] page this team [gray](confirm-gated; alerts whoever is on call)[-]\n")
+		return
+	}
+	fmt.Fprintf(b, "    active page [white]%s[-]\n", tview.Escape(pageID))
+	b.WriteString("    [aqua]<a>[-] acknowledge   [aqua]<e>[-] escalate   [aqua]<r>[-] resolve\n")
 }
 
 // onCallHandle formats a responder's contact detail (handle, then email) for

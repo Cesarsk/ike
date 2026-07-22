@@ -267,19 +267,29 @@ func (d *Demo) TeamOnCall(_ context.Context, teamID string) (*OnCallDetail, erro
 	case "sre":
 		det.OnCall = []OnCallResponder{r("sre.oncall")}
 		det.Escalation = []OnCallLevel{
-			{Level: 1, Responders: []OnCallResponder{r("sre.oncall")}},
-			{Level: 2, Responders: []OnCallResponder{r("alice"), r("bob")}},
-			{Level: 3, Responders: []OnCallResponder{r("carol")}},
+			{Level: 1, DelayMin: 0, Responders: []OnCallResponder{r("sre.oncall")}},
+			{Level: 2, DelayMin: 5, Responders: []OnCallResponder{r("alice"), r("bob")}},
+			{Level: 3, DelayMin: 15, Responders: []OnCallResponder{r("carol")}},
 		}
 	case "payments":
 		det.OnCall = []OnCallResponder{r("dave")}
 		det.Escalation = []OnCallLevel{
-			{Level: 1, Responders: []OnCallResponder{r("dave")}},
-			{Level: 2, Responders: []OnCallResponder{r("erin")}},
+			{Level: 1, DelayMin: 0, Responders: []OnCallResponder{r("dave")}},
+			{Level: 2, DelayMin: 10, Responders: []OnCallResponder{r("erin")}},
 		}
 	}
 	return det, nil
 }
+
+// PageTeam fakes raising a page in demo mode: no network, a synthetic page id
+// so the acknowledge/escalate/resolve lifecycle is exercisable offline.
+func (d *Demo) PageTeam(_ context.Context, teamID, _, _, _ string) (string, error) {
+	return "demo-page-" + teamID, nil
+}
+
+func (d *Demo) AckPage(context.Context, string) error      { return nil }
+func (d *Demo) EscalatePage(context.Context, string) error { return nil }
+func (d *Demo) ResolvePage(context.Context, string) error  { return nil }
 
 // Dashboard synthesizes a renderable dashboard with sparkline data so the
 // widget view is demoable and e2e-testable offline.

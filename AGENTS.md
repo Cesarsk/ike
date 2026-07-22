@@ -36,8 +36,9 @@ maintainer's go-ahead.
    log a credential, token, or OAuth blob; log the auth *kind* only.
 2. **The API surface is read-mostly, and every write is confirm-gated.** The
    writes today are: incident state / severity / commander, incident to-dos
-   (add/complete/delete), monitor mute, downtime cancel. Each goes behind a
-   confirmation modal — a write must never happen on a single unconfirmed
+   (add/complete/delete), monitor mute, downtime cancel, and On-Call paging
+   (raise a page, then acknowledge / escalate / resolve it). Each goes behind
+   a confirmation modal — a write must never happen on a single unconfirmed
    keypress. New writes follow the same rule.
 3. **Layering.** `ui` never imports YAML, keyring, or the Datadog client — it
    sees `data.Provider` and the injected `Options` callbacks. `data` knows

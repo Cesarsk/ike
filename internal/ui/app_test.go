@@ -1144,6 +1144,24 @@ func TestOnCallView(t *testing.T) {
 	waitFor(t, sim, "on call now")
 	waitFor(t, sim, "SRE On-Call")
 	waitFor(t, sim, "escalation")
+	waitFor(t, sim, "after 5m") // demo escalation step delay
+	waitFor(t, sim, "page this team")
+
+	// Paging lifecycle: p → title → confirm → page, then ack + resolve.
+	pressRune(sim, 'p')
+	waitFor(t, sim, "page title")
+	typeRunes(sim, "disk filling up")
+	press(sim, tcell.KeyEnter)
+	waitForMatch(t, sim, `Page team.*SRE`) // confirm modal
+	press(sim, tcell.KeyRight)             // Cancel → Page
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "active page") // page raised, lifecycle actions shown
+	pressRune(sim, 'r')            // resolve it
+	waitFor(t, sim, "Resolve page")
+	press(sim, tcell.KeyRight) // Cancel → Resolve
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "page this team") // resolved → back to the page prompt
+
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "On-Call") // back on the team list
 

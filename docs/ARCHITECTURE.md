@@ -46,7 +46,8 @@ Key property: `Provider` is a single interface spanning **reads** (`Fetch`,
 `TeamMembers`, `MonitorMetric`, `ListUsers`, `IncidentTodos`, `CurrentUser`), **confirm-gated writes** (`SetIncidentField`
 for state/severity, `SetIncidentCommander`, `AddIncidentTodo`,
 `SetIncidentTodoCompleted`, `DeleteIncidentTodo`, `SetMonitorMute`,
-`CancelDowntime`) and **status** (`Budget`, `Mode`, `Site`). Three
+`CancelDowntime`, `PageTeam`/`AckPage`/`EscalatePage`/`ResolvePage`) and
+**status** (`Budget`, `Mode`, `Site`). Three
 implementations — `Live` (Datadog API), `Demo` (offline `--demo`), and
 `Errored` (a placeholder for unresolved credentials, so a first run still opens
 on `:ctx` to add or fix a context instead of exiting). Every write goes through

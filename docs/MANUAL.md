@@ -404,9 +404,17 @@ different things: `:teams` shows who is *in* a team, `:oncall` shows who is
 
 `:oncall` (or `:oc`) lists your teams. Press `enter` on one to see who is on
 call right now and the escalation ladder behind them. Level 1 gets paged
-first, and if nobody there answers it moves down the ladder. The panel is
-read-only. `o` opens the team's On-Call page in Datadog, `ctrl-r` re-fetches,
-`esc` goes back.
+first, and if nobody there answers it moves down the ladder, with the
+escalate-after delay shown per rung where ike can read it. `o` opens the
+team's On-Call page in Datadog, `ctrl-r` re-fetches, `esc` goes back.
+
+**Paging.** `p` raises a page against the team. ike asks for a title, then
+confirms before anything is sent, because a page wakes whoever is on call.
+Once a page is up, `a` acknowledges it, `e` escalates it to the next level,
+and `r` resolves it, each behind its own confirm. In demo mode the whole
+lifecycle is faked, so you can practise safely. There is no page inbox: the
+Datadog API has no list-pages endpoint, so ike acts on the page it raised in
+this session, not on pages raised elsewhere.
 
 Why teams and not schedules? Datadog's API has no "list all schedules"
 endpoint, so teams are the way in. Each team's routing rules point at its

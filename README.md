@@ -31,12 +31,13 @@ already have from [k9s](https://k9scli.io): `:` to switch views, `/` to filter,
 > traces, services, events, RUM, synthetics, downtimes, dashboards) plus `:overview`
 > (cross-org triage), `:cost` (this org's Datadog spend: estimated + projected,
 > 12-month trend with anomaly flags, per-product or per-sub-org), `:oncall`
-> (who's on call now and the escalation ladder, per team) and `:teams`
+> (who's on call now, the escalation ladder, and confirm-gated paging, per team) and `:teams`
 > (the org's teams, drill into members and roles). Views can span several Datadog orgs at once
 > (activate contexts with space in `:ctx`), log and trace correlation with a
 > unified request timeline, an incident war room (people, impacts, to-dos),
 > SLO error-budget burndowns, confirm-gated writes (mute a monitor, change
-> incident state / severity / commander, incident to-dos, cancel a downtime),
+> incident state / severity / commander, incident to-dos, cancel a downtime,
+> raise and resolve an On-Call page),
 > a fuzzy row finder, session restore, and an offline demo mode. New here?
 > The **[User Manual](docs/MANUAL.md)** is a full walkthrough.
 
