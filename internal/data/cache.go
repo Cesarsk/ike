@@ -71,6 +71,12 @@ func (c *Cached) Cost(ctx context.Context, o CostOptions) (*CostView, error) {
 	return c.p.Cost(ctx, o)
 }
 
+// TeamOnCall is an on-demand drill-in fetch, uncached (the panel owns its
+// refresh cadence).
+func (c *Cached) TeamOnCall(ctx context.Context, teamID string) (*OnCallDetail, error) {
+	return c.p.TeamOnCall(ctx, teamID)
+}
+
 // MonitorMetric is an on-demand detail fetch, uncached.
 func (c *Cached) MonitorMetric(ctx context.Context, id string) (*MetricSeries, error) {
 	return c.p.MonitorMetric(ctx, id)

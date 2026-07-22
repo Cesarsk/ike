@@ -151,7 +151,8 @@ Switch to any view with `:` + its name or a shorter alias.
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
 | **Overview** | `:overview` `:ov` | Cross-resource triage: open incidents + alerting monitors from every active org, worst first. `enter` opens the real detail. |
-| **Cost** | `:cost` `:billing` | This org's Datadog spend: estimated + projected this month, up to 12 months of history with a trend, per-product or per-sub-org, filterable (read-only). Admin-scoped — see below. |
+| **Cost** | `:cost` `:billing` | This org's Datadog spend: estimated + projected this month, up to 12 months of history with a trend, per-product or per-sub-org, filterable (read-only). Admin-scoped, see below. |
+| **On-Call** | `:oncall` `:oc` `:schedules` | Your teams. `enter` on a team shows who's on call right now and the escalation ladder (read-only). Needs Datadog On-Call, see below. |
 | **Downtimes** | `:downtimes` `:dt` `:mutes` | Scheduled/active monitor mutes: status, scope, message, created. |
 | **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified. |
 | **Contexts** | `:ctx` | Your Datadog orgs — switch, add, edit, delete (see [contexts](#multiple-orgs-contexts--auth)). |
@@ -365,7 +366,7 @@ estimate so far, while closed months show the actual billed total.
 column: its change vs the same product the month before (the current month
 compares its *projection*, so a half-elapsed month doesn't read as a drop).
 A move is flagged `⚠` when it is both large in relative terms (±30%) and in
-absolute terms (≥ $100) — a 3x jump on a $5 line is noise, not an anomaly.
+absolute terms (≥ $100), so a 3x jump on a $5 line stays quiet.
 Products that appear with no line the month before show `new`. Flagged months
 in the trend get the same marker, and a summary line counts the unusual moves.
 Datadog has no billing-anomaly API; this is computed client-side from the
@@ -373,14 +374,33 @@ history already on screen, so it costs no extra API calls.
 
 **Sub-orgs need the root org.** Datadog serves the sub-org breakdown only
 from the parent (root) organization. If `s` shows just one org, either the
-org has no children or your context is signed into a sub-org — add a context
+org has no children or your context is signed into a sub-org. Add a context
 for the root organization in `:ctx` and switch to it.
 
-This is your **Datadog bill**, not your cloud (AWS/GCP/Azure) bill. It comes
-from Datadog's usage-metering API, which is **admin-scoped**: it needs the
-`usage_read` permission, usually limited to org admins. If your key or OAuth
-user lacks it, `:cost` shows a plain "needs `usage_read`" message instead of a
-raw error — the rest of ike is unaffected.
+This is your **Datadog bill**. It does not include your cloud (AWS/GCP/Azure)
+spend. It comes from Datadog's usage-metering API, which is **admin-scoped**:
+it needs the `usage_read` permission, usually limited to org admins. If your
+key or OAuth user lacks it, `:cost` shows a plain "needs `usage_read`" message
+instead of a raw error, and the rest of ike keeps working.
+
+---
+
+## On-Call
+
+`:oncall` (or `:oc`) lists your teams. Press `enter` on one to see who is on
+call right now and the escalation ladder behind them. Level 1 gets paged
+first, and if nobody there answers it moves down the ladder. The panel is
+read-only. `o` opens the team's On-Call page in Datadog, `ctrl-r` re-fetches,
+`esc` goes back.
+
+Why teams and not schedules? Datadog's API has no "list all schedules"
+endpoint, so teams are the way in. Each team's routing rules point at its
+schedule and escalation policy, and that is what the panel resolves.
+
+On-Call is an **add-on product**. If a team has no schedule set up, or your
+org does not have On-Call enabled, or your login cannot read it, the panel
+says so plainly rather than showing an error. Everything else in ike works
+either way.
 
 ---
 

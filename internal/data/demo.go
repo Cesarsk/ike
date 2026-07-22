@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -178,8 +179,66 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.synthetics(), nil
 	case "downtimes":
 		return d.downtimes(), nil
+	case "oncall":
+		return d.oncallTeams(), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
+}
+
+// demoTeams backs the :oncall list. "platform" deliberately has no on-call
+// configured, so the drill-in exercises the empty-rotation path.
+var demoTeams = []struct {
+	id, name, handle string
+	members          int64
+}{
+	{"sre", "SRE", "sre", 6},
+	{"payments", "Payments", "payments", 8},
+	{"platform", "Platform", "platform", 5},
+}
+
+func (d *Demo) oncallTeams() []Row {
+	rows := make([]Row, 0, len(demoTeams))
+	for _, t := range demoTeams {
+		rows = append(rows, Row{
+			ID:    t.id,
+			Cells: []string{t.name, t.handle, strconv.FormatInt(t.members, 10)},
+			URL:   WebBase(d.site) + "/on-call/teams/" + t.id,
+		})
+	}
+	return rows
+}
+
+// TeamOnCall synthesizes a team's on-call state so the panel is demoable
+// offline: SRE and Payments have rotations plus an escalation ladder,
+// everything else comes back empty (no on-call configured).
+func (d *Demo) TeamOnCall(_ context.Context, teamID string) (*OnCallDetail, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	det := &OnCallDetail{URL: WebBase(d.site) + "/on-call/teams/" + teamID}
+	r := func(handle string) OnCallResponder {
+		for _, u := range demoUsers {
+			if u.Handle == handle {
+				return OnCallResponder{Name: u.Name, Handle: u.Handle, Email: u.Handle + "@example.com"}
+			}
+		}
+		return OnCallResponder{Name: handle, Handle: handle}
+	}
+	switch teamID {
+	case "sre":
+		det.OnCall = []OnCallResponder{r("sre.oncall")}
+		det.Escalation = []OnCallLevel{
+			{Level: 1, Responders: []OnCallResponder{r("sre.oncall")}},
+			{Level: 2, Responders: []OnCallResponder{r("alice"), r("bob")}},
+			{Level: 3, Responders: []OnCallResponder{r("carol")}},
+		}
+	case "payments":
+		det.OnCall = []OnCallResponder{r("dave")}
+		det.Escalation = []OnCallLevel{
+			{Level: 1, Responders: []OnCallResponder{r("dave")}},
+			{Level: 2, Responders: []OnCallResponder{r("erin")}},
+		}
+	}
+	return det, nil
 }
 
 // Dashboard synthesizes a renderable dashboard with sparkline data so the

@@ -34,6 +34,9 @@ func (e *Errored) LogContext(context.Context, Row, int) (*LogContextView, error)
 func (e *Errored) Cost(context.Context, CostOptions) (*CostView, error) {
 	return nil, e.err
 }
+func (e *Errored) TeamOnCall(context.Context, string) (*OnCallDetail, error) {
+	return nil, e.err
+}
 func (e *Errored) MonitorMetric(context.Context, string) (*MetricSeries, error) {
 	return nil, e.err
 }

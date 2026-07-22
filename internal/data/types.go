@@ -80,6 +80,29 @@ type CostLine struct {
 	Projected float64
 }
 
+// OnCallDetail is one team's on-call state: who is on call right now and the
+// escalation ladder behind them. URL deep-links to the team's On-Call page.
+type OnCallDetail struct {
+	Team       string
+	OnCall     []OnCallResponder // whoever is currently on call
+	Escalation []OnCallLevel     // the ladder, level 1 first
+	URL        string
+}
+
+// OnCallLevel is one rung of the escalation policy: who gets paged at this
+// level if the level above it does not respond.
+type OnCallLevel struct {
+	Level      int
+	Responders []OnCallResponder
+}
+
+// OnCallResponder is a person in an on-call rotation or escalation step.
+type OnCallResponder struct {
+	Name   string
+	Handle string
+	Email  string
+}
+
 // Resource describes a navigable Datadog resource type.
 type Resource struct {
 	Key         string
@@ -288,6 +311,11 @@ type Provider interface {
 	// and admin-scoped — a non-privileged user gets a permission error,
 	// which the UI surfaces as "needs usage_read".
 	Cost(ctx context.Context, o CostOptions) (*CostView, error)
+	// TeamOnCall returns who is on call now for a team plus its escalation
+	// ladder (one bounded call). Read-only. On-Call is an add-on product, so
+	// a team with no on-call configured, or an org without it enabled, comes
+	// back with empty rotations rather than an error.
+	TeamOnCall(ctx context.Context, teamID string) (*OnCallDetail, error)
 	// MonitorMetric evaluates a monitor's metric query over a recent window
 	// so the detail view can show the data behind the alert. On-demand.
 	MonitorMetric(ctx context.Context, id string) (*MetricSeries, error)
@@ -402,6 +430,15 @@ func Resources() []Resource {
 			Aliases: []string{"downtimes", "downtime", "dt", "mutes"},
 			Columns: []string{"STATUS", "SCOPE", "MESSAGE", "CREATED"},
 			TTL:     60 * time.Second,
+		},
+		{
+			// Teams are the entry point to On-Call: the API has no "list
+			// schedules" endpoint, so on-call is reached per team. enter on a
+			// team opens who is on call now plus the escalation ladder.
+			Key: "oncall", Title: "On-Call",
+			Aliases: []string{"oncall", "on-call", "oc", "schedules"},
+			Columns: []string{"TEAM", "HANDLE", "MEMBERS"},
+			TTL:     5 * time.Minute,
 		},
 	}
 }

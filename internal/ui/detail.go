@@ -34,6 +34,10 @@ func (a *App) openDetail(tableRow int) {
 		a.drillToServiceTraces(r) // enter on a service → its traces (the loop)
 		return
 	}
+	if a.res.Key == "oncall" {
+		a.showTeamOnCall(r) // enter on a team → who's on call + escalation
+		return
+	}
 	a.pushNav()
 	a.renderDetail(r)
 	a.detailRow = r

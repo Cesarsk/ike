@@ -53,6 +53,7 @@ internal/ui/
   render.go             table render, row colour, header + rate-limit budget
   writes.go             confirm-gated write paths (mute, incident, downtime)
   cost.go               :cost panel — Datadog spend (trend, anomalies, drill-down)
+  oncall.go             :oncall drill-in — who's on call now + escalation ladder
   help.go               hints line, help page, first-run getting-started page
   app_test.go           headless end-to-end smoke test (tcell SimulationScreen)
   screendump_test.go    README screenshot generator (IKE_DUMP=1)
@@ -202,16 +203,29 @@ one-time getting-started page (`:manual`).
    focus and a "needs the root org" notice when no children are visible), a
    client-side line filter, and `o` deep-linking to the billing/usage page.
    Read-only, at most three bounded calls per fetch; the drill-down renders
-   entirely from data already loaded. **Anomalies are computed client-side** — Datadog
-   has no billing-anomaly endpoint — as month-over-month per-line deltas,
-   flagged only when both the relative (±30%) and absolute (≥$100) thresholds
-   are cleared, so small lines can't spam the flag. The usage/billing API is admin-scoped
-   (`usage_read`), so a non-privileged user gets a graceful "needs usage_read"
-   message rather than a broken view — an accepted trade-off (it's dark for
-   non-admins). This is the Datadog bill, not cloud (AWS/GCP/Azure) cost;
-   Cloud Cost Management (cost-as-metrics) and tag-based cost attribution
-   (`GetMonthlyCostAttribution`, which needs cost-allocation tags configured)
-   are possible later additions for orgs that have set them up.
+   entirely from data already loaded. **Anomalies are computed client-side**
+   (Datadog has no billing-anomaly endpoint) as month-over-month per-line
+   deltas, flagged only when both the relative (±30%) and absolute (≥$100)
+   thresholds are cleared, so small lines can't spam the flag. The
+   usage/billing API is admin-scoped (`usage_read`), so a non-privileged user
+   gets a graceful "needs usage_read" message rather than a broken view, an
+   accepted trade-off (it's dark for non-admins). This is the Datadog bill and
+   does not include cloud (AWS/GCP/Azure) spend; Cloud Cost Management
+   (cost-as-metrics) and tag-based cost attribution (`GetMonthlyCostAttribution`,
+   which needs cost-allocation tags configured) are possible later additions
+   for orgs that have set them up.
+
+4. **On-Call view — SHIPPED** (`:oncall`): teams from `TeamsApi.ListTeams` as
+   the list (the On-Call API has no "list schedules" endpoint), and `enter` on
+   a team fetches `OnCallApi.GetTeamOnCallUsers` to show who is on call now
+   plus the escalation ladder. The response is JSON:API, so the responders and
+   escalations are references resolved against an `included[]` union of users
+   and escalations. Read-only, one bounded call per drill-in. On-Call is an
+   add-on product, so a team with no rotation, or an org without On-Call
+   enabled, renders an empty-state notice rather than an error. Paging writes
+   (`CreateOnCallPage` / acknowledge / escalate / resolve) exist in the client
+   and are a deliberate future step behind the confirm-gated write pattern;
+   they are held back because paging a human is a consequential action.
 
 ### Longer-term
 

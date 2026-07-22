@@ -40,6 +40,10 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back to the breakdown  [aqua]<?>[white]help",
 		}
+	case "oncall":
+		lines = []string{
+			"[aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	case "logcontext":
 		lines = []string{
 			"[aqua]<↑/↓ j/k>[white]move  [aqua]<enter>[white]expand  [aqua]<t>[white]trace  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",

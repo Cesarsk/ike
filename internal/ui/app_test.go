@@ -1098,6 +1098,40 @@ func newSim(t *testing.T) tcell.SimulationScreen {
 	return sim
 }
 
+// TestOnCallView: :oncall lists teams; enter on a team with a rotation shows
+// who's on call plus the escalation ladder, and a team without on-call shows
+// the empty-state message. esc returns to the list.
+func TestOnCallView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":oncall")
+	waitFor(t, sim, "On-Call")
+	waitFor(t, sim, "SRE")
+	waitFor(t, sim, "Platform")
+
+	press(sim, tcell.KeyEnter) // first row (SRE): has a rotation + ladder
+	waitFor(t, sim, "on call now")
+	waitFor(t, sim, "SRE On-Call")
+	waitFor(t, sim, "escalation")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "On-Call") // back on the team list
+
+	pressRune(sim, 'j') // Payments
+	pressRune(sim, 'j') // Platform: no on-call configured
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "no on-call configured")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "On-Call")
+
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Monitors(all)")
+	app.Stop()
+}
+
 // TestCostView: :cost renders the org's spend breakdown (estimated + projected
 // by product) from the demo provider; s toggles the sub-org view, 3 loads the
 // month trend, ] selects a closed month, / filters lines, esc clears the

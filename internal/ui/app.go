@@ -178,12 +178,16 @@ type App struct {
 	costProd     *tview.TextView // per-product drill-down ("costprod" page)
 	costRows     []costLineDelta // table data row i ↔ costRows[i] (header is row 0)
 	costView     *data.CostView
-	costMonths   int             // fetch range: 1, 3, 6 or 12 months
-	costSel      int             // selected month index into costView.Months
-	costSubOrg   bool            // "sub-org" API view instead of "summary"
-	costOrgFocus string          // sub-org focus ("" = all; f cycles)
-	costFilter   string          // client-side substring filter over org/product
-	splash       *tview.TextView // startup logo, auto-dismissed
+	costMonths   int    // fetch range: 1, 3, 6 or 12 months
+	costSel      int    // selected month index into costView.Months
+	costSubOrg   bool   // "sub-org" API view instead of "summary"
+	costOrgFocus string // sub-org focus ("" = all; f cycles)
+	costFilter   string // client-side substring filter over org/product
+	// :oncall drill-in panel (enter on a team): who is on call now + the
+	// escalation ladder for onCallTeam, fetched on demand.
+	onCall     *tview.TextView
+	onCallTeam data.Row
+	splash     *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
 	logCtxFlex *tview.Flex
@@ -368,7 +372,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -504,6 +508,9 @@ func (a *App) build() {
 	a.costProd = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.costProd.SetBorder(true)
 
+	a.onCall = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.onCall.SetBorder(true)
+
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
@@ -599,6 +606,7 @@ func (a *App) build() {
 		AddPage("trace", a.trace, true, false).
 		AddPage("cost", a.costFlex, true, false).
 		AddPage("costprod", a.costProd, true, false).
+		AddPage("oncall", a.onCall, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -958,6 +966,29 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
 			a.back()
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPrompt(promptCmd)
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	case "oncall":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			a.showTeamOnCall(a.onCallTeam) // re-fetch
+			return nil
+		case ev.Rune() == 'o':
+			a.openOnCallURL()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -1725,6 +1756,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("cost") // pane still holds the rendered breakdown
 	case "costprod":
 		a.showPage("costprod")
+	case "oncall":
+		a.showPage("oncall") // pane still holds the rendered on-call
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -1749,6 +1782,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.costTbl)
 	case "costprod":
 		a.SetFocus(a.costProd)
+	case "oncall":
+		a.SetFocus(a.onCall)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":
