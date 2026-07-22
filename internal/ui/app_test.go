@@ -1098,6 +1098,29 @@ func newSim(t *testing.T) tcell.SimulationScreen {
 	return sim
 }
 
+// TestBulkActions: space marks rows on a table, the title shows the count,
+// and 'm' mutes all marked monitors behind one confirm with a fan-out flash.
+func TestBulkActions(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	pressRune(sim, ' ') // mark the first row
+	pressRune(sim, 'j') // move down
+	pressRune(sim, ' ') // mark the second row
+	waitForMatch(t, sim, `✓2`)
+
+	pressRune(sim, 'm')                 // bulk mute (selection is non-empty)
+	waitFor(t, sim, "Mute 2 monitors?") // count + bulk path (not single-row)
+	press(sim, tcell.KeyRight)          // Cancel → Mute
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "muted") // the fan-out landed and the view reloaded
+
+	app.Stop()
+}
+
 // TestMenuView: :menu lists every command (built from the resource registry
 // plus the pseudo-commands), and enter on a row runs that command.
 func TestMenuView(t *testing.T) {

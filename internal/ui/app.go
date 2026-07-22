@@ -259,6 +259,10 @@ type App struct {
 	rows     []data.Row
 	filtered []int
 	filter   string // '/' text filter: substring across all cells
+	// marks is the bulk-selection set on a normal table (space toggles a row),
+	// keyed by rowKey (org-safe). Cleared on view switch / esc / after a bulk
+	// action. Drives the row tint and the m/r/x fan-out writes.
+	marks map[string]bool
 	// colFilter is the exact-match quick filter (monitors state via 0-4,
 	// SLO type via 't'): matches one column exactly. colFilterCol == -1 off.
 	colFilterCol int
@@ -1137,9 +1141,13 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			}
 			return nil
 		}
+		a.toggleMark() // bulk-selection mark on a normal table
+		return nil
 	case 'm':
 		if a.res.Key == "monitors" {
-			if row, ok := a.selectedRow(); ok {
+			if len(a.marks) > 0 {
+				a.bulkMute()
+			} else if row, ok := a.selectedRow(); ok {
 				a.confirmMuteMonitor(row)
 			}
 			return nil
@@ -1176,7 +1184,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		}
 	case 'r':
 		if a.res.Key == "incidents" {
-			if row, ok := a.selectedRow(); ok {
+			if len(a.marks) > 0 {
+				a.bulkResolveIncidents()
+			} else if row, ok := a.selectedRow(); ok {
 				a.confirmIncidentAction(row)
 			}
 			return nil
@@ -1204,7 +1214,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		}
 	case 'x':
 		if a.res.Key == "downtimes" {
-			if row, ok := a.selectedRow(); ok {
+			if len(a.marks) > 0 {
+				a.bulkCancelDowntimes()
+			} else if row, ok := a.selectedRow(); ok {
 				a.confirmCancelDowntime(row)
 			}
 			return nil
@@ -1759,17 +1771,19 @@ func (a *App) resetView() {
 	a.filter = ""
 	a.colFilterCol, a.colFilterVal = -1, ""
 	a.sortCol, a.sortAsc = -1, true
+	a.marks = nil // a fresh view starts with no bulk selection
 }
 
 // back implements k9s's esc semantics (Browser.resetCmd): clear any active
 // filter, then pop the navigation stack to the previous view. At the root
 // with no filter, esc is a no-op.
 func (a *App) back() {
-	// k9s esc semantics: an active filter is cleared first; only a second
-	// esc (nothing left to clear) pops the navigation stack.
-	if a.page == "table" && (a.filter != "" || a.colFilterVal != "") {
+	// k9s esc semantics: an active filter or bulk selection is cleared first;
+	// only a second esc (nothing left to clear) pops the navigation stack.
+	if a.page == "table" && (a.filter != "" || a.colFilterVal != "" || len(a.marks) > 0) {
 		a.filter = ""
 		a.colFilterCol, a.colFilterVal = -1, ""
+		a.marks = nil
 		a.applyFilter()
 		return
 	}
@@ -2360,6 +2374,40 @@ func (a *App) selectedRow() (data.Row, bool) {
 		return data.Row{}, false
 	}
 	return a.rows[a.filtered[row-1]], true
+}
+
+// rowKey identifies a row for the bulk-selection set. It includes the origin
+// org so marks never collide across spanned orgs.
+func rowKey(r data.Row) string { return r.Ctx + "\x00" + r.ID }
+
+// toggleMark adds or removes the selected row from the bulk-selection set.
+func (a *App) toggleMark() {
+	r, ok := a.selectedRow()
+	if !ok {
+		return
+	}
+	if a.marks == nil {
+		a.marks = map[string]bool{}
+	}
+	k := rowKey(r)
+	if a.marks[k] {
+		delete(a.marks, k)
+	} else {
+		a.marks[k] = true
+	}
+	a.render()
+}
+
+// markedRows returns the marked rows within the currently loaded set, in
+// display order.
+func (a *App) markedRows() []data.Row {
+	var out []data.Row
+	for _, idx := range a.filtered {
+		if a.marks[rowKey(a.rows[idx])] {
+			out = append(out, a.rows[idx])
+		}
+	}
+	return out
 }
 
 // dashGridCols is Datadog's dashboard grid width in layout units; widgets

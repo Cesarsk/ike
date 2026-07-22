@@ -85,13 +85,13 @@ func (a *App) setHints() {
 		}
 		switch a.res.Key {
 		case "monitors":
-			lines = append(lines, "[gray]<l>logs  <m>mute  <s>sort <S>rev   quick: <1>alert <2>warn <3>nodata <4>ok <0>all")
+			lines = append(lines, "[gray]<l>logs  <m>mute (<space>mark → mute many)  <s>sort <S>rev   quick: <1>alert <2>warn <3>nodata <4>ok <0>all")
 		case "slos":
 			lines = append(lines, "[gray]<enter>error budget  <t>cycle type filter  <s>sort <S>reverse")
 		case "incidents":
-			lines = append(lines, "[gray]<r>state  <v>severity  <I>commander (pick)  <T>to-dos  quick: <1>active <2>stable <3>resolved <0>all")
+			lines = append(lines, "[gray]<r>state (<space>mark → resolve many)  <v>severity  <I>commander (pick)  <T>to-dos  quick: <1>active <2>stable <3>resolved <0>all")
 		case "downtimes":
-			lines = append(lines, "[gray]<x>cancel downtime  <s>sort <S>reverse")
+			lines = append(lines, "[gray]<x>cancel (<space>mark → cancel many)  <s>sort <S>reverse")
 		case "logs":
 			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <x>context  <P>patterns  <Q>saved  window: <1>15m..<5>7d")
 		case "traces":
@@ -153,6 +153,9 @@ func (a *App) buildHelp() tview.Primitive {
                  service/host, oldest first (one query, not a live stream)
 
  [orange]ACTIONS
+   [aqua]space[white]         mark rows for a bulk action; then <m>/<r>/<x> act on all
+                 marked at once behind one confirm (mute monitors, resolve
+                 incidents, cancel downtimes). esc clears the selection
    [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
    [aqua]r[white]             (incident) change state (active/stable/resolved) — behind a confirm
    [aqua]v[white]             (incident) change severity (SEV-1…SEV-5) — behind a confirm

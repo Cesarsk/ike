@@ -45,6 +45,76 @@ func (a *App) confirmMuteMonitor(r data.Row) {
 		})
 }
 
+// bulkOp names a fan-out write for the confirm prompt, action button and
+// success flash. button must differ from "Cancel" so it can't be confused
+// with the modal's dismiss button.
+type bulkOp struct {
+	verb   string // sentence + flash: "Mute" → "Mute 3 monitors?"
+	button string // confirm action button (≠ "Cancel")
+	noun   string
+}
+
+// bulkWrite confirms a fan-out write over the marked rows, runs it off the UI
+// thread with a partial-failure summary, clears the marks and reloads. Each
+// row routes to its own org via providerFor, so a spanned selection writes to
+// the right place.
+func (a *App) bulkWrite(op bulkOp, do func(data.Row) error) {
+	rows := a.markedRows()
+	if len(rows) == 0 {
+		return
+	}
+	a.showConfirm(
+		fmt.Sprintf("%s %d %s?\nThis writes to Datadog.", op.verb, len(rows), op.noun),
+		[]string{"Cancel", op.button},
+		func(label string) {
+			if label != op.button {
+				return
+			}
+			a.flash(fmt.Sprintf("%s %d %s …", op.verb, len(rows), op.noun), false)
+			go func() {
+				ok, fail := 0, 0
+				for _, r := range rows {
+					if err := do(r); err != nil {
+						fail++
+						slog.Warn("bulk write failed", "op", op.verb, "id", r.ID, "err", err)
+					} else {
+						ok++
+					}
+				}
+				a.QueueUpdateDraw(func() {
+					msg := fmt.Sprintf("%s: %d %s", op.verb, ok, op.noun)
+					if fail > 0 {
+						msg += fmt.Sprintf(", %d failed", fail)
+					}
+					a.flash(msg, fail > 0)
+					a.marks = nil
+					a.load(true) // caches dropped by the writes; re-fetch
+				})
+			}()
+		})
+}
+
+// bulkMute mutes every marked monitor.
+func (a *App) bulkMute() {
+	a.bulkWrite(bulkOp{verb: "Mute", button: "Mute", noun: "monitors"}, func(r data.Row) error {
+		return a.providerFor(r).SetMonitorMute(context.Background(), r.ID, true)
+	})
+}
+
+// bulkResolveIncidents resolves every marked incident.
+func (a *App) bulkResolveIncidents() {
+	a.bulkWrite(bulkOp{verb: "Resolve", button: "Resolve", noun: "incidents"}, func(r data.Row) error {
+		return a.providerFor(r).SetIncidentField(context.Background(), r.ID, "state", "resolved")
+	})
+}
+
+// bulkCancelDowntimes cancels every marked downtime.
+func (a *App) bulkCancelDowntimes() {
+	a.bulkWrite(bulkOp{verb: "Cancel", button: "Cancel downtimes", noun: "downtimes"}, func(r data.Row) error {
+		return a.providerFor(r).CancelDowntime(context.Background(), r.ID)
+	})
+}
+
 func (a *App) closeConfirm() {
 	a.content.HidePage("confirm")
 	ret := a.confirmReturn

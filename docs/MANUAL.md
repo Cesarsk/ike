@@ -473,9 +473,18 @@ either way.
 | `v` | Incidents | change severity |
 | `I` | Incidents | assign commander (user picker; you pinned on top) |
 | `T` | Incidents | to-do panel (list · `a` add · `c` done · `d` delete) |
-| `m` | Monitors | mute / unmute |
-| `x` | Downtimes | cancel downtime |
+| `m` | Monitors | mute / unmute (bulk when rows are marked) |
+| `x` | Downtimes | cancel downtime (bulk when rows are marked) |
+| `space` | Monitors/Incidents/Downtimes | mark row for a bulk action |
 | `↑` `↓` | `/` prompt | query history |
+
+**Bulk actions.** On monitors, incidents and downtimes, `space` marks the
+selected row (a running count shows in the title as `✓N`). The action key then
+acts on every marked row at once behind a single confirm: `m` mutes the marked
+monitors, `r` resolves the marked incidents, `x` cancels the marked downtimes.
+Each row writes to its own org, so a selection spanning orgs still goes to the
+right place. The result flash reports partial failures (`Mute: 3 monitors, 1
+failed`). `esc` clears the selection.
 
 **Contexts (`:ctx`)** — `enter` switch · `a` add · `e` edit config · `ctrl-d` delete.
 

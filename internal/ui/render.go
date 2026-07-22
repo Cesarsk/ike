@@ -43,7 +43,7 @@ func (a *App) render() {
 		// Active orgs in :ctx are a marked set — tint the whole row so a
 		// multi-selection reads at a glance (the cursor bar stays distinct:
 		// tview's selected style overrides cell styles on the selected row).
-		marked := a.res.Key == ctxResource.Key && len(r.Cells) > 0 && r.Cells[0] == "active"
+		marked := (a.res.Key == ctxResource.Key && len(r.Cells) > 0 && r.Cells[0] == "active") || a.marks[rowKey(r)]
 		for c, ci := range cidx {
 			val := ""
 			switch {
@@ -85,7 +85,11 @@ func (a *App) render() {
 	if a.sortCol >= 0 && a.sortCol < len(a.res.Columns) {
 		sortLabel = fmt.Sprintf(" ↕%s%s", a.res.Columns[a.sortCol], arrow(a.sortAsc))
 	}
-	a.table.SetTitle(tview.Escape(fmt.Sprintf(" %s(%s)[%d]%s ", a.res.Title, flabel, len(a.filtered), sortLabel)))
+	markLabel := ""
+	if n := len(a.marks); n > 0 {
+		markLabel = fmt.Sprintf(" ✓%d", n)
+	}
+	a.table.SetTitle(tview.Escape(fmt.Sprintf(" %s(%s)[%d]%s%s ", a.res.Title, flabel, len(a.filtered), sortLabel, markLabel)))
 	// Re-assert the offset: this clears tview's internal trackEnd flag,
 	// which latches during the brief empty draw before data arrives and
 	// would otherwise pin the viewport to the bottom of the table.

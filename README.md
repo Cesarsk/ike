@@ -37,7 +37,8 @@ already have from [k9s](https://k9scli.io): `:` to switch views, `/` to filter,
 > unified request timeline, an incident war room (people, impacts, to-dos),
 > SLO error-budget burndowns, confirm-gated writes (mute a monitor, change
 > incident state / severity / commander, incident to-dos, cancel a downtime,
-> raise and resolve an On-Call page),
+> raise and resolve an On-Call page) with bulk selection (mark rows with
+> space, then act on all at once),
 > a fuzzy row finder, session restore, and an offline demo mode. New here?
 > The **[User Manual](docs/MANUAL.md)** is a full walkthrough.
 

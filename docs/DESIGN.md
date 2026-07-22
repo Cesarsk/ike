@@ -250,7 +250,13 @@ one-time getting-started page (`:manual`).
 3. **Token rotation** on an existing context — folds into `ike auth login
    --context <existing>` (re-auth updates the keychain token in place), so no
    separate key/flow is needed once auth login lands.
-4. Bulk select + act (mute N monitors / resolve N incidents) behind one confirm.
+4. **Bulk actions — SHIPPED.** `space` marks rows on a normal table (org-safe
+   key, tinted like `:ctx` active, `✓N` in the title); the existing action key
+   then fans out over the marked set behind one confirm — `m` mute monitors,
+   `r` resolve incidents, `x` cancel downtimes — routing each row to its own
+   org via `providerFor` and reporting partial failures. Marks clear on the
+   action, on `esc`, and on any view switch. Incident severity/commander stay
+   single-row (they need a per-row target, not a uniform verb).
 5. **Incident timeline note** — a free-text timeline comment is **not** in the
    official client (only to-dos and attachments are; the timeline is an internal
    API). Shipped the `T` to-do panel (list/add/complete/delete) as the feasible
