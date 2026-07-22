@@ -109,7 +109,7 @@ func (a *App) setHints() {
 		case "synthetics":
 			lines = append(lines, "[gray]<enter>latest results + pass rate  <s>sort <S>reverse")
 		case "security":
-			lines = append(lines, "[gray]</>signals query  window: <1>15m..<5>7d  <enter>detail  <s>sort   (Cloud SIEM / CSM)")
+			lines = append(lines, "[gray]</>signals query  <enter>detail  <s>sort   (Cloud SIEM / CSM · last 24h)")
 		case "notebooks":
 			lines = append(lines, "[gray]<enter>read the notebook  <s>sort <S>reverse   (runbooks, postmortems)")
 		case overviewResource.Key:

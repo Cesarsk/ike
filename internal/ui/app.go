@@ -2071,7 +2071,12 @@ func (a *App) load(force bool) {
 			wg.Add(1)
 			go func(i int, e ctxProvider) {
 				defer wg.Done()
-				rows, at, cached, err := e.p.Fetch(context.Background(), res, q, tr, force)
+				// Bound every fetch: without a deadline a stalled provider call
+				// never returns, so a.loading never clears and every later view
+				// switch becomes a silent no-op — the app looks hung.
+				fctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				rows, at, cached, err := e.p.Fetch(fctx, res, q, tr, force)
 				for j := range rows {
 					rows[j].Ctx = e.name
 				}
