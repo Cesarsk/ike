@@ -145,6 +145,21 @@ func rowColor(resKey string, r data.Row) tcell.Color {
 			return tcell.ColorGray
 		}
 		return tcell.ColorLightGray
+	case "hosts":
+		if len(r.Cells) > 1 {
+			switch strings.ToLower(r.Cells[1]) {
+			case "down":
+				return tcell.ColorRed
+			case "muted":
+				return tcell.ColorGray
+			}
+		}
+		return tcell.ColorLightGray
+	case "containers":
+		if len(r.Cells) > 1 && !strings.EqualFold(r.Cells[1], "running") {
+			return tcell.ColorRed // stopped / terminated / dead
+		}
+		return tcell.ColorLightGray
 	case "monitors":
 		switch key {
 		case "alert":

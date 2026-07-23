@@ -1217,6 +1217,26 @@ func TestBulkActions(t *testing.T) {
 	app.Stop()
 }
 
+// TestContainersView: :containers lists containers (non-running first); enter
+// opens the generic detail.
+func TestContainersView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":containers")
+	waitFor(t, sim, "Containers(")
+	waitFor(t, sim, "terminated") // a non-running container sorts to the top
+	waitFor(t, sim, "payments-api")
+	press(sim, tcell.KeyEnter)
+	waitForMatch(t, sim, `Container/`) // detail title (Title has its trailing 's' trimmed)
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Containers(")
+	app.Stop()
+}
+
 // TestHostsView: :hosts lists infrastructure (down first) and m mutes the
 // selected host, which reloads with the muted status.
 func TestHostsView(t *testing.T) {

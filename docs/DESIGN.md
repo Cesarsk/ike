@@ -259,10 +259,14 @@ one-time getting-started page (`:manual`).
 8. **Hosts view — SHIPPED** (`:hosts`): infrastructure inventory via the v1
    `HostsApi.ListHosts`, sorted problems-first (down → muted → up, then name) —
    the k9s-style host list that a Datadog TUI was missing. `m` mutes/unmutes a
-   host (`MuteHost`/`UnmuteHost`, confirm-gated). Read-mostly. Next identity
-   gaps from the API sweep: `:containers` (v2 `containers`, the pod parallel)
-   and `:errors` (v2 `error_tracking`); then the correlation layer
-   (alert→owner→page, service-health rollup).
+   host (`MuteHost`/`UnmuteHost`, confirm-gated). Read-mostly.
+
+9. **Containers view — SHIPPED** (`:containers`, alias `:pods`): live container
+   inventory via v2 `ContainersApi.ListContainers`, non-running first. Read-only
+   (`enter` = full object). `ContainerItem` is a Container|ContainerGroup union;
+   ungrouped list items are plain `.Container`. Next: `:errors` (v2
+   `error_tracking`); then the correlation layer (alert→owner→page,
+   service-health rollup).
 
 ### Longer-term
 

@@ -27,9 +27,9 @@ already have from [k9s](https://k9scli.io): `:` to switch views, `/` to filter,
 
 <sub>Named after a dog named Ike. The command is `ike`; the job is keeping an eye on things.</sub>
 
-> **Status: real-org validated.** Fourteen views (monitors, incidents, SLOs, logs,
+> **Status: real-org validated.** Fifteen views (monitors, incidents, SLOs, logs,
 > traces, services, events, RUM, synthetics, downtimes, dashboards, security signals,
-> notebooks, hosts) plus `:overview`
+> notebooks, hosts, containers) plus `:overview`
 > (cross-org triage), `:cost` (this org's Datadog spend: estimated + projected,
 > 12-month trend with anomaly flags, per-product or per-sub-org), `:oncall`
 > (who's on call now, the escalation ladder, and confirm-gated paging, per team) and `:teams`

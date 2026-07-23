@@ -500,6 +500,16 @@ func Resources() []Resource {
 				"this org has no infrastructure hosts.",
 		},
 		{
+			// Live container inventory — the k9s "pods" parallel. Non-running
+			// containers sort first. Read-only.
+			Key: "containers", Title: "Containers",
+			Aliases: []string{"containers", "container", "cnt", "pods"},
+			Columns: []string{"NAME", "STATE", "IMAGE", "HOST", "STARTED", "TAGS"},
+			TTL:     30 * time.Second,
+			EmptyHint: "No containers reporting. Container collection may be disabled in " +
+				"the Datadog agent, or this org runs none.",
+		},
+		{
 			Key: "notebooks", Title: "Notebooks",
 			Aliases: []string{"notebooks", "notebook", "nb", "runbooks"},
 			Columns: []string{"NAME", "AUTHOR", "STATUS", "MODIFIED"},
