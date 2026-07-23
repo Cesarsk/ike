@@ -191,7 +191,7 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 	case "hosts":
 		return d.hosts(), nil
 	case "containers":
-		return d.containers(), nil
+		return d.containers(query), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
@@ -294,25 +294,30 @@ func (d *Demo) hosts() []Row {
 
 // demoContainers backs the :containers view.
 var demoContainers = []struct {
-	name, state, image, host, started, tags string
+	name, state, image, ns, cluster, host, started, tags string
 }{
-	{"payments-api-7d9c", "running", "payments-api:1.42.0", "ip-10-0-2-31.eks-prod", "3h", "team:payments,env:prod,service:payments-api"},
-	{"kong-proxy-5f2a", "running", "kong:3.14", "kong-dp-1.prod", "2d", "team:sre,env:prod,service:kong-proxy"},
-	{"argocd-repo-8b1", "terminated", "argocd:2.13.2", "ip-10-0-2-9.eks-prod", "5m", "team:sre,env:prod,service:argocd"},
-	{"trading-engine-3c", "running", "trading-engine:0.9.7", "ip-10-0-2-31.eks-prod", "6h", "team:trading,env:prod,service:trading-engine"},
-	{"onboarding-web-a2", "running", "onboarding:2.1.0", "ip-10-1-4-7.eks-stage", "1d", "team:frontend,env:stage,service:onboarding"},
-	{"redis-1", "running", "redis:7.2", "redis-1.prod", "9d", "team:sre,env:prod,service:redis"},
-	{"velero-backup-1", "stopped", "velero:1.13", "ip-10-0-2-9.eks-prod", "12h", "team:sre,env:prod,service:velero"},
+	{"payments-api-7d9c", "running", "payments-api:1.42.0", "payments", "eks-prod", "ip-10-0-2-31.eks-prod", "3h", "team:payments,env:prod,service:payments-api,kube_namespace:payments,kube_cluster_name:eks-prod"},
+	{"kong-proxy-5f2a", "running", "kong:3.14", "kong", "eks-prod", "kong-dp-1.prod", "2d", "team:sre,env:prod,service:kong-proxy,kube_namespace:kong,kube_cluster_name:eks-prod"},
+	{"argocd-repo-8b1", "terminated", "argocd:2.13.2", "argocd", "eks-prod", "ip-10-0-2-9.eks-prod", "5m", "team:sre,env:prod,service:argocd,kube_namespace:argocd,kube_cluster_name:eks-prod"},
+	{"trading-engine-3c", "running", "trading-engine:0.9.7", "trading", "eks-prod", "ip-10-0-2-31.eks-prod", "6h", "team:trading,env:prod,service:trading-engine,kube_namespace:trading,kube_cluster_name:eks-prod"},
+	{"onboarding-web-a2", "running", "onboarding:2.1.0", "onboarding", "eks-stage", "ip-10-1-4-7.eks-stage", "1d", "team:frontend,env:stage,service:onboarding,kube_namespace:onboarding,kube_cluster_name:eks-stage"},
+	{"redis-1", "running", "redis:7.2", "data", "eks-prod", "redis-1.prod", "9d", "team:sre,env:prod,service:redis,kube_namespace:data,kube_cluster_name:eks-prod"},
+	{"velero-backup-1", "stopped", "velero:1.13", "velero", "eks-prod", "ip-10-0-2-9.eks-prod", "12h", "team:sre,env:prod,service:velero,kube_namespace:velero,kube_cluster_name:eks-prod"},
 }
 
 // containers runs under Fetch's lock (do not re-lock d.mu — not reentrant).
-func (d *Demo) containers() []Row {
+// query is a demo tag filter: a substring match over each container's tags.
+func (d *Demo) containers(query string) []Row {
+	q := strings.ToLower(strings.TrimSpace(query))
 	rows := make([]Row, 0, len(demoContainers))
 	for _, c := range demoContainers {
+		if q != "" && !strings.Contains(strings.ToLower(c.tags), q) {
+			continue
+		}
 		rows = append(rows, Row{
 			ID:    c.name,
-			Cells: []string{c.name, c.state, c.image, c.host, c.started, c.tags},
-			Raw:   map[string]any{"name": c.name, "state": c.state, "image": c.image, "host": c.host, "tags": c.tags},
+			Cells: []string{c.name, c.state, c.image, c.ns, c.cluster, c.host, c.started, c.tags},
+			Raw:   map[string]any{"name": c.name, "state": c.state, "image": c.image, "namespace": c.ns, "cluster": c.cluster, "host": c.host, "tags": c.tags},
 			URL:   WebBase(d.site) + "/containers?text=" + c.name,
 		})
 	}

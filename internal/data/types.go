@@ -144,6 +144,10 @@ type Resource struct {
 	// completes with no rows — so an empty result reads as "nothing here"
 	// rather than a broken or still-loading view.
 	EmptyHint string
+	// DefaultColumns is the visible-by-default subset (and order) of Columns,
+	// used when the user has no saved column choice. Empty = show all. Lets a
+	// view ship extra opt-in columns that stay hidden until enabled via C.
+	DefaultColumns []string
 }
 
 // Widget is one panel of a rendered dashboard: its title, type, primary
@@ -504,10 +508,13 @@ func Resources() []Resource {
 			// containers sort first. Read-only.
 			Key: "containers", Title: "Containers",
 			Aliases: []string{"containers", "container", "cnt", "pods"},
-			Columns: []string{"NAME", "STATE", "IMAGE", "HOST", "STARTED", "TAGS"},
-			TTL:     30 * time.Second,
-			EmptyHint: "No containers reporting. Container collection may be disabled in " +
-				"the Datadog agent, or this org runs none.",
+			Columns: []string{"NAME", "STATE", "IMAGE", "NAMESPACE", "CLUSTER", "HOST", "STARTED", "TAGS"},
+			// NAMESPACE/CLUSTER ship hidden — enable per taste with C.
+			DefaultColumns: []string{"NAME", "STATE", "IMAGE", "HOST", "STARTED", "TAGS"},
+			TTL:            30 * time.Second,
+			ServerQuery:    true, // '/' is a Datadog tag query (kube_namespace:…, cluster:…)
+			EmptyHint: "No containers match. Container collection may be disabled in the " +
+				"Datadog agent, this org runs none, or the tag filter excluded them.",
 		},
 		{
 			Key: "notebooks", Title: "Notebooks",

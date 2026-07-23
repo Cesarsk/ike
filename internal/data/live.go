@@ -178,7 +178,7 @@ func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, 
 	case "hosts":
 		return l.hosts(ctx)
 	case "containers":
-		return l.containers(ctx)
+		return l.containers(ctx, query)
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
