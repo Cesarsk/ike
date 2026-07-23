@@ -1230,6 +1230,25 @@ func TestContainersView(t *testing.T) {
 	waitFor(t, sim, "Containers(")
 	waitFor(t, sim, "terminated") // a non-running container sorts to the top
 	waitFor(t, sim, "payments-api")
+
+	// NAMESPACE ships hidden (not in DefaultColumns); C reveals it as a toggle.
+	if strings.Contains(screenText(sim), "NAMESPACE") {
+		t.Fatal("NAMESPACE should be hidden by default")
+	}
+	typeRunes(sim, "C")
+	waitFor(t, sim, "Columns · containers")
+	waitFor(t, sim, "NAMESPACE") // listed in the picker, toggle-able
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Containers(")
+
+	// '/' is a server-side tag query; filter to one namespace.
+	typeRunes(sim, "/kube_namespace:payments")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "payments-api")
+	if strings.Contains(screenText(sim), "kong-proxy") {
+		t.Fatal("tag filter kube_namespace:payments should exclude kong-proxy")
+	}
+
 	press(sim, tcell.KeyEnter)
 	waitForMatch(t, sim, `Container/`) // detail title (Title has its trailing 's' trimmed)
 	press(sim, tcell.KeyEscape)

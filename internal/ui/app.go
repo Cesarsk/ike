@@ -2014,7 +2014,16 @@ func (a *App) tuneResource(res data.Resource) data.Resource {
 // displayColumns returns the column names to render and their indices into a
 // row's full Cells, honouring a config `columns` override for the current view.
 func (a *App) displayColumns() (names []string, idx []int) {
-	return projectColumns(a.res.Columns, a.opts.Columns[a.res.Key])
+	return projectColumns(a.res.Columns, a.wantColumns())
+}
+
+// wantColumns is the visible column subset/order: the user's saved choice if
+// any, else the resource's DefaultColumns (nil → projectColumns shows all).
+func (a *App) wantColumns() []string {
+	if w := a.opts.Columns[a.res.Key]; len(w) > 0 {
+		return w
+	}
+	return a.res.DefaultColumns
 }
 
 // projectColumns maps a desired column-name subset (want) onto the full
