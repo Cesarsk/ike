@@ -151,7 +151,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
 | **Hosts** | `:hosts` `:infra` | Infrastructure host inventory, problems first (down, then muted, then up): status, reporting integrations, CPU, last-report age, tags. `m` mutes/unmutes a host; `o` opens it in Datadog. |
-| **Containers** | `:containers` `:pods` | Live container inventory, non-running first: name, state, image, host, started-age, tags — plus `NAMESPACE` and `CLUSTER` columns you enable with `C`. `/` is a Datadog **tag filter** (`kube_namespace:payments`, `cluster:eks-prod`, `image_name:kong`). `enter` opens the full object; `o` opens it in Datadog. Read-only. |
+| **Containers** | `:containers` `:pods` | Live container inventory, non-running first: name, state, image, host, started-age, tags — plus `NAMESPACE` and `CLUSTER` columns you enable with `C`. `/` is a Datadog **tag filter** (`kube_namespace:payments`, `cluster:eks-prod`, `image_name:kong`). `l` drills to that container's logs (`container_name:…`); `enter` opens the full object; `o` opens it in Datadog. Read-only. |
 | **Security** | `:security` `:signals` `:siem` | Cloud SIEM / CSM security signals over the last 24h: time, severity, title, tags. `/` is a signals search query. `enter` opens the signal. |
 | **Notebooks** | `:notebooks` `:nb` `:runbooks` | The org's notebooks (runbooks, postmortems): name, author, status, last modified. `enter` reads the notebook's text. |
 | **Overview** | `:overview` `:ov` | Cross-resource triage: open incidents + alerting monitors from every active org, worst first. `enter` opens the real detail. |
@@ -472,7 +472,7 @@ either way.
 | `0`–`4` | Monitors | state quick filter (alert/warn/nodata/ok/all) |
 | `0`–`3` | Incidents | state quick filter (active/stable/resolved/all) |
 | `1`–`5` | Logs/Traces/Events | time window (15m/1h/4h/1d/7d) |
-| `l` | Monitors, Traces | drill to logs |
+| `l` | Monitors, Traces, Containers | drill to logs |
 | `t` | Logs, Traces | drill to trace waterfall |
 | `t` | SLOs | cycle type filter |
 | `x` | Logs | surrounding context — a ±5m window around the line (one query) |

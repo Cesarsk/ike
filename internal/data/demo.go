@@ -315,10 +315,11 @@ func (d *Demo) containers(query string) []Row {
 			continue
 		}
 		rows = append(rows, Row{
-			ID:    c.name,
-			Cells: []string{c.name, c.state, c.image, c.ns, c.cluster, c.host, c.started, c.tags},
-			Raw:   map[string]any{"name": c.name, "state": c.state, "image": c.image, "namespace": c.ns, "cluster": c.cluster, "host": c.host, "tags": c.tags},
-			URL:   WebBase(d.site) + "/containers?text=" + c.name,
+			ID:       c.name,
+			Cells:    []string{c.name, c.state, c.image, c.ns, c.cluster, c.host, c.started, c.tags},
+			Raw:      map[string]any{"name": c.name, "state": c.state, "image": c.image, "namespace": c.ns, "cluster": c.cluster, "host": c.host, "tags": c.tags},
+			URL:      WebBase(d.site) + "/containers?text=" + c.name,
+			LogQuery: "container_name:" + c.name,
 		})
 	}
 	return rows

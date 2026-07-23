@@ -1249,6 +1249,13 @@ func TestContainersView(t *testing.T) {
 		t.Fatal("tag filter kube_namespace:payments should exclude kong-proxy")
 	}
 
+	// l drills to that container's logs (container_name query).
+	pressRune(sim, 'l')
+	waitFor(t, sim, "Logs(")
+	waitForMatch(t, sim, `container_name:payments`)
+	press(sim, tcell.KeyEscape) // back to containers
+	waitFor(t, sim, "Containers(")
+
 	press(sim, tcell.KeyEnter)
 	waitForMatch(t, sim, `Container/`) // detail title (Title has its trailing 's' trimmed)
 	press(sim, tcell.KeyEscape)

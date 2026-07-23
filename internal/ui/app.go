@@ -1162,8 +1162,9 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case 'l':
-		// monitors → its logs; traces → the trace's logs (trace_id query)
-		if a.res.Key == "monitors" || a.res.Key == "traces" {
+		// monitors → its logs; traces → the trace's logs (trace_id query);
+		// containers → that container's logs (container_name query)
+		if a.res.Key == "monitors" || a.res.Key == "traces" || a.res.Key == "containers" {
 			if r, ok := a.selectedRow(); ok {
 				a.drillToLogs(r)
 			}

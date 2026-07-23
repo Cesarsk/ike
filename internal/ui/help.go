@@ -115,7 +115,7 @@ func (a *App) setHints() {
 		case "hosts":
 			lines = append(lines, "[gray]<m>mute/unmute host  <o>open  <s>sort <S>reverse   (down/muted first)")
 		case "containers":
-			lines = append(lines, "[gray]</>tag filter (kube_namespace:… cluster:…)  <C>columns (+ns/cluster)  <enter>detail  <o>open   (non-running first)")
+			lines = append(lines, "[gray]</>tag filter (kube_namespace:… cluster:…)  <l>logs  <C>columns (+ns/cluster)  <enter>detail  <o>open")
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:

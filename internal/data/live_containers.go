@@ -54,8 +54,9 @@ func (l *Live) containers(ctx context.Context, query string) ([]Row, error) {
 				containerAge(a.GetStartedAt()),
 				strings.Join(tags, " "),
 			},
-			Raw: c,
-			URL: l.web + "/containers?text=" + a.GetName(),
+			Raw:      c,
+			URL:      l.web + "/containers?text=" + a.GetName(),
+			LogQuery: "container_name:" + a.GetName(), // l → this container's logs
 		})
 	}
 	// Non-running first (running == 2, everything else == 1), then name.
