@@ -35,7 +35,7 @@ func (a *App) openColumnPicker() {
 	}
 	a.colPickView = a.res.Key
 	a.colPickItems = a.colPickItems[:0]
-	if want := a.opts.Columns[a.res.Key]; len(want) > 0 {
+	if want := a.wantColumns(); len(want) > 0 {
 		inWant := map[string]bool{}
 		for _, w := range want {
 			for _, f := range full {

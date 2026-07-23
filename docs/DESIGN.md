@@ -264,9 +264,13 @@ one-time getting-started page (`:manual`).
 9. **Containers view — SHIPPED** (`:containers`, alias `:pods`): live container
    inventory via v2 `ContainersApi.ListContainers`, non-running first. Read-only
    (`enter` = full object). `ContainerItem` is a Container|ContainerGroup union;
-   ungrouped list items are plain `.Container`. Next: `:errors` (v2
-   `error_tracking`); then the correlation layer (alert→owner→page,
-   service-health rollup).
+   ungrouped list items are plain `.Container`. `NAMESPACE`/`CLUSTER` columns are
+   derived from `kube_namespace`/`kube_cluster_name` tags and ship hidden via the
+   new per-resource `DefaultColumns` (enable with `C`); `/` is a server-side
+   `filterTags` query. `DefaultColumns` is generic — any view can now ship
+   opt-in columns. Next: **host-status on containers** (a container→host health
+   join — the first taste of correlation), then `:errors` (v2 `error_tracking`)
+   and the fuller correlation layer (alert→owner→page, service-health rollup).
 
 ### Longer-term
 
