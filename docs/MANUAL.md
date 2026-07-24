@@ -337,7 +337,9 @@ seconds — so ike is built around the limit, not in spite of it:
   own cache cadence even if it isn't a normally auto-refreshing view — for
   leaving ike up on a wall display. The header shows a `● WATCH` badge; it still
   respects `p` and the `429` auto-pause, so it never runs the budget down.
-  `:watch` again turns it off.
+  `:watch` again turns it off. Query views (logs, traces, RUM) are **not**
+  auto-refetched under watch — they run on the scarce `logs_search` budget, so
+  `ctrl-r` reruns them on demand instead.
 - **`ctrl-r`** is the explicit "spend budget now" refresh (bypasses the cache).
 - The **Budget** header shows live headroom from Datadog's `X-RateLimit-*`
   response headers. A `429` auto-pauses auto-refresh so ike backs off.

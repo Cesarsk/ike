@@ -2420,7 +2420,10 @@ func (a *App) ticker() {
 	t := time.NewTicker(a.refreshEvery)
 	defer t.Stop()
 	for range t.C {
-		if (a.res.AutoRefresh || a.watch) && a.page == "table" && !a.loading && !a.paused {
+		// Watch never auto-refetches the query views (logs/traces/rum): they're
+		// server-side searches on the scarce logs budget, so a wall left on
+		// :logs would quietly drain it. Their own AutoRefresh flag still wins.
+		if (a.res.AutoRefresh || (a.watch && !a.res.ServerQuery)) && a.page == "table" && !a.loading && !a.paused {
 			a.QueueUpdateDraw(func() { a.load(false) })
 		} else {
 			a.QueueUpdateDraw(a.updateInfo) // keep the Age counter moving
@@ -2439,10 +2442,15 @@ func (a *App) toggleWatch() {
 		return
 	}
 	a.watch = !a.watch
-	if a.watch {
-		a.flash(fmt.Sprintf("watch on — refreshing every %s (respects pause)", a.refreshEvery), false)
-	} else {
+	switch {
+	case !a.watch:
 		a.flash("watch off", false)
+	case a.res.ServerQuery:
+		// logs/traces/rum are query views on the scarce logs budget — watch
+		// won't auto-refetch them; ctrl-r reruns on demand.
+		a.flash("watch on — query views (logs/traces/rum) aren't auto-refetched to protect the budget; ctrl-r to rerun", false)
+	default:
+		a.flash(fmt.Sprintf("watch on — refreshing every %s (respects pause)", a.refreshEvery), false)
 	}
 	a.render()
 	a.setHints()
