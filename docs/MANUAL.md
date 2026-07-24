@@ -487,6 +487,7 @@ either way.
 | `I` | Incidents | assign commander (user picker; you pinned on top) |
 | `T` | Incidents | to-do panel (list · `a` add · `c` done · `d` delete) |
 | `m` | Monitors | mute / unmute (bulk when rows are marked) |
+| `P` | Monitors | page the owner: `team:` tag → on-call team → who it wakes → confirm-gated page (managed from `:oncall` with `a`/`e`/`r`) |
 | `m` | Hosts | mute / unmute the selected host |
 | `x` | Downtimes | cancel downtime (bulk when rows are marked) |
 | `space` | Monitors/Incidents/Downtimes | mark row for a bulk action |

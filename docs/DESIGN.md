@@ -268,9 +268,18 @@ one-time getting-started page (`:manual`).
    derived from `kube_namespace`/`kube_cluster_name` tags and ship hidden via the
    new per-resource `DefaultColumns` (enable with `C`); `/` is a server-side
    `filterTags` query. `DefaultColumns` is generic — any view can now ship
-   opt-in columns. Next: **host-status on containers** (a container→host health
-   join — the first taste of correlation), then `:errors` (v2 `error_tracking`)
-   and the fuller correlation layer (alert→owner→page, service-health rollup).
+   opt-in columns.
+
+10. **Alert→owner→page — SHIPPED** (`P` on a monitor): the first cross-API
+    correlation. Walks the monitor's `team:` tag to the on-call team (cached
+    `:oncall` list, matched by handle then name), looks up who is on call right
+    now for the confirm, and raises a high-urgency page titled `[ike] <monitor>`.
+    The raised page hands off to the `:oncall` panel (same team) where `a`/`e`/`r`
+    drive its lifecycle — and reopening the same team's panel no longer drops an
+    in-flight page. Uses only existing API surface: one cached team fetch + one
+    on-call lookup per invocation. Next: `:errors` (v2 `error_tracking` — the
+    heaviest remaining view: POST search + JSON:API included[] resolution),
+    host-status on containers, and the service-health rollup.
 
 ### Longer-term
 

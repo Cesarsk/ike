@@ -89,7 +89,7 @@ func (a *App) setHints() {
 		}
 		switch a.res.Key {
 		case "monitors":
-			lines = append(lines, "[gray]<l>logs  <m>mute (<space>mark → mute many)  <s>sort <S>rev   quick: <1>alert <2>warn <3>nodata <4>ok <0>all")
+			lines = append(lines, "[gray]<l>logs  <m>mute (<space>mark → mute many)  <P>page owner   quick: <1>alert <2>warn <3>nodata <4>ok <0>all")
 		case "slos":
 			lines = append(lines, "[gray]<enter>error budget  <t>cycle type filter  <s>sort <S>reverse")
 		case "incidents":
@@ -171,6 +171,9 @@ func (a *App) buildHelp() tview.Primitive {
                  incidents, cancel downtimes). esc clears the selection
    [aqua]m[white]             (monitor) mute / unmute — behind a confirmation
                  (host) mute / unmute the selected host — behind a confirmation
+   [aqua]P[white]             (monitor) page the owner: walks the monitor's team: tag to the
+                 on-call team, shows who it wakes, pages behind a confirm; the
+                 page is then managed from :oncall (a/e/r)
    [aqua]r[white]             (incident) change state (active/stable/resolved) — behind a confirm
    [aqua]v[white]             (incident) change severity (SEV-1…SEV-5) — behind a confirm
    [aqua]I[white]             (incident) assign commander — searchable user picker (you pinned

@@ -1250,6 +1250,12 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showPatterns()
 			return nil
 		}
+		if a.res.Key == "monitors" {
+			if row, ok := a.selectedRow(); ok {
+				a.pageMonitorOwner(row) // alert → owner → page
+			}
+			return nil
+		}
 	case 'r':
 		if a.res.Key == "incidents" {
 			if len(a.marks) > 0 {

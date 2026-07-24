@@ -1217,6 +1217,39 @@ func TestBulkActions(t *testing.T) {
 	app.Stop()
 }
 
+// TestPageMonitorOwner: P on a monitor walks its team: tag to the owning
+// on-call team, names who it wakes, and pages behind a confirm; the raised
+// page hands off to the :oncall panel where a/e/r manage it.
+func TestPageMonitorOwner(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeRunes(sim, "/Vault sealed") // a team:sre monitor
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Vault sealed")
+	pressRune(sim, 'P')
+	waitFor(t, sim, `Page team "sre"`)
+	// Who it wakes (TeamOnCall). The narrow modal word-wraps the name (even
+	// at its hyphen) and the wrap crosses border glyphs, so match dot-all.
+	waitForMatch(t, sim, `(?s)SRE On-.*Call`)
+	press(sim, tcell.KeyRight) // Cancel → Page
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "paged sre")
+
+	// Handoff: the same team's :oncall panel shows the active page.
+	typeCmd(sim, ":oncall")
+	waitFor(t, sim, "On-Call(")
+	typeRunes(sim, "/SRE")
+	press(sim, tcell.KeyEnter)
+	press(sim, tcell.KeyEnter) // open SRE's panel
+	waitFor(t, sim, "active page")
+	waitFor(t, sim, "demo-page-sre")
+	app.Stop()
+}
+
 // TestContainersView: :containers lists containers (non-running first); enter
 // opens the generic detail.
 func TestContainersView(t *testing.T) {

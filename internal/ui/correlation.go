@@ -316,3 +316,106 @@ func traceBar(offsetUs, durUs, totalUs int64, w int) string {
 	}
 	return strings.Repeat("·", lead) + strings.Repeat("█", length)
 }
+
+// pageMonitorOwner is the alert→owner→page correlation: from a monitor, walk
+// its team: tag to the owning on-call team, look up who is on call right now,
+// and raise a high-urgency page — behind a confirm, like every write. The
+// raised page is handed to the :oncall panel (same team) so a/e/r manage its
+// lifecycle from there.
+func (a *App) pageMonitorOwner(r data.Row) {
+	team := teamTag(r)
+	if team == "" {
+		a.flash("no team: tag on this monitor — can't resolve an owner to page", true)
+		return
+	}
+	monitor := r.ID
+	if len(r.Cells) > 2 {
+		monitor = r.Cells[2] // NAME column
+	}
+	oncallRes, ok := data.ResourceByAlias("oncall")
+	if !ok {
+		return
+	}
+	prov := a.providerFor(r)
+	a.flash("resolving owner "+team+" …", false)
+	go func() {
+		rows, _, _, err := prov.Fetch(context.Background(), oncallRes, "", "", false)
+		if err != nil {
+			a.QueueUpdateDraw(func() { a.flash("✗ on-call teams: "+err.Error(), true) })
+			return
+		}
+		var teamRow data.Row
+		for _, t := range rows {
+			if (len(t.Cells) > 1 && strings.EqualFold(t.Cells[1], team)) ||
+				(len(t.Cells) > 0 && strings.EqualFold(t.Cells[0], team)) {
+				teamRow = t
+				break
+			}
+		}
+		if teamRow.ID == "" {
+			a.QueueUpdateDraw(func() {
+				a.flash(fmt.Sprintf("no on-call team matches tag team:%s — see :oncall", team), true)
+			})
+			return
+		}
+		teamRow.Ctx = r.Ctx // page the org the monitor came from
+		// Who would this wake? Best-effort — a lookup failure only costs the
+		// name in the confirm, not the ability to page.
+		onCall := ""
+		if det, derr := prov.TeamOnCall(context.Background(), teamRow.ID); derr == nil {
+			var names []string
+			for _, resp := range det.OnCall {
+				names = append(names, resp.Name)
+			}
+			onCall = strings.Join(names, ", ")
+		}
+		a.QueueUpdateDraw(func() { a.confirmPageOwner(teamRow, team, monitor, onCall) })
+	}()
+}
+
+// confirmPageOwner is the confirm + page half of pageMonitorOwner, on the UI
+// thread. onCall may be empty (lookup failed / nobody on call).
+func (a *App) confirmPageOwner(teamRow data.Row, team, monitor, onCall string) {
+	who := "whoever is on call right now"
+	if onCall != "" {
+		who = onCall
+	}
+	a.showConfirm(
+		fmt.Sprintf("Page team %q, high urgency?\n\n  monitor:      %s\n  on call now:  %s\n\nThis alerts a human.", team, monitor, who),
+		[]string{"Cancel", "Page"},
+		func(label string) {
+			if label != "Page" {
+				return
+			}
+			prov := a.providerFor(teamRow)
+			go func() {
+				id, err := prov.PageTeam(context.Background(), teamRow.ID, "[ike] "+monitor, "high", "")
+				a.QueueUpdateDraw(func() {
+					if err != nil {
+						a.flash("✗ page: "+err.Error(), true)
+						return
+					}
+					slog.Info("paged monitor owner", "team", teamRow.ID, "monitor", monitor, "page", id)
+					// Hand the page to the :oncall panel: opening the same
+					// team there shows it, and a/e/r drive its lifecycle.
+					a.onCallTeam = teamRow
+					a.onCallPageID = id
+					a.flash("paged "+team+" — manage it in :oncall (enter the team, then a/e/r)", false)
+				})
+			}()
+		})
+}
+
+// teamTag returns the first team:<x> value from a monitor row's TAGS cell.
+func teamTag(r data.Row) string {
+	if len(r.Cells) < 6 {
+		return ""
+	}
+	for _, t := range strings.Split(r.Cells[5], ",") {
+		t = strings.TrimSpace(t)
+		if v := strings.TrimPrefix(t, "team:"); v != t {
+			return v
+		}
+	}
+	return ""
+}

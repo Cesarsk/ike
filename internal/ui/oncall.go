@@ -15,9 +15,14 @@ import (
 // fetch. Read-only. o opens the team's On-Call page, ctrl-r re-fetches.
 func (a *App) showTeamOnCall(row data.Row) {
 	a.pushNav()
+	if a.onCallTeam.ID != row.ID || a.onCallTeam.Ctx != row.Ctx {
+		// Switching teams drops any page in flight — it belongs to the old
+		// team. Reopening the SAME team keeps it, so a page raised earlier
+		// (here or via P on a monitor) can still be acked/resolved.
+		a.onCallPageID = ""
+	}
 	a.onCallTeam = row
 	a.onCallDetail = nil
-	a.onCallPageID = "" // a fresh open starts with no page in flight
 	cur := a.current
 	a.onCall.SetTitle(" On-Call ")
 	a.onCall.SetText(a.theme.recolor("\n  [gray]fetching on-call…")).ScrollToBeginning()
