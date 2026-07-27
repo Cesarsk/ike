@@ -2,7 +2,8 @@
 
 A k9s-style terminal UI for Datadog. Browse monitors, incidents, SLOs, logs,
 traces and dashboards from your keyboard, with the same muscle memory you
-already have from [k9s](https://k9scli.io): `:` to switch views, `/` to filter,
+already have from [k9s](https://k9scli.io): `:` to switch views (ike opens a
+Spotlight-style command palette — type to filter, enter to run), `/` to filter,
 `enter` to drill in, `esc` to go back.
 
 [![CI](https://github.com/Cesarsk/ike/actions/workflows/ci.yaml/badge.svg)](https://github.com/Cesarsk/ike/actions/workflows/ci.yaml)

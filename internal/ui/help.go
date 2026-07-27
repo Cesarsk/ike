@@ -134,6 +134,8 @@ func (a *App) buildHelp() tview.Primitive {
 	tv.SetBorder(true).SetTitle(" Help ").SetTitleColor(a.theme.Title)
 	fmt.Fprint(tv, a.theme.recolor(`
  [orange]NAVIGATION
+   [aqua]:[white]             the command palette: type to fuzzy-filter every command,
+                 ↑/↓ pick, enter run, esc cancel (:mon<enter> works as always)
    [aqua]:menu[white]         the full command list (aliases too) — enter runs a command
    [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces services
                  events rum synthetics downtimes dashboards errors hosts
