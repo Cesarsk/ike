@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
@@ -61,6 +62,11 @@ func (l *Live) Dashboard(ctx context.Context, id string) (*DashboardView, error)
 			w.Spark = pts
 			w.Last = pts[len(pts)-1]
 			w.HasData = true
+			// Toplists are per-group rankings: keep the last value of every
+			// series (one per group) so the renderer can draw bars.
+			if w.Type == "toplist" {
+				w.Items = seriesLastValues(mq)
+			}
 		} else {
 			w.Note = "no data in last 1h"
 		}
@@ -157,6 +163,31 @@ func widgetQuery(def map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// seriesLastValues extracts each series' scope label and last point, largest
+// first, capped — the toplist shape.
+func seriesLastValues(mq datadogV1.MetricsQueryResponse) []WidgetItem {
+	const maxItems = 6
+	var items []WidgetItem
+	for _, s := range mq.GetSeries() {
+		label := s.GetScope()
+		if label == "" || label == "*" {
+			label = s.GetExpression()
+		}
+		pts := s.GetPointlist()
+		for i := len(pts) - 1; i >= 0; i-- {
+			if len(pts[i]) > 1 && pts[i][1] != nil {
+				items = append(items, WidgetItem{Label: label, Value: *pts[i][1]})
+				break
+			}
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Value > items[j].Value })
+	if len(items) > maxItems {
+		items = items[:maxItems]
+	}
+	return items
 }
 
 func (l *Live) dashboards(ctx context.Context) ([]Row, error) {

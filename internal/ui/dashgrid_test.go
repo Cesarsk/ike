@@ -63,3 +63,39 @@ func TestClip(t *testing.T) {
 		t.Errorf("clip no-limit = %q", got)
 	}
 }
+
+func TestWidgetTypeRendering(t *testing.T) {
+	// query_value: the big single value + trend, no sparkline noise.
+	qv := widgetLines(data.Widget{
+		Title: "p99", Type: "query_value", HasData: true,
+		Spark: []float64{100, 150}, Last: 150,
+	}, 0)
+	if !strings.Contains(qv, "150") || !strings.Contains(qv, "▲ 50%") {
+		t.Errorf("query_value should render the value + trend:\n%s", qv)
+	}
+	if strings.Contains(qv, "▁") || strings.Contains(qv, "█") {
+		t.Errorf("query_value should not render a sparkline:\n%s", qv)
+	}
+
+	// toplist: ranked horizontal bars, scaled to the max.
+	tl := widgetLines(data.Widget{
+		Title: "Restarts", Type: "toplist", HasData: true,
+		Spark: []float64{1}, Last: 1,
+		Items: []data.WidgetItem{{Label: "kong-proxy", Value: 8}, {Label: "redis", Value: 2}},
+	}, 0)
+	if !strings.Contains(tl, "kong-proxy") || !strings.Contains(tl, "▇") {
+		t.Errorf("toplist should render bars:\n%s", tl)
+	}
+	kong, redis := 0, 0
+	for _, line := range strings.Split(tl, "\n") {
+		if strings.Contains(line, "kong-proxy") {
+			kong = strings.Count(line, "▇")
+		}
+		if strings.Contains(line, "redis") {
+			redis = strings.Count(line, "▇")
+		}
+	}
+	if kong <= redis {
+		t.Errorf("bars should scale with value (kong=%d redis=%d):\n%s", kong, redis, tl)
+	}
+}
