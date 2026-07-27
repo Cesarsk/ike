@@ -145,6 +145,18 @@ func rowColor(resKey string, r data.Row) tcell.Color {
 			return tcell.ColorGray
 		}
 		return tcell.ColorLightGray
+	case "errors":
+		if len(r.Cells) > 1 {
+			switch strings.ToLower(r.Cells[1]) {
+			case "open":
+				return tcell.ColorRed
+			case "acknowledged":
+				return tcell.ColorYellow
+			case "resolved", "ignored":
+				return tcell.ColorGray
+			}
+		}
+		return tcell.ColorLightGray
 	case "hosts":
 		if len(r.Cells) > 1 {
 			switch strings.ToLower(r.Cells[1]) {

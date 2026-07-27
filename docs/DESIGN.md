@@ -283,9 +283,14 @@ one-time getting-started page (`:manual`).
     container row carries its host's up/muted/down state, joined in the cache
     layer from the `:hosts` view (rides the hosts cache — at most one bounded
     fetch per TTL window; best-effort, a hosts failure just leaves the cell
-    blank). Spot "container fine, box dying" at a glance. Next: `:errors` (v2
-    `error_tracking` — the heaviest remaining view: POST search + JSON:API
-    included[] resolution) and the service-health rollup.
+    blank). Spot "container fine, box dying" at a glance.
+
+12. **Errors view — SHIPPED** (`:errors`, alias `:issues`): Error Tracking
+    issues over the last 24h via `ErrorTrackingApi.SearchIssues` (POST body,
+    ordered by total count; the JSON:API response resolves `included[]` issues
+    against the result relationships). `/` is an ET search; `r` triages an
+    issue's state (`UpdateIssueState`, confirm-gated); `l` drills to the
+    owning service's error logs. Next: the service-health rollup.
 
 ### Longer-term
 

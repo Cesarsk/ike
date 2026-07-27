@@ -124,6 +124,16 @@ func (c *Cached) SetHostMute(ctx context.Context, host string, mute bool) error 
 	return nil
 }
 
+// SetIssueState writes through and drops the errors cache so the next load
+// shows the new triage state.
+func (c *Cached) SetIssueState(ctx context.Context, id, state string) error {
+	if err := c.p.SetIssueState(ctx, id, state); err != nil {
+		return err
+	}
+	c.dropResource("errors")
+	return nil
+}
+
 // Paging passes straight through (writes are never cached); the affected
 // resource, if any, is invalidated by the caller.
 func (c *Cached) PageTeam(ctx context.Context, teamID, title, urgency, description string) (string, error) {

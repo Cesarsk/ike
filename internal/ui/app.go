@@ -1164,7 +1164,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 'l':
 		// monitors → its logs; traces → the trace's logs (trace_id query);
 		// containers → that container's logs (container_name query)
-		if a.res.Key == "monitors" || a.res.Key == "traces" || a.res.Key == "containers" {
+		if a.res.Key == "monitors" || a.res.Key == "traces" || a.res.Key == "containers" || a.res.Key == "errors" {
 			if r, ok := a.selectedRow(); ok {
 				a.drillToLogs(r)
 			}
@@ -1257,6 +1257,12 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case 'r':
+		if a.res.Key == "errors" {
+			if row, ok := a.selectedRow(); ok {
+				a.confirmIssueState(row)
+			}
+			return nil
+		}
 		if a.res.Key == "incidents" {
 			if len(a.marks) > 0 {
 				a.bulkResolveIncidents()

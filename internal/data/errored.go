@@ -46,6 +46,9 @@ func (e *Errored) Notebook(context.Context, string) (*NotebookView, error) {
 func (e *Errored) SetHostMute(context.Context, string, bool) error {
 	return e.err
 }
+func (e *Errored) SetIssueState(context.Context, string, string) error {
+	return e.err
+}
 func (e *Errored) PageTeam(context.Context, string, string, string, string) (string, error) {
 	return "", e.err
 }

@@ -310,6 +310,49 @@ func (a *App) addTodoAssigned(incidentID, content, handle string) {
 	}()
 }
 
+// issueStates are the Error Tracking triage targets offered by 'r'.
+var issueStates = []string{"open", "acknowledged", "resolved", "ignored"}
+
+// confirmIssueState offers to triage the selected Error Tracking issue into
+// another state, behind a confirmation modal (a write path).
+func (a *App) confirmIssueState(r data.Row) {
+	cur := ""
+	if len(r.Cells) > 1 {
+		cur = strings.ToLower(r.Cells[1])
+	}
+	var targets []string
+	for _, s := range issueStates {
+		if s != cur {
+			targets = append(targets, s)
+		}
+	}
+	buttons := append([]string{"Cancel"}, targetLabels(targets)...)
+	a.showConfirm(
+		fmt.Sprintf("Triage issue (currently %s) to:\nThis writes to Datadog.", cur),
+		buttons,
+		func(label string) {
+			state := strings.TrimPrefix(label, "→ ")
+			if label == "Cancel" || state == "" {
+				return
+			}
+			a.flash("triaging issue → "+state+" …", false)
+			go func() {
+				err := a.providerFor(r).SetIssueState(context.Background(), r.ID, state)
+				a.QueueUpdateDraw(func() {
+					if err != nil {
+						slog.Error("issue triage failed", "id", r.ID, "state", state, "err", err)
+						a.flash("✗ "+err.Error(), true)
+						return
+					}
+					a.flash("issue → "+state, false)
+					if a.res.Key == "errors" && a.page == "table" {
+						a.load(true) // cache was dropped; re-fetch to show the change
+					}
+				})
+			}()
+		})
+}
+
 // confirmCancelDowntime offers to cancel the selected downtime, behind a
 // confirmation modal (a write path).
 func (a *App) confirmCancelDowntime(r data.Row) {
