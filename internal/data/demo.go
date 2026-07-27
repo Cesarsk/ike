@@ -303,6 +303,8 @@ var demoContainers = []struct {
 	{"onboarding-web-a2", "running", "onboarding:2.1.0", "onboarding", "eks-stage", "ip-10-1-4-7.eks-stage", "1d", "team:frontend,env:stage,service:onboarding,kube_namespace:onboarding,kube_cluster_name:eks-stage"},
 	{"redis-1", "running", "redis:7.2", "data", "eks-prod", "redis-1.prod", "9d", "team:sre,env:prod,service:redis,kube_namespace:data,kube_cluster_name:eks-prod"},
 	{"velero-backup-1", "stopped", "velero:1.13", "velero", "eks-prod", "ip-10-0-2-9.eks-prod", "12h", "team:sre,env:prod,service:velero,kube_namespace:velero,kube_cluster_name:eks-prod"},
+	// Lives on the down demo host, so the HOST-ST join has something to show.
+	{"checkout-api-9f1", "running", "checkout-api:0.8.2", "payments", "eks-prod", "ip-10-0-1-14.eks-prod", "4h", "team:payments,env:prod,service:checkout-api,kube_namespace:payments,kube_cluster_name:eks-prod"},
 }
 
 // containers runs under Fetch's lock (do not re-lock d.mu — not reentrant).
@@ -316,7 +318,7 @@ func (d *Demo) containers(query string) []Row {
 		}
 		rows = append(rows, Row{
 			ID:       c.name,
-			Cells:    []string{c.name, c.state, c.image, c.ns, c.cluster, c.host, c.started, c.tags},
+			Cells:    []string{c.name, c.state, c.image, c.ns, c.cluster, c.host, "", c.started, c.tags},
 			Raw:      map[string]any{"name": c.name, "state": c.state, "image": c.image, "namespace": c.ns, "cluster": c.cluster, "host": c.host, "tags": c.tags},
 			URL:      WebBase(d.site) + "/containers?text=" + c.name,
 			LogQuery: "container_name:" + c.name,

@@ -43,7 +43,8 @@ func (l *Live) containers(ctx context.Context, query string) ([]Row, error) {
 		rows = append(rows, Row{
 			ID: a.GetName(),
 			// Order must match the resource's Columns:
-			// NAME STATE IMAGE NAMESPACE CLUSTER HOST STARTED TAGS.
+			// NAME STATE IMAGE NAMESPACE CLUSTER HOST HOST-ST STARTED TAGS.
+			// HOST-ST starts blank; the cache layer joins it from :hosts.
 			Cells: []string{
 				a.GetName(),
 				a.GetState(),
@@ -51,6 +52,7 @@ func (l *Live) containers(ctx context.Context, query string) ([]Row, error) {
 				tagValue(tags, "kube_namespace", "namespace"),
 				tagValue(tags, "kube_cluster_name", "cluster_name", "cluster"),
 				a.GetHost(),
+				"",
 				containerAge(a.GetStartedAt()),
 				strings.Join(tags, " "),
 			},
