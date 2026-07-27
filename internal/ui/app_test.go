@@ -1217,6 +1217,40 @@ func TestBulkActions(t *testing.T) {
 	app.Stop()
 }
 
+// TestCommandPalette: ':' opens the Spotlight-style overlay (browsable
+// catalog), typing filters it, enter runs the highlighted command, esc
+// cancels back to the covered page.
+func TestCommandPalette(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	pressRune(sim, ':')
+	waitFor(t, sim, "Command")   // the centered overlay
+	waitFor(t, sim, ":monitors") // empty query = the catalog, registry order
+	waitFor(t, sim, ":services") // (capped at 12 rows — :overview is below the fold)
+
+	// Type a partial command: the list narrows, enter runs the best match.
+	typeRunes(sim, "onc")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "On-Call(")
+
+	// esc cancels and restores the covered page.
+	pressRune(sim, ':')
+	waitFor(t, sim, "Command")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "On-Call(")
+
+	// Unmatched text falls through to execCommand verbatim (old semantics).
+	pressRune(sim, ':')
+	typeRunes(sim, "nosuchcmd")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "unknown command")
+	app.Stop()
+}
+
 // TestErrorsView: :errors lists Error Tracking issues; r triages one to a new
 // state (persisted through the demo overlay + cache drop); l drills to the
 // service's error logs.

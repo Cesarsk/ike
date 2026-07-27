@@ -252,6 +252,12 @@ type App struct {
 
 	confirmReturn string // page to restore after a confirm modal closes
 
+	// palette: the ':' command palette (Spotlight-style centered overlay)
+	paletteFlex   *tview.Flex
+	paletteInput  *tview.InputField
+	paletteList   *tview.List
+	paletteRuns   []string // run-commands backing the list, in display order
+	paletteReturn string   // page to restore on dismiss
 	// fuzzy: the 'F' fuzzy row finder (type to match, enter jumps to the row)
 	fuzzyFlex  *tview.Flex
 	fuzzyInput *tview.InputField
@@ -449,6 +455,14 @@ func (a *App) applyTheme() {
 		a.todoList.SetTitleColor(a.theme.Title)
 		a.todoList.SetSelectedStyle(sel)
 	}
+	if a.paletteFlex != nil {
+		a.paletteFlex.SetBorderColor(a.theme.Border)
+		a.paletteFlex.SetTitleColor(a.theme.Title)
+		a.paletteInput.SetLabelColor(a.theme.Label)
+		a.paletteInput.SetFieldBackgroundColor(a.theme.FieldBg)
+		a.paletteInput.SetFieldTextColor(a.theme.FieldFg)
+		a.paletteList.SetSelectedStyle(sel)
+	}
 	if a.fuzzyFlex != nil {
 		a.fuzzyFlex.SetBorderColor(a.theme.Border)
 		a.fuzzyFlex.SetTitleColor(a.theme.Title)
@@ -620,6 +634,17 @@ func (a *App) build() {
 		AddItem(a.fuzzyList, 0, 1, false)
 	a.fuzzyFlex.SetBorder(true).SetTitle(" Fuzzy find ")
 
+	// palette: ike's ':' — a centered Spotlight-style command overlay (not
+	// k9s's bottom prompt). Fixed-size box floated upper-third via spacers.
+	a.paletteInput = tview.NewInputField().SetLabel(" ❯ ")
+	a.paletteInput.SetChangedFunc(func(string) { a.renderPalette() })
+	a.paletteList = tview.NewList().ShowSecondaryText(false)
+	a.paletteList.SetMainTextColor(tcell.ColorWhite)
+	a.paletteFlex = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.paletteInput, 1, 0, true).
+		AddItem(a.paletteList, 0, 1, false)
+	a.paletteFlex.SetBorder(true).SetTitle(" Command ")
+
 	// todos: the incident to-do panel. See todos.go.
 	a.todoList = tview.NewList().ShowSecondaryText(true)
 	a.todoList.SetBorder(true)
@@ -667,6 +692,13 @@ func (a *App) build() {
 		AddPage("userpick", a.userPickFlex, true, false).
 		AddPage("todos", a.todoList, true, false).
 		AddPage("fuzzy", a.fuzzyFlex, true, false).
+		AddPage("palette", tview.NewFlex().
+			AddItem(nil, 0, 1, false).
+			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(nil, 0, 1, false).
+				AddItem(a.paletteFlex, 16, 0, true).
+				AddItem(nil, 0, 2, false), 72, 0, true).
+			AddItem(nil, 0, 1, false), true, false).
 		AddPage("help", a.buildHelp(), true, false).
 		AddPage("intro", a.buildIntro(), true, false).
 		AddPage("ctxform", ctxFormFlex, true, false).
@@ -749,7 +781,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -775,7 +807,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -792,7 +824,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -814,7 +846,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -834,7 +866,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.deleteSelectedQuery()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -847,7 +879,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.back()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -869,13 +901,29 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.moveColumn(-1)
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
 			return nil
 		}
 		return ev // the list handles ↑/↓ j/k navigation
+	case "palette":
+		switch {
+		case ev.Key() == tcell.KeyEscape:
+			a.closePalette(false)
+			return nil
+		case ev.Key() == tcell.KeyEnter:
+			a.closePalette(true)
+			return nil
+		case ev.Key() == tcell.KeyUp:
+			a.paletteMove(-1)
+			return nil
+		case ev.Key() == tcell.KeyDown:
+			a.paletteMove(1)
+			return nil
+		}
+		return ev // everything else types into the query
 	case "fuzzy":
 		switch {
 		case ev.Key() == tcell.KeyEscape:
@@ -925,7 +973,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.deleteTodoFlow()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == '?':
 			a.showHelp()
@@ -947,7 +995,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -1006,7 +1054,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -1023,7 +1071,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -1058,7 +1106,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -1081,7 +1129,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -1104,7 +1152,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.showHelp()
 			return nil
 		case ev.Rune() == ':':
-			a.openPrompt(promptCmd)
+			a.openPalette()
 			return nil
 		case ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -1123,7 +1171,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	}
 	switch ev.Rune() {
 	case ':':
-		a.openPrompt(promptCmd)
+		a.openPalette()
 		return nil
 	case '/':
 		a.openPrompt(promptFilter)
@@ -1961,6 +2009,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.todoList)
 	case "fuzzy":
 		a.SetFocus(a.fuzzyInput)
+	case "palette":
+		a.SetFocus(a.paletteInput)
 	case "ctxform":
 		a.SetFocus(a.ctxForm)
 	default:

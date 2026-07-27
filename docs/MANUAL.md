@@ -123,7 +123,7 @@ view; the row count is in the table title (`[18]`).
 
 | Key | Action |
 |-----|--------|
-| `:` | **command mode** — type a resource name/alias (`:mon`, `:logs`) and `enter`. |
+| `:` | **command palette** — a centered overlay listing every command; type to fuzzy-filter (name, alias, description), `↑`/`↓` to pick, `enter` to run, `esc` to cancel. Typing a full command (`:mon` + `enter`) works exactly like a classic prompt. |
 | `/` | **filter** the rows. In Logs/Traces/Events this is a real Datadog query sent to the API; elsewhere it filters the loaded rows. |
 | `enter` | **drill in** — the detail view, or a view-specific action (an SLO's error budget, a dashboard's widget grid). |
 | `esc` | **back** — first press clears an active filter; next press pops the navigation history (k9s-style: view, filter and selection are restored). |
