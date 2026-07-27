@@ -17,14 +17,21 @@ Type "./ike --demo"
 Enter
 Sleep 3s
 
-# Every command at a glance — the command palette (enter runs one).
-Type ":menu"
+# The command palette — ike's ':': a centered overlay, every command listed.
+# Pause on the open catalog, then type to fuzzy-filter and run.
+Type ":"
+Sleep 2s
+Type "overview"
+Sleep 800ms
 Enter
 Sleep 2500ms
 
-# Contexts: the orgs you're connected to (auth type per row); activate a
-# second org with space — active rows highlight and views start merging.
-Type ":ctx"
+# Contexts: activate a second org with space — active rows highlight and
+# views start merging (CTX column + per-org budgets).
+Type ":"
+Sleep 600ms
+Type "ctx"
+Sleep 400ms
 Enter
 Sleep 1500ms
 Down
@@ -32,13 +39,11 @@ Sleep 400ms
 Space
 Sleep 1800ms
 
-# Cross-org triage: open incidents + alerting monitors, worst first.
-Type ":overview"
-Enter
-Sleep 2500ms
-
-# Bulk actions: mark monitors with space, then mute them all at once.
-Type ":monitors"
+# Bulk actions: mark monitors with space, mute them all behind one confirm.
+Type ":"
+Sleep 600ms
+Type "monitors"
+Sleep 400ms
 Enter
 Sleep 1500ms
 Space
@@ -52,25 +57,42 @@ Right
 Enter
 Sleep 2s
 
+# Error Tracking triage: grouped issues, highest count first.
+Type ":"
+Sleep 600ms
+Type "errors"
+Sleep 400ms
+Enter
+Sleep 2500ms
+
+# Infrastructure: hosts (problems first), then containers with the
+# host-health join (a running container on a down box shows HOST-ST=down).
+Type ":"
+Sleep 600ms
+Type "hosts"
+Sleep 400ms
+Enter
+Sleep 2s
+Type ":"
+Sleep 600ms
+Type "containers"
+Sleep 400ms
+Enter
+Sleep 2500ms
+
 # Datadog spend: estimated + projected, trend, anomalies.
-Type ":cost"
+Type ":"
+Sleep 600ms
+Type "cost"
+Sleep 400ms
 Enter
 Sleep 2500ms
 
 # On-call: who's paged now + the escalation ladder.
-Type ":oncall"
-Enter
-Sleep 1500ms
-Enter
-Sleep 2500ms
-Escape
+Type ":"
 Sleep 600ms
-
-# Security signals (Cloud SIEM) and notebooks (runbooks / postmortems).
-Type ":security"
-Enter
-Sleep 2s
-Type ":notebooks"
+Type "oncall"
+Sleep 400ms
 Enter
 Sleep 1500ms
 Enter
@@ -79,7 +101,10 @@ Escape
 Sleep 600ms
 
 # The debugging loop: logs, narrowed by a Datadog search query.
-Type ":logs"
+Type ":"
+Sleep 600ms
+Type "logs"
+Sleep 400ms
 Enter
 Sleep 1500ms
 Type "/"
@@ -90,15 +115,23 @@ Enter
 Sleep 2s
 
 # Watch mode: leave a view refreshing hands-off for a wall display.
-Type ":overview"
+Type ":"
+Sleep 600ms
+Type "overview"
+Sleep 400ms
 Enter
 Sleep 1200ms
-Type ":watch"
+Type ":"
+Sleep 600ms
+Type "watch"
+Sleep 400ms
 Enter
 Sleep 2500ms
 
 # Out.
-Type ":watch"
+Type ":"
+Sleep 400ms
+Type "watch"
 Enter
 Sleep 500ms
 Type "q"
