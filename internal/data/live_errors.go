@@ -23,6 +23,10 @@ func (l *Live) errorIssues(ctx context.Context, query string) ([]Row, error) {
 		now.Add(-24*time.Hour).UnixMilli(), query, now.UnixMilli())
 	orderBy := datadogV2.ISSUESSEARCHREQUESTDATAATTRIBUTESORDERBY_TOTAL_COUNT
 	attrs.OrderBy = &orderBy
+	// The search requires a track or persona (400 "either track or …" without
+	// one — live-validated); ALL spans backend, browser and mobile issues.
+	persona := datadogV2.ISSUESSEARCHREQUESTDATAATTRIBUTESPERSONA_ALL
+	attrs.Persona = &persona
 	body := datadogV2.NewIssuesSearchRequest(*datadogV2.NewIssuesSearchRequestData(
 		*attrs, datadogV2.ISSUESSEARCHREQUESTDATATYPE_SEARCH_REQUEST))
 	resp, httpresp, err := datadogV2.NewErrorTrackingApi(l.client).SearchIssues(ctx, *body,
