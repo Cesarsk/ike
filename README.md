@@ -41,6 +41,8 @@ Spotlight-style command palette — type to filter, enter to run), `/` to filter
 > incident state / severity / commander, incident to-dos, cancel a downtime,
 > raise and resolve an On-Call page, page a monitor's on-call owner) with bulk
 > selection (mark rows with space, then act on all at once),
+> a per-service **health rollup** (monitors + SLOs + errors + events + on-call
+> owner on one screen, `h` on `:services`),
 > a fuzzy row finder, session restore, and an offline demo mode. New here?
 > The **[User Manual](docs/MANUAL.md)** is a full walkthrough.
 

@@ -146,7 +146,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **SLOs** | `:slos` `:slo` `:s` | Name, type, target, timeframe, tags. |
 | **Logs** | `:logs` `:log` `:l` | Time, status, service, host, message — server-side search. |
 | **Traces** | `:traces` `:tr` `:apm` `:spans` | APM spans: time, service, resource, duration, error, trace id. |
-| **Services** | `:services` `:svc` | Your APM services for an env (`/` sets the env, default `prod`); `enter` → that service's traces. |
+| **Services** | `:services` `:svc` | Your APM services for an env (`/` sets the env, default `prod`); `enter` → that service's traces; **`h` → the service-health rollup**: its monitors, SLOs, error-tracking issues, recent events, and the owning team's on-call on one screen (`P` pages them, `l`/`t` drill to error logs/traces). |
 | **Events** | `:events` `:ev` | The change stream: deploys, alerts, config changes. |
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
