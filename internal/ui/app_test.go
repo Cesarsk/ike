@@ -1217,6 +1217,36 @@ func TestBulkActions(t *testing.T) {
 	app.Stop()
 }
 
+// TestServiceHealth: h on a :services row opens the one-screen rollup —
+// monitors, SLOs, errors and owner/on-call for that service — and P offers
+// to page the owning team.
+func TestServiceHealth(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":services")
+	waitFor(t, sim, "Services(")
+	waitFor(t, sim, "kong-proxy") // first row (alphabetical)
+	pressRune(sim, 'h')
+	waitFor(t, sim, "Health · kong-proxy")
+	waitFor(t, sim, "Kong data plane 5xx rate") // its monitor
+	waitFor(t, sim, "Kong availability")        // its SLO
+	waitFor(t, sim, "TimeoutError")             // its ET issue
+	waitFor(t, sim, "owner")                    // team resolved from the monitor tag
+	waitForMatch(t, sim, `(?s)SRE On-.*Call`)   // who is on call now
+
+	// P pages the owning team straight from the panel.
+	pressRune(sim, 'P')
+	waitFor(t, sim, `Page team "sre"`)
+	press(sim, tcell.KeyEscape) // cancel the confirm
+	press(sim, tcell.KeyEscape) // close the panel
+	waitFor(t, sim, "Services(")
+	app.Stop()
+}
+
 // TestCommandPalette: ':' opens the Spotlight-style overlay (browsable
 // catalog), typing filters it, enter runs the highlighted command, esc
 // cancels back to the covered page.

@@ -196,7 +196,11 @@ type App struct {
 	// :notebooks reading panel (enter on a notebook): its rendered cells.
 	notebook    *tview.TextView
 	notebookRow data.Row
-	splash      *tview.TextView // startup logo, auto-dismissed
+	// service-health rollup panel (h on :services): the one-screen summary.
+	healthView *tview.TextView
+	healthRow  data.Row
+	healthData *healthData
+	splash     *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
 	logCtxFlex *tview.Flex
@@ -422,7 +426,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook, a.healthView} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -575,6 +579,9 @@ func (a *App) build() {
 	a.notebook = tview.NewTextView().SetDynamicColors(true).SetWrap(true)
 	a.notebook.SetBorder(true)
 
+	a.healthView = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.healthView.SetBorder(true)
+
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
@@ -684,6 +691,7 @@ func (a *App) build() {
 		AddPage("oncall", a.onCall, true, false).
 		AddPage("teammembers", a.teamMembers, true, false).
 		AddPage("notebook", a.notebook, true, false).
+		AddPage("health", a.healthView, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -1137,6 +1145,40 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 		}
 		return ev
+	case "health":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			a.showServiceHealth(a.healthRow) // re-gather
+			return nil
+		case ev.Rune() == 'o':
+			if a.healthRow.URL != "" {
+				a.openURL(a.healthRow.URL)
+			}
+			return nil
+		case ev.Rune() == 'l':
+			a.drillToLogs(data.Row{ID: a.healthRow.ID, LogQuery: "service:" + a.healthRow.ID + " status:error", Ctx: a.healthRow.Ctx})
+			return nil
+		case ev.Rune() == 't':
+			a.drillToServiceTraces(a.healthRow)
+			return nil
+		case ev.Rune() == 'P':
+			a.healthPageOwner()
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		case ev.Rune() == ':':
+			a.openPalette()
+			return nil
+		case ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
 	case "notebook":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
@@ -1207,6 +1249,13 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case 'd':
 		if a.res.Key == ctxResource.Key {
 			a.confirmDeleteContext() // plain-key alias for ctrl-d (confirm-gated)
+			return nil
+		}
+	case 'h':
+		if a.res.Key == "services" {
+			if row, ok := a.selectedRow(); ok {
+				a.showServiceHealth(row) // the service-health rollup
+			}
 			return nil
 		}
 	case 'l':
@@ -1963,6 +2012,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("teammembers")
 	case "notebook":
 		a.showPage("notebook")
+	case "health":
+		a.showPage("health")
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -1993,6 +2044,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.teamMembers)
 	case "notebook":
 		a.SetFocus(a.notebook)
+	case "health":
+		a.SetFocus(a.healthView)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":

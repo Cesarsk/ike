@@ -290,7 +290,16 @@ one-time getting-started page (`:manual`).
     ordered by total count; the JSON:API response resolves `included[]` issues
     against the result relationships). `/` is an ET search; `r` triages an
     issue's state (`UpdateIssueState`, confirm-gated); `l` drills to the
-    owning service's error logs. Next: the service-health rollup.
+    owning service's error logs.
+
+13. **Service-health rollup — SHIPPED** (`h` on `:services`): the correlation
+    payoff — one screen per service: its monitors (state-coloured), SLOs,
+    error-tracking issues, recent events, and the owning team + who is on call
+    right now (team: tag → on-call team, the P-walk). Composed entirely from
+    the per-resource caches (a gather costs at most one fetch per stale
+    section); sections fail independently ("unavailable") instead of failing
+    the panel. `P` pages the owner from the panel; `l`/`t` drill to the
+    service's error logs / traces.
 
 ### Longer-term
 

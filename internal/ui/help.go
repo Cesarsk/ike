@@ -53,6 +53,11 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
 		}
+	case "health":
+		lines = []string{
+			"[aqua]<l>[white]error logs  [aqua]<t>[white]traces  [aqua]<P>[white]page owner  [aqua]<o>[white]open  [aqua]<ctrl-r>[white]refresh",
+			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	case "logcontext":
 		lines = []string{
 			"[aqua]<↑/↓ j/k>[white]move  [aqua]<enter>[white]expand  [aqua]<t>[white]trace  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",
@@ -101,7 +106,7 @@ func (a *App) setHints() {
 		case "traces":
 			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  <Q>saved  window: <1>15m..<5>7d")
 		case "services":
-			lines = append(lines, "[gray]<enter>traces for service  </>env (default prod)  <s>sort <S>reverse")
+			lines = append(lines, "[gray]<h>health rollup  <enter>traces for service  </>env (default prod)  <s>sort")
 		case "events":
 			lines = append(lines, "[gray]</>query  <Q>saved  window: <1>15m..<5>7d  <s>sort   (deploys, alerts, changes)")
 		case "rum":
