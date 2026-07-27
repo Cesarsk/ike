@@ -13,8 +13,10 @@ import (
 // count first (the API orders). The query is an ET search ('/'). The response
 // is JSON:API: data carries per-issue counts, included[] the issue objects.
 func (l *Live) errorIssues(ctx context.Context, query string) ([]Row, error) {
-	if query == "*" {
-		query = ""
+	// The ET search rejects an empty query with a 400 ("attribute \"query\"
+	// is required" — live-validated); "*" is the match-all.
+	if strings.TrimSpace(query) == "" {
+		query = "*"
 	}
 	now := time.Now()
 	attrs := datadogV2.NewIssuesSearchRequestDataAttributes(
