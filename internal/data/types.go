@@ -357,6 +357,9 @@ type Provider interface {
 	Notebook(ctx context.Context, id string) (*NotebookView, error)
 	// SetHostMute mutes or unmutes a host by name, behind a confirmation.
 	SetHostMute(ctx context.Context, host string, mute bool) error
+	// SetIssueState triages an Error Tracking issue (OPEN / ACKNOWLEDGED /
+	// RESOLVED / IGNORED), behind a confirmation.
+	SetIssueState(ctx context.Context, id, state string) error
 	// PageTeam raises an On-Call page against a team (urgency "high"/"low").
 	// A write — the UI gates it behind a confirm and fakes it in demo mode.
 	// Returns the new page's id, used for the acknowledge/escalate/resolve
@@ -492,6 +495,17 @@ func Resources() []Resource {
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 			EmptyHint: "No security signals in the last 24h. Cloud SIEM / CSM may not be " +
 				"enabled for this org, or nothing matched the query.",
+		},
+		{
+			// Error Tracking issues — grouped, deduplicated errors (last 24h),
+			// highest count first. '/' is an ET search query (service:…);
+			// r changes an issue's state (triage).
+			Key: "errors", Title: "Errors",
+			Aliases: []string{"errors", "error", "err", "issues"},
+			Columns: []string{"LAST", "STATE", "COUNT", "TYPE", "MESSAGE", "SERVICE"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			EmptyHint: "No error-tracking issues in the last 24h. Error Tracking may not " +
+				"be enabled, or nothing matched the query.",
 		},
 		{
 			// Infrastructure host list — the k9s-style inventory. Down/muted

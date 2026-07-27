@@ -112,6 +112,8 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]</>signals query  <enter>detail  <s>sort   (Cloud SIEM / CSM · last 24h)")
 		case "notebooks":
 			lines = append(lines, "[gray]<enter>read the notebook  <s>sort <S>reverse   (runbooks, postmortems)")
+		case "errors":
+			lines = append(lines, "[gray]</>ET query (service:…)  <r>triage state  <l>service error logs  <enter>detail   (last 24h)")
 		case "hosts":
 			lines = append(lines, "[gray]<m>mute/unmute host  <o>open  <s>sort <S>reverse   (down/muted first)")
 		case "containers":
@@ -134,8 +136,8 @@ func (a *App) buildHelp() tview.Primitive {
  [orange]NAVIGATION
    [aqua]:menu[white]         the full command list (aliases too) — enter runs a command
    [aqua]:<resource>[white]   switch view: monitors incidents slos logs traces services
-                 events rum synthetics downtimes dashboards hosts containers
-                 teams oncall
+                 events rum synthetics downtimes dashboards errors hosts
+                 containers teams oncall
                  (aliases: mon inc s l tr svc ev dt d syn)
                  :overview (cross-org triage), :cost (Datadog spend),
                  :oncall (who's on call + paging), :teams (members), :ctx, :settings

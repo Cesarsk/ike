@@ -1217,6 +1217,40 @@ func TestBulkActions(t *testing.T) {
 	app.Stop()
 }
 
+// TestErrorsView: :errors lists Error Tracking issues; r triages one to a new
+// state (persisted through the demo overlay + cache drop); l drills to the
+// service's error logs.
+func TestErrorsView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":errors")
+	waitFor(t, sim, "Errors(")
+	waitFor(t, sim, "NullPointerException")
+	waitFor(t, sim, "18342") // count column (SERVICE is clipped on the narrow sim)
+
+	// Filter to one issue and triage it: open → acknowledged.
+	typeRunes(sim, "/service:kong-proxy")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "TimeoutError")
+	pressRune(sim, 'r')
+	waitFor(t, sim, "Triage issue")
+	press(sim, tcell.KeyRight) // Cancel → open? no: current=open, first target=acknowledged
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "acknowledged")
+
+	// l drills to the service's error logs.
+	pressRune(sim, 'l')
+	waitFor(t, sim, "Logs(")
+	waitForMatch(t, sim, `service:kong-proxy`)
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Errors(")
+	app.Stop()
+}
+
 // TestPageMonitorOwner: P on a monitor walks its team: tag to the owning
 // on-call team, names who it wakes, and pages behind a confirm; the raised
 // page hands off to the :oncall panel where a/e/r manage it.
