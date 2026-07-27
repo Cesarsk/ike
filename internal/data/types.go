@@ -160,9 +160,16 @@ type Widget struct {
 	Query      string
 	Spark      []float64
 	Last       float64
+	Items      []WidgetItem // toplist widgets: per-group values, largest first
 	HasData    bool
 	Note       string // why there's no sparkline (unsupported widget / query type)
 	X, Y, W, H int    // dashboard grid coords; W==0 → unknown (ordered layout)
+}
+
+// WidgetItem is one group of a toplist widget: its scope label and value.
+type WidgetItem struct {
+	Label string
+	Value float64
 }
 
 // DashboardView is a dashboard rendered for the terminal: metadata plus a

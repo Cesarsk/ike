@@ -537,6 +537,12 @@ func (d *Demo) Dashboard(_ context.Context, id string) (*DashboardView, error) {
 			wd.Spark = pts
 			wd.Last = pts[len(pts)-1]
 			wd.HasData = true
+			if w.typ == "toplist" {
+				wd.Items = []WidgetItem{
+					{Label: "kong-proxy", Value: 7}, {Label: "payments-api", Value: 4},
+					{Label: "redis", Value: 2}, {Label: "coredns", Value: 1},
+				}
+			}
 		} else {
 			wd.Note = "note widget — no metric to chart"
 		}

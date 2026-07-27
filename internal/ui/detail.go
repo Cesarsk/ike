@@ -460,12 +460,18 @@ func renderWidgetRow(row []data.Widget) string {
 	return b.String()
 }
 
-// widgetLines renders one widget as title / sparkline+value (or note) /
-// query. width>0 truncates the sparkline and query to fit a grid cell.
+// widgetLines renders one widget by its Datadog type: query_value as a big
+// single value with its 1h trend, toplist as ranked horizontal bars, anything
+// else with data as a sparkline. width>0 truncates content to fit a grid cell.
 func widgetLines(w data.Widget, width int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[aqua::b]%s[-:-:-] [gray]%s[-]\n", tview.Escape(clip(w.Title, width)), tview.Escape(w.Type))
 	switch {
+	case w.HasData && w.Type == "query_value":
+		// The single-value / gauge shape: the number is the point.
+		fmt.Fprintf(&b, "[white::b]  %s[-:-:-]%s\n", data.FormatValue(w.Last), trendLabel(w.Spark))
+	case w.HasData && w.Type == "toplist" && len(w.Items) > 0:
+		b.WriteString(topListBars(w.Items, width))
 	case w.HasData:
 		spark := data.Sparkline(w.Spark)
 		if width > 10 && len(spark) > width-10 {
@@ -477,6 +483,55 @@ func widgetLines(w data.Widget, width int) string {
 	}
 	if w.Query != "" {
 		fmt.Fprintf(&b, "[darkcyan]%s[-]\n", tview.Escape(clip(w.Query, width)))
+	}
+	return b.String()
+}
+
+// trendLabel summarises a series as its change over the window (▲/▼ percent),
+// blank when flat or unknowable.
+func trendLabel(spark []float64) string {
+	if len(spark) < 2 || spark[0] == 0 {
+		return ""
+	}
+	pct := (spark[len(spark)-1] - spark[0]) / spark[0] * 100
+	switch {
+	case pct >= 1:
+		return fmt.Sprintf("  [gray]▲ %.0f%% (1h)[-]", pct)
+	case pct <= -1:
+		return fmt.Sprintf("  [gray]▼ %.0f%% (1h)[-]", -pct)
+	}
+	return ""
+}
+
+// topListBars draws a toplist's groups as labelled horizontal bars scaled to
+// the largest value.
+func topListBars(items []data.WidgetItem, width int) string {
+	barW := 16
+	labelW := 14
+	if width > 0 && width < 44 {
+		barW, labelW = 8, 10
+	}
+	max := items[0].Value
+	for _, it := range items {
+		if it.Value > max {
+			max = it.Value
+		}
+	}
+	var b strings.Builder
+	for _, it := range items {
+		n := 0
+		if max > 0 {
+			n = int(it.Value / max * float64(barW))
+		}
+		if n < 1 && it.Value > 0 {
+			n = 1
+		}
+		label := it.Label
+		if len(label) > labelW {
+			label = label[:labelW-1] + "…"
+		}
+		fmt.Fprintf(&b, "[white]%-*s[-] [green]%s[-] %s\n",
+			labelW, tview.Escape(label), strings.Repeat("▇", n), data.FormatValue(it.Value))
 	}
 	return b.String()
 }
