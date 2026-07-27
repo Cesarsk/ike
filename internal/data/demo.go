@@ -28,6 +28,7 @@ type Demo struct {
 	dtGone   map[string]bool   // downtime id → cancelled, mutated by CancelDowntime
 	incTodos map[string][]Todo // incident id → to-dos, mutated by the to-do panel
 	hostMute map[string]bool   // host name → muted, mutated by SetHostMute
+	errSt    map[string]string // issue id → state, mutated by SetIssueState
 }
 
 type demoMonitor struct {
@@ -190,6 +191,8 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.notebooks(), nil
 	case "hosts":
 		return d.hosts(), nil
+	case "errors":
+		return d.errorIssues(query), nil
 	case "containers":
 		return d.containers(query), nil
 	}
@@ -251,6 +254,54 @@ func (d *Demo) notebooks() []Row {
 		})
 	}
 	return rows
+}
+
+// demoErrors backs the :errors view; triage state is overlaid from d.errSt.
+var demoErrors = []struct {
+	id, last, state, count, typ, msg, service string
+}{
+	{"err-1", "2m", "open", "18342", "NullPointerException", "Cannot invoke Order.getId() because order is null", "payments-api"},
+	{"err-2", "7m", "open", "4021", "TimeoutError (crash)", "upstream request timeout after 30s", "kong-proxy"},
+	{"err-3", "41m", "acknowledged", "913", "ValueError", "invalid literal for settlement amount", "trading-engine"},
+	{"err-4", "3h", "open", "377", "TypeError", "cannot read properties of undefined (reading token)", "onboarding"},
+	{"err-5", "2d", "resolved", "12055", "ConnectionResetError", "connection reset by peer", "redis"},
+}
+
+// errorIssues runs under Fetch's lock (do not re-lock d.mu — not reentrant).
+func (d *Demo) errorIssues(query string) []Row {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(demoErrors))
+	for _, e := range demoErrors {
+		if q != "" && !strings.Contains(strings.ToLower(e.typ+" "+e.msg+" service:"+e.service), q) {
+			continue
+		}
+		state := e.state
+		if s, ok := d.errSt[e.id]; ok {
+			state = strings.ToLower(s)
+		}
+		rows = append(rows, Row{
+			ID:       e.id,
+			Cells:    []string{e.last, state, e.count, e.typ, e.msg, e.service},
+			Raw:      map[string]any{"id": e.id, "type": e.typ, "message": e.msg, "service": e.service, "state": state, "count": e.count},
+			URL:      WebBase(d.site) + "/error-tracking?issueId=" + e.id,
+			LogQuery: errorLogQuery(e.service),
+		})
+	}
+	return rows
+}
+
+// SetIssueState overlays a demo issue's triage state so it survives a reload.
+func (d *Demo) SetIssueState(_ context.Context, id, state string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.errSt == nil {
+		d.errSt = map[string]string{}
+	}
+	d.errSt[id] = state
+	return nil
 }
 
 // demoHosts backs the :hosts view; muted state is overlaid from d.hostMute.
