@@ -508,9 +508,10 @@ func Resources() []Resource {
 			// containers sort first. Read-only.
 			Key: "containers", Title: "Containers",
 			Aliases: []string{"containers", "container", "cnt", "pods"},
-			Columns: []string{"NAME", "STATE", "IMAGE", "NAMESPACE", "CLUSTER", "HOST", "STARTED", "TAGS"},
-			// NAMESPACE/CLUSTER ship hidden — enable per taste with C.
-			DefaultColumns: []string{"NAME", "STATE", "IMAGE", "HOST", "STARTED", "TAGS"},
+			Columns: []string{"NAME", "STATE", "IMAGE", "NAMESPACE", "CLUSTER", "HOST", "HOST-ST", "STARTED", "TAGS"},
+			// NAMESPACE/CLUSTER ship hidden — enable per taste with C. HOST-ST
+			// is the host-health join (filled by the cache layer from :hosts).
+			DefaultColumns: []string{"NAME", "STATE", "IMAGE", "HOST", "HOST-ST", "STARTED", "TAGS"},
 			TTL:            30 * time.Second,
 			ServerQuery:    true, // '/' is a Datadog tag query (kube_namespace:…, cluster:…)
 			EmptyHint: "No containers match. Container collection may be disabled in the " +

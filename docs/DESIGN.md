@@ -277,9 +277,15 @@ one-time getting-started page (`:manual`).
     The raised page hands off to the `:oncall` panel (same team) where `a`/`e`/`r`
     drive its lifecycle — and reopening the same team's panel no longer drops an
     in-flight page. Uses only existing API surface: one cached team fetch + one
-    on-call lookup per invocation. Next: `:errors` (v2 `error_tracking` — the
-    heaviest remaining view: POST search + JSON:API included[] resolution),
-    host-status on containers, and the service-health rollup.
+    on-call lookup per invocation.
+
+11. **Container→host health join — SHIPPED** (`HOST-ST` on `:containers`): each
+    container row carries its host's up/muted/down state, joined in the cache
+    layer from the `:hosts` view (rides the hosts cache — at most one bounded
+    fetch per TTL window; best-effort, a hosts failure just leaves the cell
+    blank). Spot "container fine, box dying" at a glance. Next: `:errors` (v2
+    `error_tracking` — the heaviest remaining view: POST search + JSON:API
+    included[] resolution) and the service-health rollup.
 
 ### Longer-term
 

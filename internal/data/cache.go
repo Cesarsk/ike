@@ -87,6 +87,33 @@ func (c *Cached) Notebook(ctx context.Context, id string) (*NotebookView, error)
 	return c.p.Notebook(ctx, id)
 }
 
+// joinHostStatus fills the containers' HOST-ST cell from the hosts view — the
+// container→host health correlation. It rides the hosts cache (one bounded
+// fetch per TTL window at most) and is strictly best-effort: any failure
+// leaves the cell blank rather than failing the containers view.
+func (c *Cached) joinHostStatus(ctx context.Context, rows []Row) {
+	const hostCol, statusCol = 5, 6 // containers: HOST, HOST-ST
+	hostsRes, ok := ResourceByAlias("hosts")
+	if !ok {
+		return
+	}
+	hosts, _, _, err := c.Fetch(ctx, hostsRes, "", "", false)
+	if err != nil {
+		return
+	}
+	status := make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		if len(h.Cells) > 1 {
+			status[h.Cells[0]] = h.Cells[1]
+		}
+	}
+	for i := range rows {
+		if len(rows[i].Cells) > statusCol {
+			rows[i].Cells[statusCol] = status[rows[i].Cells[hostCol]]
+		}
+	}
+}
+
 // SetHostMute writes through and drops the hosts cache so the next load shows
 // the new mute state.
 func (c *Cached) SetHostMute(ctx context.Context, host string, mute bool) error {
@@ -239,6 +266,9 @@ func (c *Cached) Fetch(ctx context.Context, res Resource, query, timeRange strin
 			return e.rows, e.at, true, err
 		}
 		return nil, time.Time{}, false, err
+	}
+	if res.Key == "containers" {
+		c.joinHostStatus(ctx, rows)
 	}
 
 	now := time.Now()

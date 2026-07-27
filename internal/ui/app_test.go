@@ -1282,6 +1282,11 @@ func TestContainersView(t *testing.T) {
 		t.Fatal("tag filter kube_namespace:payments should exclude kong-proxy")
 	}
 
+	// HOST-ST join: checkout-api runs on the down demo host, so its row
+	// carries the host's health from the :hosts view.
+	waitFor(t, sim, "checkout-api")
+	waitFor(t, sim, "down")
+
 	// l drills to that container's logs (container_name query).
 	pressRune(sim, 'l')
 	waitFor(t, sim, "Logs(")
