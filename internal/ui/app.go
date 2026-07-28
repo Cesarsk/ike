@@ -2674,7 +2674,8 @@ func (a *App) markedRows() []data.Row {
 // real 2-D arrangement (a width-12 widget fills a row; two width-6 share one).
 const dashGridCols = 12
 
-var tagRe = regexp.MustCompile(`\[[a-zA-Z0-9_,:;.#-]*\]`)
+// Matches tview colour tags AND region tags (["w3"]) — both are zero-width.
+var tagRe = regexp.MustCompile(`\["[^"]*"\]|\[[a-zA-Z0-9_,:;.#-]*\]`)
 
 func (a *App) openSelected() {
 	r, ok := a.selectedRow()

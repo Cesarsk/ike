@@ -385,7 +385,8 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 				a.dash.SetText("\n  [red]✗ " + tview.Escape(err.Error()))
 				return
 			}
-			text, order := renderDashboard(view, window.label)
+			_, _, paneW, _ := a.dash.GetInnerRect()
+			text, order := renderDashboard(view, window.label, paneW)
 			a.dashViewData, a.dashWidgets, a.dashSel, a.dashZoom = view, order, 0, false
 			a.dash.SetText(text)
 			a.dashHighlight()
@@ -399,10 +400,19 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 // renderDashboard turns a DashboardView into the terminal panel. When the
 // dashboard has layout coordinates it renders a grid (widgets side by side,
 // in Datadog reading order); otherwise it falls back to a one-per-line list.
-func renderDashboard(v *data.DashboardView, rangeLabel string) (string, []data.Widget) {
+func renderDashboard(v *data.DashboardView, rangeLabel string, paneWidth int) (string, []data.Widget) {
+	// Fill the terminal the user actually has, instead of cramming into a
+	// fixed column budget — the single biggest de-densifier on wide screens.
+	rowWidth := paneWidth - 4
+	if rowWidth < 60 {
+		rowWidth = 60
+	}
+	rule := " [#444444]" + strings.Repeat("─", rowWidth) + "[-]\n"
 	var b strings.Builder
 	fmt.Fprintf(&b, " [orange::b]%s[-:-:-]\n", tview.Escape(v.Title))
-	fmt.Fprintf(&b, " [gray]%d widgets · last %s (<1>15m..<5>7d) · <j/k> select · <enter> zoom · <ctrl-r> refresh[-]\n\n", len(v.Widgets), rangeLabel)
+	fmt.Fprintf(&b, " [gray]%d widgets · last %s (<1>15m..<5>7d) · <j/k> select · <enter> zoom · <ctrl-r> refresh[-]\n", len(v.Widgets), rangeLabel)
+	b.WriteString(rule)
+	b.WriteString("\n")
 
 	hasCoords := false
 	for _, w := range v.Widgets {
@@ -417,6 +427,9 @@ func renderDashboard(v *data.DashboardView, rangeLabel string) (string, []data.W
 	if !hasCoords {
 		for i, w := range ws {
 			b.WriteString(widgetLines(w, 0, i))
+			if i < len(ws)-1 {
+				b.WriteString(rule)
+			}
 			b.WriteString("\n")
 		}
 	} else {
@@ -431,8 +444,11 @@ func renderDashboard(v *data.DashboardView, rangeLabel string) (string, []data.W
 		var row []data.Widget
 		units, base := 0, 0
 		flush := func() {
+			if base > 0 {
+				b.WriteString(rule) // dim rule between widget rows
+			}
 			if len(row) > 0 {
-				b.WriteString(renderWidgetRow(row, base))
+				b.WriteString(renderWidgetRow(row, base, rowWidth))
 				base += len(row)
 				row, units = nil, 0
 			}
@@ -459,9 +475,10 @@ func renderDashboard(v *data.DashboardView, rangeLabel string) (string, []data.W
 
 // renderWidgetRow lays out a row of widgets side by side in equal-width
 // terminal columns, zipping their lines together with tag-aware padding.
-func renderWidgetRow(row []data.Widget, base int) string {
-	const rowWidth = 96
-	cellW := rowWidth/len(row) - 2
+func renderWidgetRow(row []data.Widget, base, rowWidth int) string {
+	// Cells share the row minus " │ " separators between them.
+	sep := 3 * (len(row) - 1)
+	cellW := (rowWidth - sep) / len(row)
 	if cellW < 18 {
 		cellW = 18
 	}
@@ -477,12 +494,14 @@ func renderWidgetRow(row []data.Widget, base int) string {
 	for ln := 0; ln < maxLines; ln++ {
 		b.WriteString(" ")
 		for i := range cells {
+			if i > 0 {
+				b.WriteString(" [#444444]│[-] ") // dim cell boundary
+			}
 			cell := ""
 			if ln < len(cells[i]) {
 				cell = cells[i][ln]
 			}
 			b.WriteString(padVisible(cell, cellW))
-			b.WriteString("  ")
 		}
 		b.WriteString("\n")
 	}
@@ -563,7 +582,8 @@ func (a *App) dashZoomOut() {
 	if a.dashViewData == nil {
 		return
 	}
-	text, order := renderDashboard(a.dashViewData, dashRanges[a.dashRangeIx].label)
+	_, _, paneW, _ := a.dash.GetInnerRect()
+	text, order := renderDashboard(a.dashViewData, dashRanges[a.dashRangeIx].label, paneW)
 	a.dashWidgets = order
 	a.dash.SetText(text)
 	a.dashHighlight()

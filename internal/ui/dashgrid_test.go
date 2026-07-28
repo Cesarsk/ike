@@ -19,7 +19,7 @@ func TestRenderDashboardGrid(t *testing.T) {
 			{Title: "Wide", Type: "timeseries", X: 0, Y: 2, W: 12, HasData: true, Spark: []float64{1, 1, 1}, Last: 1},
 		},
 	}
-	out, _ := renderDashboard(v, "1h")
+	out, _ := renderDashboard(v, "1h", 100)
 	// Left and Right must appear on the same physical line (grid, not list).
 	var sideBySide bool
 	for _, line := range strings.Split(out, "\n") {
@@ -41,7 +41,7 @@ func TestRenderDashboardListFallback(t *testing.T) {
 		{Title: "A", Type: "note", Note: "n"},
 		{Title: "B", Type: "timeseries", HasData: true, Spark: []float64{1, 2}, Last: 2},
 	}}
-	out, _ := renderDashboard(v, "1h")
+	out, _ := renderDashboard(v, "1h", 100)
 	if !strings.Contains(out, "A") || !strings.Contains(out, "B") {
 		t.Errorf("list fallback dropped widgets:\n%s", out)
 	}
