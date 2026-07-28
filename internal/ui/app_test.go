@@ -191,12 +191,20 @@ func TestAppSmoke(t *testing.T) {
 	typeCmd(sim, ":dashboards")
 	waitFor(t, sim, "Dashboards(all)")
 
-	// Dashboard render: enter draws widgets with sparklines, not raw JSON;
-	// esc pops back to the dashboards table.
+	// Dashboard render: enter draws typed widgets, not raw JSON. j selects
+	// the next widget; enter zooms it (full query + stats); first esc leaves
+	// the zoom, second esc pops back to the dashboards table.
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "widgets · sparklines")
+	waitFor(t, sim, "widgets · last 1h")
 	waitFor(t, sim, "Request rate")
-	press(sim, tcell.KeyEscape)
+	pressRune(sim, 'j') // select widget 2 (5xx rate)
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "widget 2/6")
+	waitFor(t, sim, "sum:kong.http.5xx{*}.as_rate()") // full untruncated query
+	waitFor(t, sim, "avg")                            // zoom stats line
+	press(sim, tcell.KeyEscape)                       // zoom → grid
+	waitFor(t, sim, "Request rate")
+	press(sim, tcell.KeyEscape) // grid → table
 	waitFor(t, sim, "Dashboards(all)")
 
 	// Logs: '/' is a server-side query.

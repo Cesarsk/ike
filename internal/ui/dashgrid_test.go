@@ -18,7 +18,7 @@ func TestRenderDashboardGrid(t *testing.T) {
 			{Title: "Wide", Type: "timeseries", X: 0, Y: 2, W: 12, HasData: true, Spark: []float64{1, 1, 1}, Last: 1},
 		},
 	}
-	out := renderDashboard(v)
+	out, _ := renderDashboard(v)
 	// Left and Right must appear on the same physical line (grid, not list).
 	var sideBySide bool
 	for _, line := range strings.Split(out, "\n") {
@@ -40,7 +40,7 @@ func TestRenderDashboardListFallback(t *testing.T) {
 		{Title: "A", Type: "note", Note: "n"},
 		{Title: "B", Type: "timeseries", HasData: true, Spark: []float64{1, 2}, Last: 2},
 	}}
-	out := renderDashboard(v)
+	out, _ := renderDashboard(v)
 	if !strings.Contains(out, "A") || !strings.Contains(out, "B") {
 		t.Errorf("list fallback dropped widgets:\n%s", out)
 	}
@@ -69,7 +69,7 @@ func TestWidgetTypeRendering(t *testing.T) {
 	qv := widgetLines(data.Widget{
 		Title: "p99", Type: "query_value", HasData: true,
 		Spark: []float64{100, 150}, Last: 150,
-	}, 0)
+	}, 0, 0)
 	if !strings.Contains(qv, "150") || !strings.Contains(qv, "▲ 50%") {
 		t.Errorf("query_value should render the value + trend:\n%s", qv)
 	}
@@ -82,7 +82,7 @@ func TestWidgetTypeRendering(t *testing.T) {
 		Title: "Restarts", Type: "toplist", HasData: true,
 		Spark: []float64{1}, Last: 1,
 		Items: []data.WidgetItem{{Label: "kong-proxy", Value: 8}, {Label: "redis", Value: 2}},
-	}, 0)
+	}, 0, 0)
 	if !strings.Contains(tl, "kong-proxy") || !strings.Contains(tl, "▇") {
 		t.Errorf("toplist should render bars:\n%s", tl)
 	}

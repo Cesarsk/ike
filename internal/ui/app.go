@@ -200,7 +200,13 @@ type App struct {
 	healthView *tview.TextView
 	healthRow  data.Row
 	healthData *healthData
-	splash     *tview.TextView // startup logo, auto-dismissed
+	// dashboard explorer: widgets in display order, the selected one, and
+	// whether the pane is zoomed into a single widget.
+	dashWidgets  []data.Widget
+	dashViewData *data.DashboardView
+	dashSel      int
+	dashZoom     bool
+	splash       *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
 	logCtxFlex *tview.Flex
@@ -552,6 +558,7 @@ func (a *App) build() {
 	a.detail.SetBorder(true)
 
 	a.dash = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.dash.SetRegions(true) // widget selection: each widget title is a region
 	a.dash.SetBorder(true)
 
 	a.trace = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
@@ -800,7 +807,14 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case "dashboard":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			if a.dashZoom {
+				a.dashZoomOut() // zoom → back to the grid, not out of the pane
+				return nil
+			}
 			a.back()
+			return nil
+		case ev.Key() == tcell.KeyEnter:
+			a.dashZoomIn()
 			return nil
 		case ev.Key() == tcell.KeyCtrlR:
 			a.loadDashboard(a.detailRow, true)
@@ -817,10 +831,12 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		case ev.Rune() == ':':
 			a.openPalette()
 			return nil
-		case ev.Rune() == 'j':
-			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-		case ev.Rune() == 'k':
-			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		case ev.Rune() == 'j' || ev.Key() == tcell.KeyDown:
+			a.dashMove(1)
+			return nil
+		case ev.Rune() == 'k' || ev.Key() == tcell.KeyUp:
+			a.dashMove(-1)
+			return nil
 		}
 		return ev
 	case "patterns":

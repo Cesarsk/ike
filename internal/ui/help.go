@@ -19,8 +19,8 @@ func (a *App) setHints() {
 		}
 	case "dashboard":
 		lines = []string{
-			"[aqua]<esc>[white]back  [aqua]<ctrl-r>[white]refresh sparklines  [aqua]<o>[white]open in Datadog",
-			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<?>[white]help  [aqua]<q>[white]back",
+			"[aqua]<j/k>[white]select widget  [aqua]<enter>[white]zoom (full query/values)  [aqua]<esc>[white]back",
+			"[aqua]<ctrl-r>[white]refresh  [aqua]<o>[white]open in Datadog  [aqua]<?>[white]help",
 		}
 	case "trace":
 		lines = []string{
