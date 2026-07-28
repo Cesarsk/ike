@@ -487,11 +487,7 @@ func widgetLines(w data.Widget, width int, idx int) string {
 		fmt.Fprintf(&b, "[gray]· %s[-]\n", tview.Escape(clip(w.Note, width)))
 	}
 	if w.Query != "" {
-		q := w.Query
-		if w.QueryOfN > 1 {
-			q += fmt.Sprintf("  (query 1/%d)", w.QueryOfN)
-		}
-		fmt.Fprintf(&b, "[darkcyan]%s[-]\n", tview.Escape(clip(q, width)))
+		fmt.Fprintf(&b, "[darkcyan]%s[-]\n", tview.Escape(clip(w.Query, width)))
 	}
 	return b.String()
 }
@@ -574,9 +570,6 @@ func renderWidgetZoom(w data.Widget, idx, total int) string {
 	if w.Query != "" {
 		b.WriteString("\n [gray]query:[-]\n")
 		fmt.Fprintf(&b, " [darkcyan]%s[-]\n", tview.Escape(w.Query))
-		if w.QueryOfN > 1 {
-			fmt.Fprintf(&b, " [yellow]≈ approximation: first of %d formula sub-queries[-]\n", w.QueryOfN)
-		}
 	}
 	b.WriteString("\n [gray]<j/k> prev/next widget · <esc> back to the grid[-]\n")
 	return b.String()
