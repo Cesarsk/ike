@@ -302,16 +302,22 @@ one-time getting-started page (`:manual`).
     service's error logs / traces.
 
 14. **Dashboard explorer — SHIPPED**: real dashboards are mostly multi-query
-    formula widgets, which the old single-`q` extraction couldn't chart — whole
-    dashboards rendered as "no single metric query" notes. Now: formula
-    widgets chart their first metrics sub-query (flagged `query 1/N` — an
-    approximation, honestly labeled); non-chartable widget types get typed
-    fallbacks (SLO → :slos, log-stream → :logs, monitor-summary → :monitors,
-    …); note widgets show their content. The grid is navigable via tview
-    regions: j/k moves a widget highlight (scroll follows), enter zooms one
-    widget full-pane (complete query, min/avg/max/last, all toplist rows),
-    esc returns. Sparklines cap at ▇ — some terminal fonts render U+2588 FULL
-    BLOCK with a broken glyph.
+    formula widgets over non-metric sources (spans/logs/RUM), which the old
+    single-`q` + v1 QueryMetrics pipeline couldn't chart — whole dashboards
+    rendered as "no single metric query" notes. Now formula widgets run
+    through the **v2 query API** (`QueryTimeseriesData`; `QueryScalarData`
+    for query_value tiles) — the same engine the web dashboard uses, so
+    **formulas evaluate** and spans/logs/RUM sources chart. The definition's
+    `queries[]`/`formulas[]` JSON is the v2 request's own shape, passed
+    through nearly verbatim; classic `requests[].q` widgets stay on the cheap
+    v1 path. Non-chartable widget types get typed fallbacks (SLO → :slos,
+    log-stream → :logs, monitor-summary → :monitors, …); note widgets show
+    their content. The grid is navigable via tview regions: j/k moves a
+    widget highlight (scroll follows), enter zooms one widget full-pane
+    (complete query, min/avg/max/last, all toplist rows), esc returns.
+    Sparklines cap at ▇ — some terminal fonts render U+2588 FULL BLOCK with
+    a broken glyph. Charting stays capped at MaxDashWidgets (12) per render
+    to protect the query budget.
 
 ### Longer-term
 

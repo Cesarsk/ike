@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
 // Dashboard renders a dashboard: fetch its definition, flatten the widget
@@ -32,43 +34,59 @@ func (l *Live) Dashboard(ctx context.Context, id string) (*DashboardView, error)
 	_ = json.Unmarshal(raw, &m)
 
 	view := &DashboardView{Title: d.GetTitle()}
-	var widgets []Widget
-	collectWidgets(m["widgets"], &widgets)
+	var specs []widgetSpec
+	collectWidgets(m["widgets"], &specs)
 
 	metricAPI := datadogV1.NewMetricsApi(l.client)
+	v2API := datadogV2.NewMetricsApi(l.client)
 	from := time.Now().Add(-time.Hour).Unix()
 	to := time.Now().Unix()
 	fetched := 0
-	for i := range widgets {
-		w := &widgets[i]
-		if w.Query == "" {
+	for i := range specs {
+		w := &specs[i].Widget
+		hasV2 := len(specs[i].queriesJSON) > 0
+		if w.Query == "" && !hasV2 {
 			continue // Note already explains this widget type
 		}
 		if fetched >= MaxDashWidgets {
-			w.Note = "sparkline budget reached — open in Datadog (o)"
+			w.Note = "chart budget reached — open in Datadog (o)"
 			view.Truncated = true
 			continue
 		}
 		fetched++
-		mq, mresp, err := metricAPI.QueryMetrics(ctx, from, to, w.Query)
-		l.track(mresp)
-		if err != nil {
-			w.Note = "query failed"
-			slog.Debug("widget query failed", "title", w.Title, "err", err)
+		// Classic single-q widgets stay on the cheap v1 metrics query.
+		if w.Query != "" {
+			mq, mresp, err := metricAPI.QueryMetrics(ctx, from, to, w.Query)
+			l.track(mresp)
+			if err != nil {
+				w.Note = "query failed"
+				slog.Debug("widget query failed", "title", w.Title, "err", err)
+				continue
+			}
+			if pts := firstSeriesPoints(mq); len(pts) > 0 {
+				w.Spark = pts
+				w.Last = pts[len(pts)-1]
+				w.HasData = true
+				// Toplists are per-group rankings: keep the last value of every
+				// series (one per group) so the renderer can draw bars.
+				if w.Type == "toplist" {
+					w.Items = seriesLastValues(mq)
+				}
+			} else {
+				w.Note = "no data in last 1h"
+			}
 			continue
 		}
-		if pts := firstSeriesPoints(mq); len(pts) > 0 {
-			w.Spark = pts
-			w.Last = pts[len(pts)-1]
-			w.HasData = true
-			// Toplists are per-group rankings: keep the last value of every
-			// series (one per group) so the renderer can draw bars.
-			if w.Type == "toplist" {
-				w.Items = seriesLastValues(mq)
-			}
-		} else {
-			w.Note = "no data in last 1h"
-		}
+		// Formula widgets (metrics, spans, logs, RUM sources) run through the
+		// v2 query API — the same engine the web dashboard uses, so formulas
+		// evaluate and non-metric sources chart. The dashboard definition's
+		// queries[]/formulas[] JSON is the v2 request's own shape, passed
+		// through nearly verbatim.
+		l.queryWidgetV2(ctx, v2API, w, specs[i].queriesJSON, specs[i].formulasJSON, from, to)
+	}
+	widgets := make([]Widget, len(specs))
+	for i := range specs {
+		widgets[i] = specs[i].Widget
 	}
 	view.Widgets = widgets
 	if view.Truncated {
@@ -77,9 +95,17 @@ func (l *Live) Dashboard(ctx context.Context, id string) (*DashboardView, error)
 	return view, nil
 }
 
+// widgetSpec pairs a Widget with the raw queries/formulas JSON from its
+// definition, for the v2 query pass.
+type widgetSpec struct {
+	Widget
+	queriesJSON  []byte
+	formulasJSON []byte
+}
+
 // collectWidgets flattens the (possibly nested) widget tree in definition
-// order, pulling title, type and a single metric query from each.
-func collectWidgets(node any, out *[]Widget) {
+// order, pulling title, type and the runnable query material from each.
+func collectWidgets(node any, out *[]widgetSpec) {
 	list, ok := node.([]any)
 	if !ok {
 		return
@@ -103,20 +129,20 @@ func collectWidgets(node any, out *[]Widget) {
 		if title == "" {
 			title = "(untitled)"
 		}
-		q, ofN := widgetQuery(def)
-		w := Widget{Title: title, Type: typ, Query: q, QueryOfN: ofN}
-		if w.Query == "" {
-			w.Note = widgetTypeNote(typ, def)
+		sp := widgetSpec{Widget: Widget{Title: title, Type: typ}}
+		sp.Query, sp.queriesJSON, sp.formulasJSON = widgetQuery(def)
+		if sp.Query == "" && len(sp.queriesJSON) == 0 {
+			sp.Note = widgetTypeNote(typ, def)
 		}
 		// Layout (free/grid dashboards): x/y/width/height in grid units;
 		// absent for ordered layouts (W stays 0 → renderer falls back to flow).
 		if lay, ok := wobj["layout"].(map[string]any); ok {
-			w.X = jsonInt(lay["x"])
-			w.Y = jsonInt(lay["y"])
-			w.W = jsonInt(lay["width"])
-			w.H = jsonInt(lay["height"])
+			sp.X = jsonInt(lay["x"])
+			sp.Y = jsonInt(lay["y"])
+			sp.W = jsonInt(lay["width"])
+			sp.H = jsonInt(lay["height"])
 		}
-		*out = append(*out, w)
+		*out = append(*out, sp)
 	}
 }
 
@@ -131,12 +157,11 @@ func jsonInt(v any) int {
 	return 0
 }
 
-// widgetQuery extracts a runnable metric query from a widget definition,
-// best-effort. Classic widgets carry requests[].q; formula widgets carry
-// requests[].queries[] — we chart the FIRST metrics sub-query and report how
-// many there were (ofN > 1 → the chart approximates a formula widget), since
-// formulas aren't runnable through QueryMetrics as one expression.
-func widgetQuery(def map[string]any) (string, int) {
+// widgetQuery extracts the runnable query material from a widget definition:
+// a classic requests[].q (charted via the cheap v1 metrics query), or the raw
+// queries[]/formulas[] JSON of a formula widget (charted via the v2 query API,
+// which evaluates formulas and supports spans/logs/RUM sources).
+func widgetQuery(def map[string]any) (string, []byte, []byte) {
 	reqs := def["requests"]
 	// query_value widgets sometimes have requests as an object, not a list.
 	var reqList []any
@@ -146,7 +171,7 @@ func widgetQuery(def map[string]any) (string, int) {
 	case map[string]any:
 		reqList = []any{r}
 	default:
-		return "", 0
+		return "", nil, nil
 	}
 	for _, ri := range reqList {
 		req, ok := ri.(map[string]any)
@@ -154,26 +179,23 @@ func widgetQuery(def map[string]any) (string, int) {
 			continue
 		}
 		if q, ok := req["q"].(string); ok && q != "" {
-			return q, 1
+			return q, nil, nil
 		}
 		qs, ok := req["queries"].([]any)
-		if !ok {
+		if !ok || len(qs) == 0 {
 			continue
 		}
-		for _, qi := range qs {
-			q0, ok := qi.(map[string]any)
-			if !ok {
-				continue
-			}
-			if ds, _ := q0["data_source"].(string); ds != "metrics" {
-				continue
-			}
-			if q, ok := q0["query"].(string); ok && q != "" {
-				return q, len(qs)
-			}
+		queriesJSON, err := json.Marshal(qs)
+		if err != nil {
+			continue
 		}
+		var formulasJSON []byte
+		if fs, ok := req["formulas"].([]any); ok && len(fs) > 0 {
+			formulasJSON, _ = json.Marshal(fs)
+		}
+		return "", queriesJSON, formulasJSON
 	}
-	return "", 0
+	return "", nil, nil
 }
 
 // widgetTypeNote explains a widget ike can't chart, honestly per type — and
@@ -231,6 +253,148 @@ func seriesLastValues(mq datadogV1.MetricsQueryResponse) []WidgetItem {
 		items = items[:maxItems]
 	}
 	return items
+}
+
+// queryWidgetV2 charts a formula widget through the v2 query API. query_value
+// widgets run the scalar endpoint (the exact number the web tile shows);
+// everything else runs the timeseries endpoint. Failures degrade to a note —
+// never an error for the whole dashboard.
+func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *Widget, queriesJSON, formulasJSON []byte, from, to int64) {
+	w.Query = displayQuery(queriesJSON, formulasJSON)
+	var formulas []datadogV2.QueryFormula
+	if len(formulasJSON) > 0 {
+		if err := json.Unmarshal(formulasJSON, &formulas); err != nil {
+			formulas = nil
+		}
+	}
+	fromMs, toMs := from*1000, to*1000
+
+	if w.Type == "query_value" {
+		var qs []datadogV2.ScalarQuery
+		if err := json.Unmarshal(queriesJSON, &qs); err != nil || len(qs) == 0 {
+			w.Note = "unsupported query shape — open in Datadog (o)"
+			return
+		}
+		attrs := datadogV2.NewScalarFormulaRequestAttributes(fromMs, qs, toMs)
+		attrs.Formulas = formulas
+		body := datadogV2.NewScalarFormulaQueryRequest(*datadogV2.NewScalarFormulaRequest(
+			*attrs, datadogV2.SCALARFORMULAREQUESTTYPE_SCALAR_REQUEST))
+		resp, httpresp, err := api.QueryScalarData(ctx, *body)
+		l.track(httpresp)
+		if err != nil {
+			w.Note = "query failed"
+			slog.Debug("widget scalar query failed", "title", w.Title, "err", err)
+			return
+		}
+		respData := resp.GetData()
+		respAttrs := respData.GetAttributes()
+		for _, col := range respAttrs.GetColumns() {
+			if col.DataScalarColumn == nil {
+				continue
+			}
+			for _, v := range col.DataScalarColumn.GetValues() {
+				if v != nil {
+					w.Last = *v
+					w.HasData = true
+					return
+				}
+			}
+		}
+		w.Note = "no data in last 1h"
+		return
+	}
+
+	var qs []datadogV2.TimeseriesQuery
+	if err := json.Unmarshal(queriesJSON, &qs); err != nil || len(qs) == 0 {
+		w.Note = "unsupported query shape — open in Datadog (o)"
+		return
+	}
+	attrs := datadogV2.NewTimeseriesFormulaRequestAttributes(fromMs, qs, toMs)
+	attrs.Formulas = formulas
+	body := datadogV2.NewTimeseriesFormulaQueryRequest(*datadogV2.NewTimeseriesFormulaRequest(
+		*attrs, datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST))
+	resp, httpresp, err := api.QueryTimeseriesData(ctx, *body)
+	l.track(httpresp)
+	if err != nil {
+		w.Note = "query failed"
+		slog.Debug("widget timeseries query failed", "title", w.Title, "err", err)
+		return
+	}
+	respData := resp.GetData()
+	respAttrs := respData.GetAttributes()
+	values := respAttrs.GetValues()
+	series := respAttrs.GetSeries()
+	if len(values) == 0 {
+		w.Note = "no data in last 1h"
+		return
+	}
+	w.Spark = densify(values[0])
+	if len(w.Spark) > 0 {
+		w.Last = w.Spark[len(w.Spark)-1]
+		w.HasData = true
+	} else {
+		w.Note = "no data in last 1h"
+		return
+	}
+	if w.Type == "toplist" {
+		const maxItems = 6
+		for i, v := range values {
+			pts := densify(v)
+			if len(pts) == 0 {
+				continue
+			}
+			label := "total"
+			if i < len(series) {
+				if tags := series[i].GetGroupTags(); len(tags) > 0 {
+					label = strings.Join(tags, ",")
+				}
+			}
+			w.Items = append(w.Items, WidgetItem{Label: label, Value: pts[len(pts)-1]})
+		}
+		sort.SliceStable(w.Items, func(i, j int) bool { return w.Items[i].Value > w.Items[j].Value })
+		if len(w.Items) > maxItems {
+			w.Items = w.Items[:maxItems]
+		}
+	}
+}
+
+// densify drops nil points from a v2 series (sparse buckets are nil, not 0).
+func densify(pts []*float64) []float64 {
+	out := make([]float64, 0, len(pts))
+	for _, p := range pts {
+		if p != nil {
+			out = append(out, *p)
+		}
+	}
+	return out
+}
+
+// displayQuery is the human-readable query line for a formula widget: the
+// formula expression when present, else the first sub-query's text.
+func displayQuery(queriesJSON, formulasJSON []byte) string {
+	if len(formulasJSON) > 0 {
+		var fs []map[string]any
+		if json.Unmarshal(formulasJSON, &fs) == nil && len(fs) > 0 {
+			if f, ok := fs[0]["formula"].(string); ok && f != "" {
+				return f
+			}
+		}
+	}
+	var qs []map[string]any
+	if json.Unmarshal(queriesJSON, &qs) == nil && len(qs) > 0 {
+		if q, ok := qs[0]["query"].(string); ok && q != "" {
+			return q
+		}
+		if search, ok := qs[0]["search"].(map[string]any); ok {
+			if q, ok := search["query"].(string); ok && q != "" {
+				return q
+			}
+		}
+		if ds, ok := qs[0]["data_source"].(string); ok {
+			return ds + " query"
+		}
+	}
+	return ""
 }
 
 func (l *Live) dashboards(ctx context.Context) ([]Row, error) {

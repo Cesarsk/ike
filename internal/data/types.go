@@ -161,7 +161,6 @@ type Widget struct {
 	Spark      []float64
 	Last       float64
 	Items      []WidgetItem // toplist widgets: per-group values, largest first
-	QueryOfN   int          // >1: Query is the first of N formula sub-queries
 	HasData    bool
 	Note       string // why there's no sparkline (unsupported widget / query type)
 	X, Y, W, H int    // dashboard grid coords; W==0 → unknown (ordered layout)
