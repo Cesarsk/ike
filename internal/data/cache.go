@@ -51,8 +51,8 @@ func (c *Cached) FetchDetail(ctx context.Context, key, id string) (any, error) {
 
 // Dashboard is an explicit render/refresh action, deliberately uncached —
 // each open or ctrl-r spends metric-query budget knowingly.
-func (c *Cached) Dashboard(ctx context.Context, id string) (*DashboardView, error) {
-	return c.p.Dashboard(ctx, id)
+func (c *Cached) Dashboard(ctx context.Context, id string, window time.Duration) (*DashboardView, error) {
+	return c.p.Dashboard(ctx, id, window)
 }
 
 // Trace is an explicit drill-down, deliberately uncached.

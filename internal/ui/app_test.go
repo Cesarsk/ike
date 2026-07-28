@@ -204,6 +204,13 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "avg")                            // zoom stats line
 	press(sim, tcell.KeyEscape)                       // zoom → grid
 	waitFor(t, sim, "Request rate")
+
+	// Digit keys switch the time window (web-UI picker) and re-fetch.
+	waitFor(t, sim, "last 1h") // the default
+	pressRune(sim, '4')
+	waitFor(t, sim, "last 1d")
+	waitFor(t, sim, "Request rate") // grid re-rendered with the new window
+
 	press(sim, tcell.KeyEscape) // grid → table
 	waitFor(t, sim, "Dashboards(all)")
 

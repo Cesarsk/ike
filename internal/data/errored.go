@@ -1,6 +1,9 @@
 package data
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Errored is a placeholder Provider for a context whose credentials could
 // not be resolved at startup. Instead of exiting, the app opens on the :ctx
@@ -22,7 +25,7 @@ func (e *Errored) Fetch(context.Context, string, string, string) ([]Row, error) 
 func (e *Errored) FetchDetail(context.Context, string, string) (any, error) {
 	return nil, e.err
 }
-func (e *Errored) Dashboard(context.Context, string) (*DashboardView, error) {
+func (e *Errored) Dashboard(context.Context, string, time.Duration) (*DashboardView, error) {
 	return nil, e.err
 }
 func (e *Errored) Trace(context.Context, string) (*TraceView, error) {

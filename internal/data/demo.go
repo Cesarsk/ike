@@ -508,7 +508,7 @@ func (d *Demo) ResolvePage(context.Context, string) error  { return nil }
 
 // Dashboard synthesizes a renderable dashboard with sparkline data so the
 // widget view is demoable and e2e-testable offline.
-func (d *Demo) Dashboard(_ context.Context, id string) (*DashboardView, error) {
+func (d *Demo) Dashboard(_ context.Context, id string, _ time.Duration) (*DashboardView, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	// Layout coords (x,y,width,height) mirror a real Datadog grid so the

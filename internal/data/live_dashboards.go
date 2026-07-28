@@ -16,7 +16,10 @@ import (
 // tree, and fetch a sparkline for each metric widget (bounded). Widgets we
 // can't chart (log streams, notes, formula-only queries) still appear, with
 // a note instead of a sparkline.
-func (l *Live) Dashboard(ctx context.Context, id string) (*DashboardView, error) {
+func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (*DashboardView, error) {
+	if window <= 0 {
+		window = time.Hour
+	}
 	ctx = l.authCtx(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -39,7 +42,7 @@ func (l *Live) Dashboard(ctx context.Context, id string) (*DashboardView, error)
 
 	metricAPI := datadogV1.NewMetricsApi(l.client)
 	v2API := datadogV2.NewMetricsApi(l.client)
-	from := time.Now().Add(-time.Hour).Unix()
+	from := time.Now().Add(-window).Unix()
 	to := time.Now().Unix()
 	fetched := 0
 	for i := range specs {

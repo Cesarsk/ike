@@ -337,7 +337,9 @@ type Provider interface {
 	FetchDetail(ctx context.Context, key, id string) (any, error)
 	// Dashboard renders a dashboard's widgets for the TUI, fetching metric
 	// sparklines on demand (bounded — the timeseries API is rate-limited).
-	Dashboard(ctx context.Context, id string) (*DashboardView, error)
+	// Dashboard renders a dashboard's widgets over the given window (the web
+	// UI's time-range picker equivalent).
+	Dashboard(ctx context.Context, id string, window time.Duration) (*DashboardView, error)
 	// Trace reconstructs a distributed trace from its spans (searched by
 	// trace_id) into a tree for waterfall rendering. Bounded/on-demand.
 	Trace(ctx context.Context, traceID string) (*TraceView, error)
