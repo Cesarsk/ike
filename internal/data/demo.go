@@ -544,7 +544,7 @@ func (d *Demo) Dashboard(_ context.Context, id string) (*DashboardView, error) {
 				}
 			}
 		} else {
-			wd.Note = "note widget — no metric to chart"
+			wd.Note = "Canary at 10% since 09:00 — rollback via `argo rollback` if 5xx grows."
 		}
 		view.Widgets = append(view.Widgets, wd)
 	}

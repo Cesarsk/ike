@@ -41,7 +41,10 @@ func rangeSeconds(r string) (int, bool) {
 	return 0, false
 }
 
-var sparkLevels = []rune("▁▂▃▄▅▆▇█")
+// Top level is ▇ (7/8 block), not █: some terminal fonts render U+2588 FULL
+// BLOCK with a broken/slashed glyph, which made peak sparkline points look
+// like "ØØ" in the wild.
+var sparkLevels = []rune("▁▂▃▄▅▆▇")
 
 // Sparkline renders a series as block characters. A flat or empty series is
 // handled gracefully (mid-level / empty string). This is the terminal-native
