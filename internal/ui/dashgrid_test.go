@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Cesarsk/ike/internal/data"
 )
@@ -61,6 +62,26 @@ func TestClip(t *testing.T) {
 	}
 	if got := clip("hi", 0); got != "hi" {
 		t.Errorf("clip no-limit = %q", got)
+	}
+}
+
+func TestSparkTruncationIsRuneSafe(t *testing.T) {
+	// The sparkline is 3-byte block runes; cell truncation must slice by
+	// runes or the output starts with invalid UTF-8 ("�?" on screen).
+	pts := make([]float64, 60)
+	for i := range pts {
+		pts[i] = float64(i % 7)
+	}
+	out := widgetLines(data.Widget{Title: "t", Type: "timeseries", HasData: true, Spark: pts, Last: 1}, 24, 0)
+	if !utf8.ValidString(out) {
+		t.Errorf("truncated widget output contains invalid UTF-8:\n%q", out)
+	}
+}
+
+func TestToplistZoomShowsFullLabels(t *testing.T) {
+	out := topListBars([]data.WidgetItem{{Label: "kube_service:very-long-service-name", Value: 5}}, 0)
+	if !strings.Contains(out, "kube_service:very-long-service-name") {
+		t.Errorf("zoom (width=0) should show the full label:\n%s", out)
 	}
 }
 

@@ -41,6 +41,14 @@ func TestDisplayQuery(t *testing.T) {
 	if got != "service:x" {
 		t.Errorf("search display: %q", got)
 	}
+	// A bare "query1" formula is a reference, not an expression: resolve it
+	// to the query it names instead of showing the useless token.
+	got = displayQuery(
+		[]byte(`[{"data_source":"metrics","name":"query1","query":"sum:mem{*} by {kube_service}"}]`),
+		[]byte(`[{"formula":"query1"}]`))
+	if got != "sum:mem{*} by {kube_service}" {
+		t.Errorf("bare formula should resolve to the query text: %q", got)
+	}
 }
 
 func TestWidgetTypeNote(t *testing.T) {
