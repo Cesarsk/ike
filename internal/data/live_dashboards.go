@@ -369,30 +369,46 @@ func densify(pts []*float64) []float64 {
 	return out
 }
 
-// displayQuery is the human-readable query line for a formula widget: the
-// formula expression when present, else the first sub-query's text.
+// displayQuery is the human-readable query line for a formula widget: a real
+// formula expression when there is one, else the referenced sub-query's text.
+// Dashboards attach a trivial formula ("query1") even to single-query widgets
+// — that name is useless to show, so bare references resolve to the query.
 func displayQuery(queriesJSON, formulasJSON []byte) string {
+	var qs []map[string]any
+	_ = json.Unmarshal(queriesJSON, &qs)
+	queryText := func(q map[string]any) string {
+		if t, ok := q["query"].(string); ok && t != "" {
+			return t
+		}
+		if search, ok := q["search"].(map[string]any); ok {
+			if t, ok := search["query"].(string); ok && t != "" {
+				return t
+			}
+		}
+		if ds, ok := q["data_source"].(string); ok {
+			return ds + " query"
+		}
+		return ""
+	}
+	byName := map[string]string{}
+	for _, q := range qs {
+		if n, ok := q["name"].(string); ok && n != "" {
+			byName[n] = queryText(q)
+		}
+	}
 	if len(formulasJSON) > 0 {
 		var fs []map[string]any
 		if json.Unmarshal(formulasJSON, &fs) == nil && len(fs) > 0 {
 			if f, ok := fs[0]["formula"].(string); ok && f != "" {
+				if t, bare := byName[f]; bare && t != "" {
+					return t // "query1" → the query it names
+				}
 				return f
 			}
 		}
 	}
-	var qs []map[string]any
-	if json.Unmarshal(queriesJSON, &qs) == nil && len(qs) > 0 {
-		if q, ok := qs[0]["query"].(string); ok && q != "" {
-			return q
-		}
-		if search, ok := qs[0]["search"].(map[string]any); ok {
-			if q, ok := search["query"].(string); ok && q != "" {
-				return q
-			}
-		}
-		if ds, ok := qs[0]["data_source"].(string); ok {
-			return ds + " query"
-		}
+	if len(qs) > 0 {
+		return queryText(qs[0])
 	}
 	return ""
 }
