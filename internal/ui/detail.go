@@ -360,9 +360,12 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 				a.dash.SetText("\n  [red]✗ " + tview.Escape(err.Error()))
 				return
 			}
-			a.dash.SetText(renderDashboard(view))
+			text, order := renderDashboard(view)
+			a.dashViewData, a.dashWidgets, a.dashSel, a.dashZoom = view, order, 0, false
+			a.dash.SetText(text)
+			a.dashHighlight()
 			if force {
-				a.flash("sparklines refreshed", false)
+				a.flash("widgets refreshed", false)
 			}
 		})
 	}()
@@ -371,10 +374,10 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 // renderDashboard turns a DashboardView into the terminal panel. When the
 // dashboard has layout coordinates it renders a grid (widgets side by side,
 // in Datadog reading order); otherwise it falls back to a one-per-line list.
-func renderDashboard(v *data.DashboardView) string {
+func renderDashboard(v *data.DashboardView) (string, []data.Widget) {
 	var b strings.Builder
 	fmt.Fprintf(&b, " [orange::b]%s[-:-:-]\n", tview.Escape(v.Title))
-	fmt.Fprintf(&b, " [gray]%d widgets · sparklines cover the last 1h · <ctrl-r> to refresh[-]\n\n", len(v.Widgets))
+	fmt.Fprintf(&b, " [gray]%d widgets · last 1h · <j/k> select · <enter> zoom · <ctrl-r> refresh[-]\n\n", len(v.Widgets))
 
 	hasCoords := false
 	for _, w := range v.Widgets {
@@ -384,26 +387,28 @@ func renderDashboard(v *data.DashboardView) string {
 		}
 	}
 
+	ws := make([]data.Widget, len(v.Widgets))
+	copy(ws, v.Widgets)
 	if !hasCoords {
-		for _, w := range v.Widgets {
-			b.WriteString(widgetLines(w, 0))
+		for i, w := range ws {
+			b.WriteString(widgetLines(w, 0, i))
 			b.WriteString("\n")
 		}
 	} else {
-		ws := make([]data.Widget, len(v.Widgets))
-		copy(ws, v.Widgets)
 		sort.SliceStable(ws, func(i, j int) bool {
 			if ws[i].Y != ws[j].Y {
 				return ws[i].Y < ws[j].Y
 			}
 			return ws[i].X < ws[j].X
 		})
-		// Greedily pack widgets into rows by the 12-unit grid width.
+		// Greedily pack widgets into rows by the 12-unit grid width. The
+		// region index passed to widgetLines is the display-order index.
 		var row []data.Widget
-		units := 0
+		units, base := 0, 0
 		flush := func() {
 			if len(row) > 0 {
-				b.WriteString(renderWidgetRow(row))
+				b.WriteString(renderWidgetRow(row, base))
+				base += len(row)
 				row, units = nil, 0
 			}
 		}
@@ -424,12 +429,12 @@ func renderDashboard(v *data.DashboardView) string {
 	if v.Truncated {
 		fmt.Fprintf(&b, " [yellow]Note: only the first %d metric widgets were charted to protect the API budget.[-]\n", data.MaxDashWidgets)
 	}
-	return b.String()
+	return b.String(), ws
 }
 
 // renderWidgetRow lays out a row of widgets side by side in equal-width
 // terminal columns, zipping their lines together with tag-aware padding.
-func renderWidgetRow(row []data.Widget) string {
+func renderWidgetRow(row []data.Widget, base int) string {
 	const rowWidth = 96
 	cellW := rowWidth/len(row) - 2
 	if cellW < 18 {
@@ -438,7 +443,7 @@ func renderWidgetRow(row []data.Widget) string {
 	cells := make([][]string, len(row))
 	maxLines := 0
 	for i, w := range row {
-		cells[i] = strings.Split(strings.TrimRight(widgetLines(w, cellW), "\n"), "\n")
+		cells[i] = strings.Split(strings.TrimRight(widgetLines(w, cellW, base+i), "\n"), "\n")
 		if len(cells[i]) > maxLines {
 			maxLines = len(cells[i])
 		}
@@ -463,9 +468,9 @@ func renderWidgetRow(row []data.Widget) string {
 // widgetLines renders one widget by its Datadog type: query_value as a big
 // single value with its 1h trend, toplist as ranked horizontal bars, anything
 // else with data as a sparkline. width>0 truncates content to fit a grid cell.
-func widgetLines(w data.Widget, width int) string {
+func widgetLines(w data.Widget, width int, idx int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[aqua::b]%s[-:-:-] [gray]%s[-]\n", tview.Escape(clip(w.Title, width)), tview.Escape(w.Type))
+	fmt.Fprintf(&b, "[\"w%d\"][aqua::b]%s[-:-:-][\"\"] [gray]%s[-]\n", idx, tview.Escape(clip(w.Title, width)), tview.Escape(w.Type))
 	switch {
 	case w.HasData && w.Type == "query_value":
 		// The single-value / gauge shape: the number is the point.
@@ -482,8 +487,98 @@ func widgetLines(w data.Widget, width int) string {
 		fmt.Fprintf(&b, "[gray]· %s[-]\n", tview.Escape(clip(w.Note, width)))
 	}
 	if w.Query != "" {
-		fmt.Fprintf(&b, "[darkcyan]%s[-]\n", tview.Escape(clip(w.Query, width)))
+		q := w.Query
+		if w.QueryOfN > 1 {
+			q += fmt.Sprintf("  (query 1/%d)", w.QueryOfN)
+		}
+		fmt.Fprintf(&b, "[darkcyan]%s[-]\n", tview.Escape(clip(q, width)))
 	}
+	return b.String()
+}
+
+// dashHighlight moves the region highlight to the selected widget and keeps
+// it in view.
+func (a *App) dashHighlight() {
+	if len(a.dashWidgets) == 0 {
+		return
+	}
+	a.dash.Highlight(fmt.Sprintf("w%d", a.dashSel)).ScrollToHighlight()
+}
+
+// dashMove shifts the widget selection (grid mode) or steps between widgets
+// while zoomed.
+func (a *App) dashMove(delta int) {
+	if len(a.dashWidgets) == 0 {
+		return
+	}
+	a.dashSel += delta
+	if a.dashSel < 0 {
+		a.dashSel = 0
+	}
+	if a.dashSel >= len(a.dashWidgets) {
+		a.dashSel = len(a.dashWidgets) - 1
+	}
+	if a.dashZoom {
+		a.dash.SetText(renderWidgetZoom(a.dashWidgets[a.dashSel], a.dashSel, len(a.dashWidgets))).ScrollToBeginning()
+		return
+	}
+	a.dashHighlight()
+}
+
+// dashZoomIn renders the selected widget full-pane: nothing truncated.
+func (a *App) dashZoomIn() {
+	if len(a.dashWidgets) == 0 {
+		return
+	}
+	a.dashZoom = true
+	a.dash.SetText(renderWidgetZoom(a.dashWidgets[a.dashSel], a.dashSel, len(a.dashWidgets))).ScrollToBeginning()
+}
+
+// dashZoomOut returns from the zoom to the grid (no re-fetch), selection kept.
+func (a *App) dashZoomOut() {
+	a.dashZoom = false
+	if a.dashViewData == nil {
+		return
+	}
+	text, order := renderDashboard(a.dashViewData)
+	a.dashWidgets = order
+	a.dash.SetText(text)
+	a.dashHighlight()
+}
+
+// renderWidgetZoom is the full-pane view of one widget: complete title,
+// query, stats, every toplist row — the readable version of a clipped cell.
+func renderWidgetZoom(w data.Widget, idx, total int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n [orange::b]%s[-:-:-]  [gray]%s · widget %d/%d[-]\n\n", tview.Escape(w.Title), tview.Escape(w.Type), idx+1, total)
+	switch {
+	case w.HasData && len(w.Items) > 0:
+		b.WriteString(topListBars(w.Items, 0))
+	case w.HasData:
+		fmt.Fprintf(&b, " [green]%s[-]\n\n", data.Sparkline(w.Spark))
+		min, max, sum := w.Spark[0], w.Spark[0], 0.0
+		for _, p := range w.Spark {
+			if p < min {
+				min = p
+			}
+			if p > max {
+				max = p
+			}
+			sum += p
+		}
+		fmt.Fprintf(&b, " [gray]last[-] [white::b]%s[-:-:-]   [gray]min[-] %s   [gray]avg[-] %s   [gray]max[-] %s%s\n",
+			data.FormatValue(w.Last), data.FormatValue(min), data.FormatValue(sum/float64(len(w.Spark))), data.FormatValue(max), trendLabel(w.Spark))
+	case w.Note != "":
+		fmt.Fprintf(&b, " %s\n", tview.Escape(w.Note))
+	}
+	if w.Query != "" {
+		b.WriteString("\n [gray]query:[-]\n")
+		fmt.Fprintf(&b, " [darkcyan]%s[-]\n", tview.Escape(w.Query))
+		if w.QueryOfN > 1 {
+			fmt.Fprintf(&b, " [yellow]≈ approximation: first of %d formula sub-queries[-]\n", w.QueryOfN)
+		}
+	}
+	b.WriteString("\n [gray]<j/k> prev/next widget · <esc> back to the grid[-]\n")
 	return b.String()
 }
 

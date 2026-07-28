@@ -42,8 +42,7 @@ func (l *Live) Dashboard(ctx context.Context, id string) (*DashboardView, error)
 	for i := range widgets {
 		w := &widgets[i]
 		if w.Query == "" {
-			w.Note = "no single metric query (formula/log/note widget)"
-			continue
+			continue // Note already explains this widget type
 		}
 		if fetched >= MaxDashWidgets {
 			w.Note = "sparkline budget reached — open in Datadog (o)"
@@ -104,7 +103,11 @@ func collectWidgets(node any, out *[]Widget) {
 		if title == "" {
 			title = "(untitled)"
 		}
-		w := Widget{Title: title, Type: typ, Query: widgetQuery(def)}
+		q, ofN := widgetQuery(def)
+		w := Widget{Title: title, Type: typ, Query: q, QueryOfN: ofN}
+		if w.Query == "" {
+			w.Note = widgetTypeNote(typ, def)
+		}
 		// Layout (free/grid dashboards): x/y/width/height in grid units;
 		// absent for ordered layouts (W stays 0 → renderer falls back to flow).
 		if lay, ok := wobj["layout"].(map[string]any); ok {
@@ -128,11 +131,12 @@ func jsonInt(v any) int {
 	return 0
 }
 
-// widgetQuery extracts a single runnable metric query from a widget
-// definition, best-effort. Classic widgets carry requests[].q; formula
-// widgets carry requests[].queries[] — we take the first metrics query.
-// Multi-query formula widgets return "" (not runnable as one query).
-func widgetQuery(def map[string]any) string {
+// widgetQuery extracts a runnable metric query from a widget definition,
+// best-effort. Classic widgets carry requests[].q; formula widgets carry
+// requests[].queries[] — we chart the FIRST metrics sub-query and report how
+// many there were (ofN > 1 → the chart approximates a formula widget), since
+// formulas aren't runnable through QueryMetrics as one expression.
+func widgetQuery(def map[string]any) (string, int) {
 	reqs := def["requests"]
 	// query_value widgets sometimes have requests as an object, not a list.
 	var reqList []any
@@ -142,7 +146,7 @@ func widgetQuery(def map[string]any) string {
 	case map[string]any:
 		reqList = []any{r}
 	default:
-		return ""
+		return "", 0
 	}
 	for _, ri := range reqList {
 		req, ok := ri.(map[string]any)
@@ -150,19 +154,58 @@ func widgetQuery(def map[string]any) string {
 			continue
 		}
 		if q, ok := req["q"].(string); ok && q != "" {
-			return q
+			return q, 1
 		}
-		if qs, ok := req["queries"].([]any); ok && len(qs) == 1 {
-			if q0, ok := qs[0].(map[string]any); ok {
-				if ds, _ := q0["data_source"].(string); ds == "metrics" {
-					if q, ok := q0["query"].(string); ok && q != "" {
-						return q
-					}
-				}
+		qs, ok := req["queries"].([]any)
+		if !ok {
+			continue
+		}
+		for _, qi := range qs {
+			q0, ok := qi.(map[string]any)
+			if !ok {
+				continue
+			}
+			if ds, _ := q0["data_source"].(string); ds != "metrics" {
+				continue
+			}
+			if q, ok := q0["query"].(string); ok && q != "" {
+				return q, len(qs)
 			}
 		}
 	}
-	return ""
+	return "", 0
+}
+
+// widgetTypeNote explains a widget ike can't chart, honestly per type — and
+// note widgets show their actual content instead of an apology.
+func widgetTypeNote(typ string, def map[string]any) string {
+	switch typ {
+	case "note", "free_text":
+		if c, ok := def["content"].(string); ok && c != "" {
+			return c
+		}
+		if c, ok := def["text"].(string); ok && c != "" {
+			return c
+		}
+		return "empty note"
+	case "slo", "slo_list":
+		return "SLO widget — attainment lives in :slos"
+	case "query_table":
+		return "table widget — open in Datadog (o)"
+	case "list_stream", "log_stream":
+		return "log-stream widget — see :logs"
+	case "manage_status":
+		return "monitor-summary widget — see :monitors"
+	case "event_stream", "event_timeline":
+		return "event widget — see :events"
+	case "trace_service":
+		return "APM service widget — see :services"
+	case "hostmap":
+		return "host-map widget — see :hosts"
+	case "iframe", "image":
+		return typ + " widget — open in Datadog (o)"
+	}
+	return "no metric query to chart — open in Datadog (o)"
 }
 
 // seriesLastValues extracts each series' scope label and last point, largest
