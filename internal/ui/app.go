@@ -30,6 +30,7 @@ const (
 	promptTodo       // typing an incident to-do's content ('T')
 	promptCostFilter // client-side product/org filter on the :cost panel
 	promptPageTitle  // typing an On-Call page title ('p' on :oncall)
+	promptDashWindow // typing a custom dashboard window ('w' on a dashboard)
 )
 
 // ContextInfo describes one selectable Datadog org context for the :ctx view.
@@ -206,7 +207,8 @@ type App struct {
 	dashViewData *data.DashboardView
 	dashSel      int
 	dashZoom     bool
-	dashRangeIx  int             // index into dashRanges (init to 1 = 1h, the web default)
+	dashWindow   time.Duration   // active dashboard window (init 1h, the web default)
+	dashLabel    string          // its display label ("1h", "2d", custom input)
 	splash       *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
@@ -306,6 +308,7 @@ type App struct {
 	loading    bool
 	paused     bool // auto-refresh paused (toggled with 'p')
 	promptM    promptMode
+	acNav      bool   // user arrowed through the autocomplete dropdown
 	page       string // current content page: "table", "help", "detail"
 	detailRow  data.Row
 	stack      []navEntry // navigation history, k9s-style: esc pops
@@ -340,7 +343,8 @@ func New(o Options) (*App, error) {
 		refreshEvery: o.Refresh,
 		queries:      map[string]string{},
 		history:      map[string][]string{},
-		dashRangeIx:  1, // 1h, matching the web UI's default window
+		dashWindow:   time.Hour, // matching the web UI's default window
+		dashLabel:    "1h",
 	}
 	var startErr error
 	if o.Current != "" {
@@ -513,6 +517,7 @@ func (a *App) build() {
 	a.prompt = tview.NewInputField()
 	a.prompt.SetDoneFunc(a.promptDone)
 	a.prompt.SetChangedFunc(func(text string) {
+		a.acNav = false
 		switch {
 		case a.promptM == promptFilter && !a.res.ServerQuery:
 			a.filter = text
@@ -528,6 +533,9 @@ func (a *App) build() {
 			return commandCompletions(current)
 		case a.promptM == promptFilter && a.res.Key == "logs":
 			return a.logQueryCompletions(current)
+		case a.promptM == promptFilter && !a.res.ServerQuery && current != "":
+			// Every client-filtered view completes from what's on screen.
+			return a.rowTokenCompletions(current)
 		}
 		return nil
 	})
@@ -537,7 +545,22 @@ func (a *App) build() {
 	// composing the query and submits with a second Enter (DoneFunc).
 	a.prompt.SetAutocompletedFunc(func(text string, _ int, source int) bool {
 		if source == tview.AutocompletedNavigate {
+			a.acNav = true
 			return false
+		}
+		if a.promptM == promptFilter && !a.res.ServerQuery {
+			// Enter commits the filter: the suggestion if the user arrowed to
+			// it, otherwise whatever is typed (filtering is live already).
+			if source == tview.AutocompletedEnter || source == tview.AutocompletedClick {
+				if a.acNav || source == tview.AutocompletedClick {
+					a.prompt.SetText(text)
+				}
+				a.recordHistory(a.prompt.GetText())
+				a.closePrompt()
+				return true
+			}
+			a.prompt.SetText(text) // Tab: accept token, keep composing
+			return true
 		}
 		a.prompt.SetText(text)
 		if a.promptM == promptCmd {
@@ -833,9 +856,12 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		case ev.Rune() == ':':
 			a.openPalette()
 			return nil
-		case ev.Rune() >= '1' && ev.Rune() <= '5':
+		case ev.Rune() >= '1' && ev.Rune() <= '6':
 			// The web UI's time-range picker, on the same digits as :logs.
 			a.setDashRange(int(ev.Rune() - '1'))
+			return nil
+		case ev.Rune() == 'w':
+			a.openPrompt(promptDashWindow) // custom window, any duration
 			return nil
 		case ev.Rune() == 'j' || ev.Key() == tcell.KeyDown:
 			a.dashMove(1)
@@ -1650,6 +1676,8 @@ func (a *App) openPrompt(m promptMode) {
 		prefill = a.costFilter // edit the active filter, don't retype
 	case m == promptPageTitle:
 		a.prompt.SetLabel(" page title> ")
+	case m == promptDashWindow:
+		a.prompt.SetLabel(" window (30m, 4h, 2d, 1w, 1mo)> ")
 	case a.res.ServerQuery:
 		a.prompt.SetLabel(" query> ")
 		prefill = a.queries[a.res.Key] // edit the current query, don't retype
@@ -1710,6 +1738,12 @@ func (a *App) promptDone(key tcell.Key) {
 	switch mode {
 	case promptCmd:
 		a.execCommand(text)
+	case promptDashWindow:
+		if d, err := parseWindow(text); err != nil {
+			a.flash("✗ can't parse window "+text+" — try 30m, 4h, 2d, 1w, 1mo", true)
+		} else {
+			a.setDashWindow(text, d)
+		}
 	case promptFilter:
 		a.recordHistory(text)
 		if a.res.ServerQuery {

@@ -211,7 +211,20 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "last 1d")
 	waitFor(t, sim, "Request rate") // grid re-rendered with the new window
 
+	// 'w' takes any custom window (d/w/mo suffixes included).
+	pressRune(sim, 'w')
+	typeRunes(sim, "2d")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "last 2d")
+
 	press(sim, tcell.KeyEscape) // grid → table
+	waitFor(t, sim, "Dashboards(all)")
+
+	// '/' on a client-filtered view autocompletes from the loaded rows.
+	typeRunes(sim, "/gol")
+	waitFor(t, sim, "golden-signals") // suggestion harvested from DESCRIPTION
+	press(sim, tcell.KeyEscape)       // first esc closes the dropdown
+	press(sim, tcell.KeyEscape)       // second cancels the prompt + clears the filter
 	waitFor(t, sim, "Dashboards(all)")
 
 	// Logs: '/' is a server-side query.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -349,17 +350,47 @@ var dashRanges = []struct {
 	{"4h", 4 * time.Hour},
 	{"1d", 24 * time.Hour},
 	{"7d", 7 * 24 * time.Hour},
+	{"1mo", 30 * 24 * time.Hour},
 }
 
-// setDashRange switches the dashboard window and re-fetches (a new window is
-// new data — the same deliberate spend as the web picker).
+// setDashRange picks a preset window by digit index.
 func (a *App) setDashRange(ix int) {
-	if ix < 0 || ix >= len(dashRanges) || ix == a.dashRangeIx {
+	if ix < 0 || ix >= len(dashRanges) {
 		return
 	}
-	a.dashRangeIx = ix
-	a.flash("window → "+dashRanges[ix].label, false)
+	a.setDashWindow(dashRanges[ix].label, dashRanges[ix].window)
+}
+
+// setDashWindow switches the dashboard window (preset or custom) and
+// re-fetches — a new window is new data, the same deliberate spend as the
+// web picker.
+func (a *App) setDashWindow(label string, d time.Duration) {
+	if d <= 0 || d == a.dashWindow {
+		return
+	}
+	a.dashWindow, a.dashLabel = d, label
+	a.flash("window → "+label, false)
 	a.loadDashboard(a.detailRow, true)
+}
+
+// parseWindow reads a human window: Go durations (30m, 90s, 4h) plus the
+// dashboard-native d / w / mo suffixes.
+func parseWindow(s string) (time.Duration, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	for suffix, unit := range map[string]time.Duration{
+		"mo": 30 * 24 * time.Hour,
+		"w":  7 * 24 * time.Hour,
+		"d":  24 * time.Hour,
+	} {
+		if n, ok := strings.CutSuffix(s, suffix); ok {
+			v, err := strconv.Atoi(strings.TrimSpace(n))
+			if err != nil || v <= 0 {
+				return 0, fmt.Errorf("bad window %q", s)
+			}
+			return time.Duration(v) * unit, nil
+		}
+	}
+	return time.ParseDuration(s)
 }
 
 // loadDashboard renders a dashboard's widgets with sparklines. Fetch is
@@ -372,10 +403,10 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 		a.flash("refreshing sparklines…", false)
 	}
 	a.showPage("dashboard")
-	window := dashRanges[a.dashRangeIx]
+	window, label := a.dashWindow, a.dashLabel
 	go func() {
 		start := time.Now()
-		view, err := a.providerFor(r).Dashboard(context.Background(), r.ID, window.window)
+		view, err := a.providerFor(r).Dashboard(context.Background(), r.ID, window)
 		slog.Debug("dashboard render", "id", r.ID, "took", time.Since(start).Round(time.Millisecond), "err", err)
 		a.QueueUpdateDraw(func() {
 			if a.page != "dashboard" || a.detailRow.ID != r.ID {
@@ -386,7 +417,7 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 				return
 			}
 			_, _, paneW, _ := a.dash.GetInnerRect()
-			text, order := renderDashboard(view, window.label, paneW)
+			text, order := renderDashboard(view, label, paneW)
 			a.dashViewData, a.dashWidgets, a.dashSel, a.dashZoom = view, order, 0, false
 			a.dash.SetText(text)
 			a.dashHighlight()
@@ -410,7 +441,7 @@ func renderDashboard(v *data.DashboardView, rangeLabel string, paneWidth int) (s
 	rule := " [#444444]" + strings.Repeat("─", rowWidth) + "[-]\n"
 	var b strings.Builder
 	fmt.Fprintf(&b, " [orange::b]%s[-:-:-]\n", tview.Escape(v.Title))
-	fmt.Fprintf(&b, " [gray]%d widgets · last %s (<1>15m..<5>7d) · <j/k> select · <enter> zoom · <ctrl-r> refresh[-]\n", len(v.Widgets), rangeLabel)
+	fmt.Fprintf(&b, " [gray]%d widgets · last %s (<1>15m..<6>1mo, <w> custom) · <j/k> select · <enter> zoom · <ctrl-r> refresh[-]\n", len(v.Widgets), rangeLabel)
 	b.WriteString(rule)
 	b.WriteString("\n")
 
@@ -588,7 +619,7 @@ func (a *App) dashZoomOut() {
 		return
 	}
 	_, _, paneW, _ := a.dash.GetInnerRect()
-	text, order := renderDashboard(a.dashViewData, dashRanges[a.dashRangeIx].label, paneW)
+	text, order := renderDashboard(a.dashViewData, a.dashLabel, paneW)
 	a.dashWidgets = order
 	a.dash.SetText(text)
 	a.dashHighlight()
@@ -648,9 +679,9 @@ func trendLabel(spark []float64) string {
 	pct := (spark[len(spark)-1] - spark[0]) / spark[0] * 100
 	switch {
 	case pct >= 1:
-		return fmt.Sprintf("  [gray]▲ %.0f%% (1h)[-]", pct)
+		return fmt.Sprintf("  [gray]▲ %.0f%%[-]", pct)
 	case pct <= -1:
-		return fmt.Sprintf("  [gray]▼ %.0f%% (1h)[-]", -pct)
+		return fmt.Sprintf("  [gray]▼ %.0f%%[-]", -pct)
 	}
 	return ""
 }

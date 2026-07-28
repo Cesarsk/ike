@@ -7,6 +7,45 @@ import (
 	"github.com/rivo/tview"
 )
 
+// rowTokenCompletions suggests filter completions harvested from the loaded
+// rows — zero-API, like the logs facet completion: every whitespace/comma
+// token from every cell, prefix-matched (then substring) against the input.
+func (a *App) rowTokenCompletions(current string) []string {
+	const maxHits = 8
+	cur := strings.ToLower(current)
+	seen := map[string]bool{}
+	var prefix, sub []string
+	for _, r := range a.rows {
+		for _, cell := range r.Cells {
+			for _, tok := range strings.FieldsFunc(cell, func(c rune) bool {
+				return c == ' ' || c == ','
+			}) {
+				if len(tok) < 3 || seen[tok] {
+					continue
+				}
+				lt := strings.ToLower(tok)
+				switch {
+				case lt == cur:
+					continue // completing to what's typed is a no-op
+				case strings.HasPrefix(lt, cur):
+					seen[tok] = true
+					prefix = append(prefix, tok)
+				case strings.Contains(lt, cur):
+					seen[tok] = true
+					sub = append(sub, tok)
+				}
+			}
+		}
+	}
+	sort.Strings(prefix)
+	sort.Strings(sub)
+	out := append(prefix, sub...)
+	if len(out) > maxHits {
+		out = out[:maxHits]
+	}
+	return out
+}
+
 // openFuzzy opens the fuzzy row finder over the current table: type to match
 // (subsequence, case-insensitive, across every cell), enter jumps the table
 // selection to the picked row, esc cancels. Client-side only — no API cost.

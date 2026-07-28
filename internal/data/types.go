@@ -452,7 +452,7 @@ func Resources() []Resource {
 		{
 			Key: "dashboards", Title: "Dashboards",
 			Aliases: []string{"dashboards", "dashboard", "dash", "d"},
-			Columns: []string{"TITLE", "LAYOUT", "AUTHOR", "MODIFIED"},
+			Columns: []string{"TITLE", "LAYOUT", "AUTHOR", "MODIFIED", "DESCRIPTION"},
 			TTL:     10 * time.Minute,
 		},
 		{
