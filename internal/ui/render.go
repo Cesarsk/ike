@@ -52,8 +52,8 @@ func (a *App) render() {
 			case ci < len(r.Cells):
 				val = r.Cells[ci]
 			}
-			if len(val) > 200 {
-				val = val[:197] + "…"
+			if r := []rune(val); len(r) > 200 {
+				val = string(r[:197]) + "…" // rune-safe: no mid-rune "�" garbage
 			}
 			cell := tview.NewTableCell(tview.Escape(val)).
 				SetTextColor(color).

@@ -479,8 +479,10 @@ func widgetLines(w data.Widget, width int, idx int) string {
 		b.WriteString(topListBars(w.Items, width))
 	case w.HasData:
 		spark := data.Sparkline(w.Spark)
-		if width > 10 && len(spark) > width-10 {
-			spark = spark[len(spark)-(width-10):] // keep the most recent points
+		// Truncate by RUNES: the levels are 3-byte block chars, and a byte
+		// slice lands mid-rune — that renders as "�?" garbage.
+		if r := []rune(spark); width > 10 && len(r) > width-10 {
+			spark = string(r[len(r)-(width-10):]) // keep the most recent points
 		}
 		fmt.Fprintf(&b, "[green]%s[-] [white::b]%s[-:-:-]\n", spark, data.FormatValue(w.Last))
 	case w.Note != "":
@@ -596,7 +598,19 @@ func trendLabel(spark []float64) string {
 func topListBars(items []data.WidgetItem, width int) string {
 	barW := 16
 	labelW := 14
-	if width > 0 && width < 44 {
+	switch {
+	case width == 0:
+		// Zoom / unbounded: show the whole label — readability is the point.
+		barW, labelW = 24, 0
+		for _, it := range items {
+			if n := len([]rune(it.Label)); n > labelW {
+				labelW = n
+			}
+		}
+		if labelW > 64 {
+			labelW = 64
+		}
+	case width < 44:
 		barW, labelW = 8, 10
 	}
 	max := items[0].Value
@@ -615,8 +629,8 @@ func topListBars(items []data.WidgetItem, width int) string {
 			n = 1
 		}
 		label := it.Label
-		if len(label) > labelW {
-			label = label[:labelW-1] + "…"
+		if r := []rune(label); len(r) > labelW {
+			label = string(r[:labelW-1]) + "…"
 		}
 		fmt.Fprintf(&b, "[white]%-*s[-] [green]%s[-] %s\n",
 			labelW, tview.Escape(label), strings.Repeat("▇", n), data.FormatValue(it.Value))
