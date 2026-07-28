@@ -522,13 +522,16 @@ func widgetLines(w data.Widget, width int, idx int) string {
 	case w.HasData && w.Type == "toplist" && len(w.Items) > 0:
 		b.WriteString(topListBars(w.Items, width))
 	case w.HasData:
-		spark := data.Sparkline(w.Spark)
-		// Truncate by RUNES: the levels are 3-byte block chars, and a byte
-		// slice lands mid-rune — that renders as "�?" garbage.
-		if r := []rune(spark); width > 10 && len(r) > width-10 {
-			spark = string(r[len(r)-(width-10):]) // keep the most recent points
+		// A real multi-row chart — one-line sparklines were the "too small"
+		// complaint; height gives peaks and valleys actual shape.
+		chartW := width - 2
+		if width <= 0 {
+			chartW = 60
 		}
-		fmt.Fprintf(&b, "[green]%s[-] [white::b]%s[-:-:-]\n", spark, data.FormatValue(w.Last))
+		for _, row := range data.ChartRows(w.Spark, chartW, 4) {
+			fmt.Fprintf(&b, "[green]%s[-]\n", row)
+		}
+		fmt.Fprintf(&b, "[white::b]%s[-:-:-]%s\n", data.FormatValue(w.Last), trendLabel(w.Spark))
 	case w.Note != "":
 		fmt.Fprintf(&b, "[gray]· %s[-]\n", tview.Escape(clip(w.Note, width)))
 	}
@@ -561,7 +564,8 @@ func (a *App) dashMove(delta int) {
 		a.dashSel = len(a.dashWidgets) - 1
 	}
 	if a.dashZoom {
-		a.dash.SetText(renderWidgetZoom(a.dashWidgets[a.dashSel], a.dashSel, len(a.dashWidgets))).ScrollToBeginning()
+		_, _, paneW, _ := a.dash.GetInnerRect()
+		a.dash.SetText(renderWidgetZoom(a.dashWidgets[a.dashSel], a.dashSel, len(a.dashWidgets), paneW)).ScrollToBeginning()
 		return
 	}
 	a.dashHighlight()
@@ -573,7 +577,8 @@ func (a *App) dashZoomIn() {
 		return
 	}
 	a.dashZoom = true
-	a.dash.SetText(renderWidgetZoom(a.dashWidgets[a.dashSel], a.dashSel, len(a.dashWidgets))).ScrollToBeginning()
+	_, _, paneW, _ := a.dash.GetInnerRect()
+	a.dash.SetText(renderWidgetZoom(a.dashWidgets[a.dashSel], a.dashSel, len(a.dashWidgets), paneW)).ScrollToBeginning()
 }
 
 // dashZoomOut returns from the zoom to the grid (no re-fetch), selection kept.
@@ -591,14 +596,12 @@ func (a *App) dashZoomOut() {
 
 // renderWidgetZoom is the full-pane view of one widget: complete title,
 // query, stats, every toplist row — the readable version of a clipped cell.
-func renderWidgetZoom(w data.Widget, idx, total int) string {
+func renderWidgetZoom(w data.Widget, idx, total, paneW int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n [orange::b]%s[-:-:-]  [gray]%s · widget %d/%d[-]\n\n", tview.Escape(w.Title), tview.Escape(w.Type), idx+1, total)
-	switch {
-	case w.HasData && len(w.Items) > 0:
-		b.WriteString(topListBars(w.Items, 0))
-	case w.HasData:
-		fmt.Fprintf(&b, " [green]%s[-]\n\n", data.Sparkline(w.Spark))
+	// Headline first (stats, query), the tall chart last — so the facts are
+	// readable without scrolling even on short panes.
+	if w.HasData && len(w.Items) == 0 {
 		min, max, sum := w.Spark[0], w.Spark[0], 0.0
 		for _, p := range w.Spark {
 			if p < min {
@@ -611,12 +614,26 @@ func renderWidgetZoom(w data.Widget, idx, total int) string {
 		}
 		fmt.Fprintf(&b, " [gray]last[-] [white::b]%s[-:-:-]   [gray]min[-] %s   [gray]avg[-] %s   [gray]max[-] %s%s\n",
 			data.FormatValue(w.Last), data.FormatValue(min), data.FormatValue(sum/float64(len(w.Spark))), data.FormatValue(max), trendLabel(w.Spark))
-	case w.Note != "":
+	}
+	if w.Note != "" && !w.HasData {
 		fmt.Fprintf(&b, " %s\n", tview.Escape(w.Note))
 	}
 	if w.Query != "" {
-		b.WriteString("\n [gray]query:[-]\n")
-		fmt.Fprintf(&b, " [darkcyan]%s[-]\n", tview.Escape(w.Query))
+		fmt.Fprintf(&b, " [gray]query:[-] [darkcyan]%s[-]\n", tview.Escape(w.Query))
+	}
+	switch {
+	case w.HasData && len(w.Items) > 0:
+		b.WriteString("\n")
+		b.WriteString(topListBars(w.Items, 0))
+	case w.HasData:
+		chartW := paneW - 4
+		if chartW < 40 || chartW > 160 {
+			chartW = 100
+		}
+		b.WriteString("\n")
+		for _, row := range data.ChartRows(w.Spark, chartW, 10) {
+			fmt.Fprintf(&b, " [green]%s[-]\n", row)
+		}
 	}
 	b.WriteString("\n [gray]<j/k> prev/next widget · <esc> back to the grid[-]\n")
 	return b.String()

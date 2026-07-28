@@ -95,3 +95,72 @@ func FormatValue(v float64) string {
 		return fmt.Sprintf("%.2f", v)
 	}
 }
+
+// ChartRows renders a series as a multi-row block chart (top row first) —
+// the taller sibling of Sparkline for panes with vertical room. Points are
+// bucket-averaged down to width columns; column heights are drawn in
+// eighth-block resolution. A flat series draws its single level mid-chart.
+func ChartRows(points []float64, width, height int) []string {
+	if len(points) == 0 || width <= 0 || height <= 0 {
+		return nil
+	}
+	// Downsample to one column per bucket (average).
+	cols := make([]float64, 0, width)
+	if len(points) <= width {
+		cols = append(cols, points...)
+	} else {
+		per := float64(len(points)) / float64(width)
+		for c := 0; c < width; c++ {
+			lo, hi := int(float64(c)*per), int(float64(c+1)*per)
+			if hi > len(points) {
+				hi = len(points)
+			}
+			if lo >= hi {
+				lo = hi - 1
+			}
+			sum := 0.0
+			for _, p := range points[lo:hi] {
+				sum += p
+			}
+			cols = append(cols, sum/float64(hi-lo))
+		}
+	}
+	min, max := cols[0], cols[0]
+	for _, v := range cols {
+		min = math.Min(min, v)
+		max = math.Max(max, v)
+	}
+	span := max - min
+	rows := make([][]rune, height)
+	for r := range rows {
+		rows[r] = make([]rune, len(cols))
+		for c := range rows[r] {
+			rows[r][c] = ' '
+		}
+	}
+	for c, v := range cols {
+		var h8 int
+		if span == 0 {
+			h8 = height * 4 // flat: a mid-height line
+		} else {
+			h8 = int((v - min) / span * float64(height*8))
+			if h8 < 1 {
+				h8 = 1 // a visible baseline beats an empty column
+			}
+		}
+		for r := 0; r < height; r++ { // r = rows from the bottom
+			rowIdx := height - 1 - r
+			switch {
+			case h8 >= (r+1)*8:
+				rows[rowIdx][c] = sparkLevels[len(sparkLevels)-1]
+			case h8 > r*8:
+				rows[rowIdx][c] = sparkLevels[(h8-r*8-1)*len(sparkLevels)/8]
+			}
+		}
+	}
+	out := make([]string, height)
+	for r := range rows {
+		out[r] = string(rows[r])
+	}
+	return out
+}
