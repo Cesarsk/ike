@@ -206,6 +206,7 @@ type App struct {
 	dashViewData *data.DashboardView
 	dashSel      int
 	dashZoom     bool
+	dashRangeIx  int             // index into dashRanges (init to 1 = 1h, the web default)
 	splash       *tview.TextView // startup logo, auto-dismissed
 	// Log surrounding-context panel (x in :logs): a caption + a selectable
 	// table of the ±window, so lines can be navigated and expanded.
@@ -339,6 +340,7 @@ func New(o Options) (*App, error) {
 		refreshEvery: o.Refresh,
 		queries:      map[string]string{},
 		history:      map[string][]string{},
+		dashRangeIx:  1, // 1h, matching the web UI's default window
 	}
 	var startErr error
 	if o.Current != "" {
@@ -830,6 +832,10 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case ev.Rune() == ':':
 			a.openPalette()
+			return nil
+		case ev.Rune() >= '1' && ev.Rune() <= '5':
+			// The web UI's time-range picker, on the same digits as :logs.
+			a.setDashRange(int(ev.Rune() - '1'))
 			return nil
 		case ev.Rune() == 'j' || ev.Key() == tcell.KeyDown:
 			a.dashMove(1)

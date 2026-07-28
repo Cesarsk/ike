@@ -338,6 +338,30 @@ func (a *App) renderDetail(r data.Row) {
 	a.detail.SetTitle(fmt.Sprintf(" %s/%s ", strings.TrimSuffix(a.res.Title, "s"), r.ID))
 }
 
+// dashRanges are the dashboard time windows on digit keys 1-5 — the same
+// mapping as the logs/traces views, defaulting to the web UI's 1h.
+var dashRanges = []struct {
+	label  string
+	window time.Duration
+}{
+	{"15m", 15 * time.Minute},
+	{"1h", time.Hour},
+	{"4h", 4 * time.Hour},
+	{"1d", 24 * time.Hour},
+	{"7d", 7 * 24 * time.Hour},
+}
+
+// setDashRange switches the dashboard window and re-fetches (a new window is
+// new data — the same deliberate spend as the web picker).
+func (a *App) setDashRange(ix int) {
+	if ix < 0 || ix >= len(dashRanges) || ix == a.dashRangeIx {
+		return
+	}
+	a.dashRangeIx = ix
+	a.flash("window → "+dashRanges[ix].label, false)
+	a.loadDashboard(a.detailRow, true)
+}
+
 // loadDashboard renders a dashboard's widgets with sparklines. Fetch is
 // on-demand and bounded (see data.maxDashWidgets); force=true is ctrl-r.
 func (a *App) loadDashboard(r data.Row, force bool) {
@@ -348,9 +372,10 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 		a.flash("refreshing sparklines…", false)
 	}
 	a.showPage("dashboard")
+	window := dashRanges[a.dashRangeIx]
 	go func() {
 		start := time.Now()
-		view, err := a.providerFor(r).Dashboard(context.Background(), r.ID)
+		view, err := a.providerFor(r).Dashboard(context.Background(), r.ID, window.window)
 		slog.Debug("dashboard render", "id", r.ID, "took", time.Since(start).Round(time.Millisecond), "err", err)
 		a.QueueUpdateDraw(func() {
 			if a.page != "dashboard" || a.detailRow.ID != r.ID {
@@ -360,7 +385,7 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 				a.dash.SetText("\n  [red]✗ " + tview.Escape(err.Error()))
 				return
 			}
-			text, order := renderDashboard(view)
+			text, order := renderDashboard(view, window.label)
 			a.dashViewData, a.dashWidgets, a.dashSel, a.dashZoom = view, order, 0, false
 			a.dash.SetText(text)
 			a.dashHighlight()
@@ -374,10 +399,10 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 // renderDashboard turns a DashboardView into the terminal panel. When the
 // dashboard has layout coordinates it renders a grid (widgets side by side,
 // in Datadog reading order); otherwise it falls back to a one-per-line list.
-func renderDashboard(v *data.DashboardView) (string, []data.Widget) {
+func renderDashboard(v *data.DashboardView, rangeLabel string) (string, []data.Widget) {
 	var b strings.Builder
 	fmt.Fprintf(&b, " [orange::b]%s[-:-:-]\n", tview.Escape(v.Title))
-	fmt.Fprintf(&b, " [gray]%d widgets · last 1h · <j/k> select · <enter> zoom · <ctrl-r> refresh[-]\n\n", len(v.Widgets))
+	fmt.Fprintf(&b, " [gray]%d widgets · last %s (<1>15m..<5>7d) · <j/k> select · <enter> zoom · <ctrl-r> refresh[-]\n\n", len(v.Widgets), rangeLabel)
 
 	hasCoords := false
 	for _, w := range v.Widgets {
@@ -538,7 +563,7 @@ func (a *App) dashZoomOut() {
 	if a.dashViewData == nil {
 		return
 	}
-	text, order := renderDashboard(a.dashViewData)
+	text, order := renderDashboard(a.dashViewData, dashRanges[a.dashRangeIx].label)
 	a.dashWidgets = order
 	a.dash.SetText(text)
 	a.dashHighlight()

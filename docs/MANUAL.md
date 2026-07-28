@@ -187,7 +187,7 @@ Switch to any view with `:` + its name or a shorter alias.
   stats to third-party clients. The list comes from the service catalog (trace
   stats), so it's populated even when span retention is tight — unlike a raw
   span search.
-- **Dashboards** — `enter` renders the widgets as a **typed grid**: single-value widgets show the number big with a 1h trend arrow, toplists as ranked horizontal bars, timeseries as sparklines. The grid is **explorable**: `j`/`k` moves the widget selection, `enter` **zooms** the selected widget (full title, complete query, min/avg/max stats, every toplist row), `esc` returns to the grid. Formula widgets (including APM/spans, logs and RUM sources) chart through Datadog's v2 query engine — formulas evaluate, and `query_value` tiles show the same number as the web tile; SLO/table/log-stream widgets say what they are and which ike view covers them; note widgets show their text
+- **Dashboards** — `enter` renders the widgets as a **typed grid**: single-value widgets show the number big with a 1h trend arrow, toplists as ranked horizontal bars, timeseries as sparklines. The grid is **explorable**: `j`/`k` moves the widget selection, `enter` **zooms** the selected widget (full title, complete query, min/avg/max stats, every toplist row), `esc` returns to the grid. Digit keys `1`–`5` set the **time window** (15m / 1h / 4h / 1d / 7d — the web UI's range picker; each switch re-fetches). Formula widgets (including APM/spans, logs and RUM sources) chart through Datadog's v2 query engine — formulas evaluate, and `query_value` tiles show the same number as the web tile; SLO/table/log-stream widgets say what they are and which ike view covers them; note widgets show their text
   matching the Datadog layout; `ctrl-r` re-fetches.
 - **Downtimes** — `x` cancels the selected downtime.
 - Any table — `s` cycles the sort column, `S` reverses it; `C` opens the
@@ -474,7 +474,7 @@ either way.
 |-----|-------|--------|
 | `0`–`4` | Monitors | state quick filter (alert/warn/nodata/ok/all) |
 | `0`–`3` | Incidents | state quick filter (active/stable/resolved/all) |
-| `1`–`5` | Logs/Traces/Events | time window (15m/1h/4h/1d/7d) |
+| `1`–`5` | Logs/Traces/Events, Dashboards | time window (15m/1h/4h/1d/7d) |
 | `l` | Monitors, Traces, Containers, Errors | drill to logs |
 | `r` | Errors | triage an issue's state (open/acknowledged/resolved/ignored) |
 | `t` | Logs, Traces | drill to trace waterfall |
