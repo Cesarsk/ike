@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -16,10 +17,24 @@ import (
 // tree, and fetch a sparkline for each metric widget (bounded). Widgets we
 // can't chart (log streams, notes, formula-only queries) still appear, with
 // a note instead of a sparkline.
+// HumanWindow renders a duration the way the range picker labels it (30m,
+// 4h, 2d) — used so "no data" notes name the window they actually checked.
+func HumanWindow(d time.Duration) string {
+	switch {
+	case d >= 24*time.Hour && d%(24*time.Hour) == 0:
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	case d >= time.Hour && d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	default:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+}
+
 func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (*DashboardView, error) {
 	if window <= 0 {
 		window = time.Hour
 	}
+	noData := "no data in last " + HumanWindow(window)
 	ctx = l.authCtx(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -76,7 +91,7 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 					w.Items = seriesLastValues(mq)
 				}
 			} else {
-				w.Note = "no data in last 1h"
+				w.Note = noData
 			}
 			continue
 		}
@@ -85,7 +100,7 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 		// evaluate and non-metric sources chart. The dashboard definition's
 		// queries[]/formulas[] JSON is the v2 request's own shape, passed
 		// through nearly verbatim.
-		l.queryWidgetV2(ctx, v2API, w, specs[i].queriesJSON, specs[i].formulasJSON, from, to)
+		l.queryWidgetV2(ctx, v2API, w, specs[i].queriesJSON, specs[i].formulasJSON, from, to, noData)
 	}
 	widgets := make([]Widget, len(specs))
 	for i := range specs {
@@ -262,7 +277,7 @@ func seriesLastValues(mq datadogV1.MetricsQueryResponse) []WidgetItem {
 // widgets run the scalar endpoint (the exact number the web tile shows);
 // everything else runs the timeseries endpoint. Failures degrade to a note —
 // never an error for the whole dashboard.
-func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *Widget, queriesJSON, formulasJSON []byte, from, to int64) {
+func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *Widget, queriesJSON, formulasJSON []byte, from, to int64, noData string) {
 	w.Query = displayQuery(queriesJSON, formulasJSON)
 	var formulas []datadogV2.QueryFormula
 	if len(formulasJSON) > 0 {
@@ -303,7 +318,7 @@ func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *
 				}
 			}
 		}
-		w.Note = "no data in last 1h"
+		w.Note = noData
 		return
 	}
 
@@ -328,7 +343,7 @@ func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *
 	values := respAttrs.GetValues()
 	series := respAttrs.GetSeries()
 	if len(values) == 0 {
-		w.Note = "no data in last 1h"
+		w.Note = noData
 		return
 	}
 	w.Spark = densify(values[0])
@@ -336,7 +351,7 @@ func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *
 		w.Last = w.Spark[len(w.Spark)-1]
 		w.HasData = true
 	} else {
-		w.Note = "no data in last 1h"
+		w.Note = noData
 		return
 	}
 	if w.Type == "toplist" {
@@ -440,7 +455,7 @@ func (l *Live) dashboards(ctx context.Context) ([]Row, error) {
 	for _, d := range dashs {
 		rows = append(rows, Row{
 			ID:    d.GetId(),
-			Cells: []string{d.GetTitle(), string(d.GetLayoutType()), d.GetAuthorHandle(), d.GetModifiedAt().Local().Format("2006-01-02 15:04")},
+			Cells: []string{d.GetTitle(), string(d.GetLayoutType()), d.GetAuthorHandle(), d.GetModifiedAt().Local().Format("2006-01-02 15:04"), d.GetDescription()},
 			Raw:   d,
 			URL:   l.web + d.GetUrl(),
 		})

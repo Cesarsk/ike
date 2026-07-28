@@ -124,7 +124,7 @@ view; the row count is in the table title (`[18]`).
 | Key | Action |
 |-----|--------|
 | `:` | **command palette** — a centered overlay listing every command; type to fuzzy-filter (name, alias, description), `↑`/`↓` to pick, `enter` to run, `esc` to cancel. Typing a full command (`:mon` + `enter`) works exactly like a classic prompt. |
-| `/` | **filter** the rows. In Logs/Traces/Events this is a real Datadog query sent to the API; elsewhere it filters the loaded rows. |
+| `/` | **filter** the rows, with autocomplete: Logs/Traces/Events complete Datadog query facets (a real query sent to the API); every other view completes from the tokens on screen and filters the loaded rows live. |
 | `enter` | **drill in** — the detail view, or a view-specific action (an SLO's error budget, a dashboard's widget grid). |
 | `esc` | **back** — first press clears an active filter; next press pops the navigation history (k9s-style: view, filter and selection are restored). |
 | `j`/`k` or `↑`/`↓` | move the selection / scroll the detail view. |
@@ -160,7 +160,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Teams** | `:teams` `:team` | The org's Datadog teams: name, handle, member count, description. `enter` on a team shows its members and their roles (read-only). |
 | **On-Call** | `:oncall` `:oc` `:schedules` | Your teams. `enter` on a team shows who's on call right now and the escalation ladder (read-only). Needs Datadog On-Call, see below. |
 | **Downtimes** | `:downtimes` `:dt` `:mutes` | Scheduled/active monitor mutes: status, scope, message, created. |
-| **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified. |
+| **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified, description. |
 | **Menu** | `:menu` `:commands` `:aliases` | Every command with its aliases and what it opens. `enter` on a row runs it, so it doubles as a command palette. Start here if you're not sure what exists. |
 | **Contexts** | `:ctx` | Your Datadog orgs — switch, add, edit, delete (see [contexts](#multiple-orgs-contexts--auth)). |
 | **Settings** | `:settings` | Theme, per-view cache TTLs and columns — edited live (see [settings](#settings-view)). |
@@ -187,7 +187,7 @@ Switch to any view with `:` + its name or a shorter alias.
   stats to third-party clients. The list comes from the service catalog (trace
   stats), so it's populated even when span retention is tight — unlike a raw
   span search.
-- **Dashboards** — `enter` renders the widgets as a **typed grid**: single-value widgets show the number big with a 1h trend arrow, toplists as ranked horizontal bars, timeseries as sparklines. The grid is **explorable**: `j`/`k` moves the widget selection, `enter` **zooms** the selected widget (full title, complete query, min/avg/max stats, every toplist row), `esc` returns to the grid. Digit keys `1`–`5` set the **time window** (15m / 1h / 4h / 1d / 7d — the web UI's range picker; each switch re-fetches). Formula widgets (including APM/spans, logs and RUM sources) chart through Datadog's v2 query engine — formulas evaluate, and `query_value` tiles show the same number as the web tile; SLO/table/log-stream widgets say what they are and which ike view covers them; note widgets show their text
+- **Dashboards** — `enter` renders the widgets as a **typed grid**: single-value widgets show the number big with a trend arrow over the selected window, toplists as ranked horizontal bars, timeseries as sparklines. The grid is **explorable**: `j`/`k` moves the widget selection, `enter` **zooms** the selected widget (full title, complete query, min/avg/max stats, every toplist row), `esc` returns to the grid. Digit keys `1`–`6` set the **time window** (15m / 1h / 4h / 1d / 7d / 1mo — the web UI's range picker; each switch re-fetches) and `w` prompts for a **custom window** (`30m`, `4h`, `2d`, `1w`, `1mo`). Formula widgets (including APM/spans, logs and RUM sources) chart through Datadog's v2 query engine — formulas evaluate, and `query_value` tiles show the same number as the web tile; SLO/table/log-stream widgets say what they are and which ike view covers them; note widgets show their text
   matching the Datadog layout; `ctrl-r` re-fetches.
 - **Downtimes** — `x` cancels the selected downtime.
 - Any table — `s` cycles the sort column, `S` reverses it; `C` opens the
@@ -474,7 +474,9 @@ either way.
 |-----|-------|--------|
 | `0`–`4` | Monitors | state quick filter (alert/warn/nodata/ok/all) |
 | `0`–`3` | Incidents | state quick filter (active/stable/resolved/all) |
-| `1`–`5` | Logs/Traces/Events, Dashboards | time window (15m/1h/4h/1d/7d) |
+| `1`–`5` | Logs/Traces/Events | time window (15m/1h/4h/1d/7d) |
+| `1`–`6` | Dashboard grid | time window (15m/1h/4h/1d/7d/1mo) |
+| `w` | Dashboard grid | custom time window (`30m`, `2d`, `1w`, `1mo`) |
 | `l` | Monitors, Traces, Containers, Errors | drill to logs |
 | `r` | Errors | triage an issue's state (open/acknowledged/resolved/ignored) |
 | `t` | Logs, Traces | drill to trace waterfall |
@@ -585,7 +587,7 @@ contexts:
 | `traces` | TIME, SERVICE, RESOURCE, DURATION, ERR, TRACE_ID |
 | `events` | TIME, TYPE, SOURCE, TITLE, TAGS |
 | `downtimes` | STATUS, SCOPE, MESSAGE, CREATED |
-| `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED |
+| `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED, DESCRIPTION |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |

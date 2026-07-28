@@ -126,7 +126,7 @@ The essentials (see the [full reference in the Manual](docs/MANUAL.md#keybinding
 | Key | Action |
 |-----|--------|
 | `:` | switch view: `:monitors` `:incidents` `:slos` `:logs` `:traces` `:services` `:events` `:rum` `:synthetics` `:downtimes` `:dashboards` `:overview` `:cost` `:ctx` `:settings` |
-| `/` | filter rows; in Logs/Traces/Events it is a Datadog search query (with autocomplete) |
+| `/` | filter rows with autocomplete in every view; in Logs/Traces/Events it is a Datadog search query |
 | `enter` | detail view (SLO error budget, dashboard widget grid, incident People header, …) |
 | `l` / `t` | drill to logs / to the trace waterfall (the debugging loop) |
 | `x` | (logs) surrounding context: a ±5m window around the selected line |

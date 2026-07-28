@@ -1275,7 +1275,7 @@ func (d *Demo) dashboards() []Row {
 		id := fmt.Sprintf("abc-%03d", i)
 		rows = append(rows, Row{
 			ID:    id,
-			Cells: []string{ds.title, ds.layout, ds.author, mod.Format("2006-01-02 15:04")},
+			Cells: []string{ds.title, ds.layout, ds.author, mod.Format("2006-01-02 15:04"), "team:" + ds.author + " golden-signals for " + ds.title},
 			Raw:   map[string]any{"id": id, "title": ds.title, "layout_type": ds.layout, "author": ds.author},
 			URL:   WebBase(d.site) + "/dashboard/" + id,
 		})
