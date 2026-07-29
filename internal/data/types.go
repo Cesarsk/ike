@@ -486,7 +486,9 @@ func Resources() []Resource {
 			// env-scoped), not a span query — default "prod", override with /.
 			Key: "services", Title: "Services",
 			Aliases: []string{"services", "service", "svc"},
-			Columns: []string{"SERVICE"},
+			// TEAM/TIER/LIFECYCLE join in from the service catalog (blank
+			// when the org doesn't maintain definitions).
+			Columns: []string{"SERVICE", "TEAM", "TIER", "LIFECYCLE"},
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "prod",
 		},
 		{
