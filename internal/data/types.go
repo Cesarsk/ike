@@ -161,6 +161,7 @@ type Widget struct {
 	Spark      []float64
 	Last       float64
 	Items      []WidgetItem // toplist widgets: per-group values, largest first
+	Series     int          // series count behind Spark; >1 → Spark is the per-bucket max
 	HasData    bool
 	Note       string // why there's no sparkline (unsupported widget / query type)
 	X, Y, W, H int    // dashboard grid coords; W==0 → unknown (ordered layout)
@@ -521,7 +522,7 @@ func Resources() []Resource {
 			// hosts sort first (see hosts loader); m mutes/unmutes.
 			Key: "hosts", Title: "Hosts",
 			Aliases: []string{"hosts", "host", "infra"},
-			Columns: []string{"HOST", "STATUS", "APPS", "CPU", "LAST", "TAGS"},
+			Columns: []string{"HOST", "STATUS", "CLUSTER", "APPS", "CPU", "LAST", "TAGS"},
 			TTL:     60 * time.Second,
 			EmptyHint: "No hosts reporting. The Datadog agent may not be installed, or " +
 				"this org has no infrastructure hosts.",

@@ -46,21 +46,23 @@ func rangeSeconds(r string) (int, bool) {
 // like "ØØ" in the wild.
 var sparkLevels = []rune("▁▂▃▄▅▆▇")
 
-// Sparkline renders a series as block characters. A flat or empty series is
-// handled gracefully (mid-level / empty string). This is the terminal-native
-// substitute for a Datadog timeseries graph — trend at a glance, not fidelity.
+// Sparkline renders a series as block characters. NaN points (buckets with no
+// data) render as gaps so the time axis keeps its shape; a flat or empty
+// series is handled gracefully (mid-level / empty string). This is the
+// terminal-native substitute for a Datadog timeseries graph — trend at a
+// glance, not fidelity.
 func Sparkline(points []float64) string {
-	if len(points) == 0 {
+	min, max, ok := seriesMinMax(points)
+	if !ok {
 		return ""
-	}
-	min, max := points[0], points[0]
-	for _, p := range points {
-		min = math.Min(min, p)
-		max = math.Max(max, p)
 	}
 	var b strings.Builder
 	span := max - min
 	for _, p := range points {
+		if math.IsNaN(p) {
+			b.WriteRune(' ')
+			continue
+		}
 		if span == 0 {
 			b.WriteRune(sparkLevels[len(sparkLevels)/2])
 			continue
@@ -75,6 +77,33 @@ func Sparkline(points []float64) string {
 		b.WriteRune(sparkLevels[idx])
 	}
 	return b.String()
+}
+
+// seriesMinMax is the NaN-skipping min/max; ok is false when no point is valid.
+func seriesMinMax(points []float64) (float64, float64, bool) {
+	min, max, ok := 0.0, 0.0, false
+	for _, p := range points {
+		if math.IsNaN(p) {
+			continue
+		}
+		if !ok {
+			min, max, ok = p, p, true
+			continue
+		}
+		min = math.Min(min, p)
+		max = math.Max(max, p)
+	}
+	return min, max, ok
+}
+
+// LastValid is the newest non-NaN point; ok is false when there is none.
+func LastValid(points []float64) (float64, bool) {
+	for i := len(points) - 1; i >= 0; i-- {
+		if !math.IsNaN(points[i]) {
+			return points[i], true
+		}
+	}
+	return 0, false
 }
 
 // FormatValue renders a metric value compactly (1.2k, 3.4M, 45, 0.87).
@@ -99,12 +128,15 @@ func FormatValue(v float64) string {
 // ChartRows renders a series as a multi-row block chart (top row first) —
 // the taller sibling of Sparkline for panes with vertical room. Points are
 // bucket-averaged down to width columns; column heights are drawn in
-// eighth-block resolution. A flat series draws its single level mid-chart.
+// eighth-block resolution. NaN points (buckets with no data) leave blank
+// columns so the time axis keeps its shape; a flat series draws a thin
+// mid-chart line rather than a half-height slab.
 func ChartRows(points []float64, width, height int) []string {
 	if len(points) == 0 || width <= 0 || height <= 0 {
 		return nil
 	}
-	// Downsample to one column per bucket (average).
+	// Downsample to one column per bucket (average of the valid points;
+	// a bucket with no valid points stays NaN → blank column).
 	cols := make([]float64, 0, width)
 	if len(points) <= width {
 		cols = append(cols, points...)
@@ -118,17 +150,24 @@ func ChartRows(points []float64, width, height int) []string {
 			if lo >= hi {
 				lo = hi - 1
 			}
-			sum := 0.0
+			sum, n := 0.0, 0
 			for _, p := range points[lo:hi] {
+				if math.IsNaN(p) {
+					continue
+				}
 				sum += p
+				n++
 			}
-			cols = append(cols, sum/float64(hi-lo))
+			if n == 0 {
+				cols = append(cols, math.NaN())
+			} else {
+				cols = append(cols, sum/float64(n))
+			}
 		}
 	}
-	min, max := cols[0], cols[0]
-	for _, v := range cols {
-		min = math.Min(min, v)
-		max = math.Max(max, v)
+	min, max, ok := seriesMinMax(cols)
+	if !ok {
+		return nil
 	}
 	span := max - min
 	rows := make([][]rune, height)
@@ -139,14 +178,16 @@ func ChartRows(points []float64, width, height int) []string {
 		}
 	}
 	for c, v := range cols {
-		var h8 int
+		if math.IsNaN(v) {
+			continue
+		}
 		if span == 0 {
-			h8 = height * 4 // flat: a mid-height line
-		} else {
-			h8 = int((v - min) / span * float64(height*8))
-			if h8 < 1 {
-				h8 = 1 // a visible baseline beats an empty column
-			}
+			rows[height/2][c] = sparkLevels[len(sparkLevels)/2]
+			continue
+		}
+		h8 := int((v - min) / span * float64(height*8))
+		if h8 < 1 {
+			h8 = 1 // a visible baseline beats an empty column
 		}
 		for r := 0; r < height; r++ { // r = rows from the bottom
 			rowIdx := height - 1 - r

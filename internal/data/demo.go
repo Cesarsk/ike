@@ -308,13 +308,13 @@ func (d *Demo) SetIssueState(_ context.Context, id, state string) error {
 var demoHosts = []struct {
 	name, status, apps, cpu, tags string
 }{
-	{"ip-10-0-1-14.eks-prod", "down", "system,docker,kubernetes", "", "team:sre,env:prod,role:eks-node"},
-	{"ip-10-0-2-31.eks-prod", "up", "system,docker,kubernetes", "78%", "team:sre,env:prod,role:eks-node"},
-	{"ip-10-0-2-9.eks-prod", "up", "system,docker,kubernetes", "44%", "team:sre,env:prod,role:eks-node"},
+	{"ip-10-0-1-14.eks-prod", "down", "system,docker,kubernetes", "", "team:sre,env:prod,role:eks-node,kube_cluster_name:payments-prod"},
+	{"ip-10-0-2-31.eks-prod", "up", "system,docker,kubernetes", "78%", "team:sre,env:prod,role:eks-node,kube_cluster_name:payments-prod"},
+	{"ip-10-0-2-9.eks-prod", "up", "system,docker,kubernetes", "44%", "team:sre,env:prod,role:eks-node,kube_cluster_name:payments-prod"},
 	{"rds-payments-prod", "up", "system,postgres", "61%", "team:payments,env:prod,role:rds"},
 	{"kong-dp-1.prod", "up", "system,docker,kong", "52%", "team:sre,env:prod,role:kong"},
 	{"kafka-3.platform", "up", "system,kafka", "83%", "team:platform,env:prod,role:kafka"},
-	{"ip-10-1-4-7.eks-stage", "up", "system,docker,kubernetes", "22%", "team:sre,env:stage,role:eks-node"},
+	{"ip-10-1-4-7.eks-stage", "up", "system,docker,kubernetes", "22%", "team:sre,env:stage,role:eks-node,kube_cluster_name:trading-stage"},
 	{"vault-2.prod", "up", "system,vault", "17%", "team:sre,env:prod,role:vault"},
 	{"redis-1.prod", "up", "system,redis", "39%", "team:sre,env:prod,role:redis"},
 	{"bastion.mgmt", "up", "system", "5%", "team:sre,env:mgmt,role:bastion"},
@@ -335,7 +335,7 @@ func (d *Demo) hosts() []Row {
 		}
 		rows = append(rows, Row{
 			ID:    h.name,
-			Cells: []string{h.name, status, h.apps, h.cpu, last, h.tags},
+			Cells: []string{h.name, status, hostCluster(strings.Split(h.tags, ",")), h.apps, h.cpu, last, h.tags},
 			Raw:   map[string]any{"muted": muted, "up": h.status != "down"},
 			URL:   WebBase(d.site) + "/infrastructure?host=" + h.name,
 		})
@@ -525,10 +525,23 @@ func (d *Demo) Dashboard(_ context.Context, id string, _ time.Duration) (*Dashbo
 		{"CPU %", "timeseries", "avg:system.cpu.user{*}", 55, 30, true, 4, 2, 8, 2},
 		{"Pod restarts", "toplist", "sum:kubernetes.containers.restarts{*}", 3, 4, true, 0, 4, 6, 2},
 		{"Deploy notes", "note", "", 0, 0, false, 6, 4, 6, 2},
+		{"Checkout availability (SLO)", "slo", "", 0, 0, false, 0, 6, 6, 2},
 	}
 	view := &DashboardView{Title: "SRE Overview (" + id + ")"}
 	for _, w := range widgets {
 		wd := Widget{Title: w.title, Type: w.typ, Query: w.query, X: w.x, Y: w.y, W: w.w, H: w.h}
+		if w.typ == "slo" {
+			wd.Query = "Checkout availability"
+			wd.Last = 99.97
+			wd.HasData = true
+			wd.Note = "target 99.90% · 30d · error budget left 70%"
+			wd.Spark = make([]float64, 30)
+			for i := range wd.Spark {
+				wd.Spark[i] = 100 - float64(i)
+			}
+			view.Widgets = append(view.Widgets, wd)
+			continue
+		}
 		if w.data {
 			pts := make([]float64, 30)
 			for i := range pts {

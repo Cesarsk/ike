@@ -16,6 +16,21 @@ const maxHosts = 1000
 
 // hosts lists reporting infrastructure hosts, problems first: down before
 // muted before up, then by name. Read-only; m mutes/unmutes a host.
+// hostCluster derives a host's cluster from its tags. Datadog's Host object
+// has no first-class cluster field — the web UI's "Cluster Name" facet is
+// built from these same tags, checked in specificity order.
+func hostCluster(tags []string) string {
+	prefixes := []string{"kube_cluster_name:", "cluster_name:", "eks_cluster-name:", "ecs_cluster_name:"}
+	for _, p := range prefixes {
+		for _, t := range tags {
+			if v, ok := strings.CutPrefix(strings.TrimSpace(t), p); ok && v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
 func (l *Live) hosts(ctx context.Context) ([]Row, error) {
 	resp, httpresp, err := datadogV1.NewHostsApi(l.client).ListHosts(ctx,
 		*datadogV1.NewListHostsOptionalParameters().WithCount(maxHosts).WithIncludeMutedHostsData(true))
@@ -31,15 +46,17 @@ func (l *Live) hosts(ctx context.Context) ([]Row, error) {
 			name = hn
 		}
 		up, muted := h.GetUp(), h.GetIsMuted()
+		tags := hostTags(h.GetTagsBySource())
 		rows = append(rows, Row{
 			ID: name,
 			Cells: []string{
 				name,
 				hostStatus(up, muted),
+				hostCluster(tags),
 				strings.Join(h.GetApps(), ","),
 				hostCPU(h.GetMetrics()),
 				hostLastReported(int64(h.GetLastReportedTime())),
-				strings.Join(hostTags(h.GetTagsBySource()), " "),
+				strings.Join(tags, " "),
 			},
 			Raw: map[string]any{"muted": muted, "up": up},
 			URL: l.web + "/infrastructure?host=" + name,

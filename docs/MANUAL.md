@@ -151,7 +151,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
 | **Errors** | `:errors` `:issues` | Error Tracking issues over the last 24h, highest count first: last-seen, triage state, count, type, message, service. `/` is an ET search (`service:…`); `r` triages (open/acknowledged/resolved/ignored); `l` drills to the service's error logs. |
-| **Hosts** | `:hosts` `:infra` | Infrastructure host inventory, problems first (down, then muted, then up): status, reporting integrations, CPU, last-report age, tags. `m` mutes/unmutes a host; `o` opens it in Datadog. |
+| **Hosts** | `:hosts` `:infra` | Infrastructure host inventory, problems first (down, then muted, then up): status, cluster (derived from `kube_cluster_name:`/`cluster_name:` tags — Datadog hosts have no first-class cluster field), reporting integrations, CPU, last-report age, tags. `m` mutes/unmutes a host; `o` opens it in Datadog. |
 | **Containers** | `:containers` `:pods` | Live container inventory, non-running first: name, state, image, host, **host health** (`HOST-ST`, joined live from `:hosts` — spot containers on a down/muted box), started-age, tags — plus `NAMESPACE` and `CLUSTER` columns you enable with `C`. `/` is a Datadog **tag filter** (`kube_namespace:payments`, `cluster:eks-prod`, `image_name:kong`). `l` drills to that container's logs (`container_name:…`); `enter` opens the full object; `o` opens it in Datadog. Read-only. |
 | **Security** | `:security` `:signals` `:siem` | Cloud SIEM / CSM security signals over the last 24h: time, severity, title, tags. `/` is a signals search query. `enter` opens the signal. |
 | **Notebooks** | `:notebooks` `:nb` `:runbooks` | The org's notebooks (runbooks, postmortems): name, author, status, last modified. `enter` reads the notebook's text. |
@@ -187,7 +187,7 @@ Switch to any view with `:` + its name or a shorter alias.
   stats to third-party clients. The list comes from the service catalog (trace
   stats), so it's populated even when span retention is tight — unlike a raw
   span search.
-- **Dashboards** — `enter` renders the widgets as a **typed grid**: single-value widgets show the number big with a trend arrow over the selected window, toplists as ranked horizontal bars, timeseries as sparklines. The grid is **explorable**: `j`/`k` moves the widget selection, `enter` **zooms** the selected widget (full title, complete query, min/avg/max stats, every toplist row), `esc` returns to the grid. Digit keys `1`–`6` set the **time window** (15m / 1h / 4h / 1d / 7d / 1mo — the web UI's range picker; each switch re-fetches) and `w` prompts for a **custom window** (`30m`, `4h`, `2d`, `1w`, `1mo`). Formula widgets (including APM/spans, logs and RUM sources) chart through Datadog's v2 query engine — formulas evaluate, and `query_value` tiles show the same number as the web tile; SLO/table/log-stream widgets say what they are and which ike view covers them; note widgets show their text
+- **Dashboards** — `enter` renders the widgets as a **typed grid**: single-value widgets show the number big with a trend arrow over the selected window, toplists as ranked horizontal bars, timeseries as sparklines. The grid is **explorable**: `j`/`k` moves the widget selection, `enter` **zooms** the selected widget (full title, complete query, min/avg/max stats, every toplist row), `esc` returns to the grid. Digit keys `1`–`6` set the **time window** (15m / 1h / 4h / 1d / 7d / 1mo — the web UI's range picker; each switch re-fetches) and `w` prompts for a **custom window** (`30m`, `4h`, `2d`, `1w`, `1mo`). Formula widgets (including APM/spans, logs and RUM sources) chart through Datadog's v2 query engine — formulas evaluate, and `query_value` tiles show the same number as the web tile. **SLO widgets show live attainment** (target, window and error budget left; zoom charts the budget burndown). Multi-series charts draw the per-bucket **max envelope**, labelled `(max of N series)`; buckets with no data stay blank so the time axis keeps its shape. Table/log-stream widgets say what they are and which ike view covers them; note widgets show their text
   matching the Datadog layout; `ctrl-r` re-fetches.
 - **Downtimes** — `x` cancels the selected downtime.
 - Any table — `s` cycles the sort column, `S` reverses it; `C` opens the
@@ -588,6 +588,7 @@ contexts:
 | `events` | TIME, TYPE, SOURCE, TITLE, TAGS |
 | `downtimes` | STATUS, SCOPE, MESSAGE, CREATED |
 | `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED, DESCRIPTION |
+| `hosts` | HOST, STATUS, CLUSTER, APPS, CPU, LAST, TAGS |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |

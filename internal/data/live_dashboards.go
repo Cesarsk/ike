@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -63,7 +64,7 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 	for i := range specs {
 		w := &specs[i].Widget
 		hasV2 := len(specs[i].queriesJSON) > 0
-		if w.Query == "" && !hasV2 {
+		if w.Query == "" && !hasV2 && specs[i].sloID == "" {
 			continue // Note already explains this widget type
 		}
 		if fetched >= MaxDashWidgets {
@@ -72,6 +73,10 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 			continue
 		}
 		fetched++
+		if specs[i].sloID != "" {
+			l.sloWidget(ctx, w, specs[i].sloID)
+			continue
+		}
 		// Classic single-q widgets stay on the cheap v1 metrics query.
 		if w.Query != "" {
 			mq, mresp, err := metricAPI.QueryMetrics(ctx, from, to, w.Query)
@@ -81,10 +86,20 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 				slog.Debug("widget query failed", "title", w.Title, "err", err)
 				continue
 			}
-			if pts := firstSeriesPoints(mq); len(pts) > 0 {
-				w.Spark = pts
-				w.Last = pts[len(pts)-1]
+			series := mq.GetSeries()
+			vals := make([][]*float64, len(series))
+			for si, s := range series {
+				for _, pair := range s.GetPointlist() {
+					if len(pair) == 2 {
+						vals[si] = append(vals[si], pair[1])
+					}
+				}
+			}
+			w.Spark = envelopeMax(vals)
+			if last, ok := LastValid(w.Spark); ok {
+				w.Last = last
 				w.HasData = true
+				w.Series = len(series)
 				// Toplists are per-group rankings: keep the last value of every
 				// series (one per group) so the renderer can draw bars.
 				if w.Type == "toplist" {
@@ -113,12 +128,40 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 	return view, nil
 }
 
+// sloWidget fills an SLO widget from the SLO's live status — attainment as
+// the headline, target/window/budget as the note, budget burndown as the
+// chart. Reuses the :slos detail fetch (2 API calls, inside the widget cap).
+func (l *Live) sloWidget(ctx context.Context, w *Widget, sloID string) {
+	det, err := l.sloStatus(ctx, sloID)
+	if err != nil {
+		w.Note = "SLO fetch failed"
+		slog.Debug("slo widget fetch failed", "title", w.Title, "err", err)
+		return
+	}
+	sd, ok := det.(*SLODetail)
+	if !ok {
+		w.Note = "SLO fetch failed"
+		return
+	}
+	if strings.HasPrefix(sd.Note, "history unavailable") {
+		w.Note = sd.Note
+		return
+	}
+	w.Last = sd.AttainmentPct
+	w.HasData = true
+	w.Query = sd.Name
+	w.Note = fmt.Sprintf("target %.2f%% · %dd · error budget left %.0f%%",
+		sd.TargetPct, sd.TimeframeDays, sd.BudgetRemainingPct)
+	w.Spark = sd.Burndown
+}
+
 // widgetSpec pairs a Widget with the raw queries/formulas JSON from its
 // definition, for the v2 query pass.
 type widgetSpec struct {
 	Widget
 	queriesJSON  []byte
 	formulasJSON []byte
+	sloID        string
 }
 
 // collectWidgets flattens the (possibly nested) widget tree in definition
@@ -149,7 +192,10 @@ func collectWidgets(node any, out *[]widgetSpec) {
 		}
 		sp := widgetSpec{Widget: Widget{Title: title, Type: typ}}
 		sp.Query, sp.queriesJSON, sp.formulasJSON = widgetQuery(def)
-		if sp.Query == "" && len(sp.queriesJSON) == 0 {
+		if s, ok := def["slo_id"].(string); ok {
+			sp.sloID = s
+		}
+		if sp.Query == "" && len(sp.queriesJSON) == 0 && sp.sloID == "" {
 			sp.Note = widgetTypeNote(typ, def)
 		}
 		// Layout (free/grid dashboards): x/y/width/height in grid units;
@@ -346,9 +392,14 @@ func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *
 		w.Note = noData
 		return
 	}
-	w.Spark = densify(values[0])
-	if len(w.Spark) > 0 {
-		w.Last = w.Spark[len(w.Spark)-1]
+	w.Series = len(values)
+	if len(values) == 1 {
+		w.Spark = seriesValues(values[0])
+	} else {
+		w.Spark = envelopeMax(values)
+	}
+	if last, ok := LastValid(w.Spark); ok {
+		w.Last = last
 		w.HasData = true
 	} else {
 		w.Note = noData
@@ -357,8 +408,8 @@ func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *
 	if w.Type == "toplist" {
 		const maxItems = 6
 		for i, v := range values {
-			pts := densify(v)
-			if len(pts) == 0 {
+			last, ok := LastValid(seriesValues(v))
+			if !ok {
 				continue
 			}
 			label := "total"
@@ -367,7 +418,7 @@ func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *
 					label = strings.Join(tags, ",")
 				}
 			}
-			w.Items = append(w.Items, WidgetItem{Label: label, Value: pts[len(pts)-1]})
+			w.Items = append(w.Items, WidgetItem{Label: label, Value: last})
 		}
 		sort.SliceStable(w.Items, func(i, j int) bool { return w.Items[i].Value > w.Items[j].Value })
 		if len(w.Items) > maxItems {
@@ -376,13 +427,55 @@ func (l *Live) queryWidgetV2(ctx context.Context, api *datadogV2.MetricsApi, w *
 	}
 }
 
-// densify drops nil points from a v2 series (sparse buckets are nil, not 0).
-func densify(pts []*float64) []float64 {
-	out := make([]float64, 0, len(pts))
-	for _, p := range pts {
-		if p != nil {
-			out = append(out, *p)
+// seriesValues converts a v2 series to floats, keeping nil buckets as NaN so
+// the time axis keeps its shape (renderers draw NaN as a gap). Returns nil
+// when no bucket has data.
+func seriesValues(pts []*float64) []float64 {
+	out := make([]float64, len(pts))
+	any := false
+	for i, p := range pts {
+		if p == nil {
+			out[i] = math.NaN()
+			continue
 		}
+		out[i] = *p
+		any = true
+	}
+	if !any {
+		return nil
+	}
+	return out
+}
+
+// envelopeMax collapses N series into the per-bucket max — the honest
+// single-line summary of a multi-series chart on a one-color terminal
+// (charting just the first series hides the worst node/cluster).
+func envelopeMax(values [][]*float64) []float64 {
+	ln := 0
+	for _, s := range values {
+		if len(s) > ln {
+			ln = len(s)
+		}
+	}
+	if ln == 0 {
+		return nil
+	}
+	out := make([]float64, ln)
+	any := false
+	for i := range out {
+		out[i] = math.NaN()
+		for _, s := range values {
+			if i >= len(s) || s[i] == nil {
+				continue
+			}
+			if math.IsNaN(out[i]) || *s[i] > out[i] {
+				out[i] = *s[i]
+			}
+			any = true
+		}
+	}
+	if !any {
+		return nil
 	}
 	return out
 }

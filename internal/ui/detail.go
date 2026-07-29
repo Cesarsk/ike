@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -547,6 +548,12 @@ func widgetLines(w data.Widget, width int, idx int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[\"w%d\"][aqua::b]%s[-:-:-][\"\"] [gray]%s[-]\n", idx, tview.Escape(clip(w.Title, width)), tview.Escape(w.Type))
 	switch {
+	case w.HasData && w.Type == "slo":
+		// SLO widgets: live attainment big, target/window/budget as the note.
+		fmt.Fprintf(&b, "[white::b]  %.2f%%[-:-:-]\n", w.Last)
+		if w.Note != "" {
+			fmt.Fprintf(&b, "[gray]· %s[-]\n", tview.Escape(clip(w.Note, width)))
+		}
 	case w.HasData && w.Type == "query_value":
 		// The single-value / gauge shape: the number is the point.
 		fmt.Fprintf(&b, "[white::b]  %s[-:-:-]%s\n", data.FormatValue(w.Last), trendLabel(w.Spark))
@@ -562,7 +569,7 @@ func widgetLines(w data.Widget, width int, idx int) string {
 		for _, row := range data.ChartRows(w.Spark, chartW, 4) {
 			fmt.Fprintf(&b, "[green]%s[-]\n", row)
 		}
-		fmt.Fprintf(&b, "[white::b]%s[-:-:-]%s\n", data.FormatValue(w.Last), trendLabel(w.Spark))
+		fmt.Fprintf(&b, "[white::b]%s[-:-:-]%s%s\n", data.FormatValue(w.Last), trendLabel(w.Spark), seriesLabel(w.Series))
 	case w.Note != "":
 		fmt.Fprintf(&b, "[gray]· %s[-]\n", tview.Escape(clip(w.Note, width)))
 	}
@@ -632,9 +639,15 @@ func renderWidgetZoom(w data.Widget, idx, total, paneW int) string {
 	fmt.Fprintf(&b, "\n [orange::b]%s[-:-:-]  [gray]%s · widget %d/%d[-]\n\n", tview.Escape(w.Title), tview.Escape(w.Type), idx+1, total)
 	// Headline first (stats, query), the tall chart last — so the facts are
 	// readable without scrolling even on short panes.
-	if w.HasData && len(w.Items) == 0 {
-		min, max, sum := w.Spark[0], w.Spark[0], 0.0
+	switch {
+	case w.HasData && w.Type == "slo":
+		fmt.Fprintf(&b, " [gray]attainment[-] [white::b]%.2f%%[-:-:-]\n", w.Last)
+	case w.HasData && len(w.Items) == 0:
+		min, max, sum, n := math.Inf(1), math.Inf(-1), 0.0, 0
 		for _, p := range w.Spark {
+			if math.IsNaN(p) {
+				continue
+			}
 			if p < min {
 				min = p
 			}
@@ -642,11 +655,14 @@ func renderWidgetZoom(w data.Widget, idx, total, paneW int) string {
 				max = p
 			}
 			sum += p
+			n++
 		}
-		fmt.Fprintf(&b, " [gray]last[-] [white::b]%s[-:-:-]   [gray]min[-] %s   [gray]avg[-] %s   [gray]max[-] %s%s\n",
-			data.FormatValue(w.Last), data.FormatValue(min), data.FormatValue(sum/float64(len(w.Spark))), data.FormatValue(max), trendLabel(w.Spark))
+		if n > 0 {
+			fmt.Fprintf(&b, " [gray]last[-] [white::b]%s[-:-:-]   [gray]min[-] %s   [gray]avg[-] %s   [gray]max[-] %s%s%s\n",
+				data.FormatValue(w.Last), data.FormatValue(min), data.FormatValue(sum/float64(n)), data.FormatValue(max), trendLabel(w.Spark), seriesLabel(w.Series))
+		}
 	}
-	if w.Note != "" && !w.HasData {
+	if w.Note != "" {
 		fmt.Fprintf(&b, " %s\n", tview.Escape(w.Note))
 	}
 	if w.Query != "" {
@@ -656,12 +672,15 @@ func renderWidgetZoom(w data.Widget, idx, total, paneW int) string {
 	case w.HasData && len(w.Items) > 0:
 		b.WriteString("\n")
 		b.WriteString(topListBars(w.Items, 0))
-	case w.HasData:
+	case w.HasData && len(w.Spark) > 0:
 		chartW := paneW - 4
 		if chartW < 40 || chartW > 160 {
 			chartW = 100
 		}
 		b.WriteString("\n")
+		if w.Type == "slo" {
+			b.WriteString(" [gray]error budget remaining %[-]\n")
+		}
 		for _, row := range data.ChartRows(w.Spark, chartW, 10) {
 			fmt.Fprintf(&b, " [green]%s[-]\n", row)
 		}
@@ -671,12 +690,19 @@ func renderWidgetZoom(w data.Widget, idx, total, paneW int) string {
 }
 
 // trendLabel summarises a series as its change over the window (▲/▼ percent),
-// blank when flat or unknowable.
+// blank when flat or unknowable. NaN gaps are skipped at both ends.
 func trendLabel(spark []float64) string {
-	if len(spark) < 2 || spark[0] == 0 {
+	first, last := math.NaN(), math.NaN()
+	for _, p := range spark {
+		if !math.IsNaN(p) {
+			first = p
+			break
+		}
+	}
+	if last, _ = data.LastValid(spark); math.IsNaN(first) || first == 0 {
 		return ""
 	}
-	pct := (spark[len(spark)-1] - spark[0]) / spark[0] * 100
+	pct := (last - first) / first * 100
 	switch {
 	case pct >= 1:
 		return fmt.Sprintf("  [gray]▲ %.0f%%[-]", pct)
@@ -684,6 +710,14 @@ func trendLabel(spark []float64) string {
 		return fmt.Sprintf("  [gray]▼ %.0f%%[-]", -pct)
 	}
 	return ""
+}
+
+// seriesLabel marks a chart that summarises several series (per-bucket max).
+func seriesLabel(n int) string {
+	if n <= 1 {
+		return ""
+	}
+	return fmt.Sprintf("  [gray](max of %d series)[-]", n)
 }
 
 // topListBars draws a toplist's groups as labelled horizontal bars scaled to

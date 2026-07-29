@@ -1,6 +1,9 @@
 package data
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestWidgetQueryExtraction(t *testing.T) {
 	// Classic requests[].q → the v1 path.
@@ -63,10 +66,34 @@ func TestWidgetTypeNote(t *testing.T) {
 	}
 }
 
-func TestDensify(t *testing.T) {
+func TestSeriesValuesKeepsGaps(t *testing.T) {
 	v1, v3 := 1.0, 3.0
-	got := densify([]*float64{&v1, nil, &v3, nil})
-	if len(got) != 2 || got[0] != 1 || got[1] != 3 {
-		t.Errorf("densify: %v", got)
+	got := seriesValues([]*float64{&v1, nil, &v3, nil})
+	if len(got) != 4 || got[0] != 1 || !math.IsNaN(got[1]) || got[2] != 3 || !math.IsNaN(got[3]) {
+		t.Errorf("seriesValues: %v", got)
+	}
+	if seriesValues([]*float64{nil, nil}) != nil {
+		t.Error("all-nil series should be nil")
+	}
+	if last, ok := LastValid(got); !ok || last != 3 {
+		t.Errorf("LastValid: %v %v", last, ok)
+	}
+}
+
+func TestEnvelopeMax(t *testing.T) {
+	a1, a2, b1 := 1.0, 5.0, 4.0
+	got := envelopeMax([][]*float64{{&a1, &a2, nil}, {&b1, nil, nil}})
+	if len(got) != 3 || got[0] != 4 || got[1] != 5 || !math.IsNaN(got[2]) {
+		t.Errorf("envelopeMax: %v", got)
+	}
+}
+
+func TestHostCluster(t *testing.T) {
+	tags := []string{"team:sre", "cluster_name:fallback", "kube_cluster_name:payments-prod"}
+	if got := hostCluster(tags); got != "payments-prod" {
+		t.Errorf("hostCluster priority: %q", got)
+	}
+	if got := hostCluster([]string{"team:sre"}); got != "" {
+		t.Errorf("hostCluster no tag: %q", got)
 	}
 }
