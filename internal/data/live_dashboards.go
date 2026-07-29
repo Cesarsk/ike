@@ -103,7 +103,7 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 				// Toplists are per-group rankings: keep the last value of every
 				// series (one per group) so the renderer can draw bars.
 				if w.Type == "toplist" {
-					w.Items = seriesLastValues(mq)
+					w.Items = seriesLastValues(mq, 6)
 				}
 			} else {
 				w.Note = noData
@@ -296,8 +296,7 @@ func widgetTypeNote(typ string, def map[string]any) string {
 
 // seriesLastValues extracts each series' scope label and last point, largest
 // first, capped — the toplist shape.
-func seriesLastValues(mq datadogV1.MetricsQueryResponse) []WidgetItem {
-	const maxItems = 6
+func seriesLastValues(mq datadogV1.MetricsQueryResponse, maxItems int) []WidgetItem {
 	var items []WidgetItem
 	for _, s := range mq.GetSeries() {
 		label := s.GetScope()

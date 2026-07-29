@@ -419,3 +419,77 @@ func teamTag(r data.Row) string {
 	}
 	return ""
 }
+
+// logAggFacets is the facet rotation for the logs aggregation panel ('f').
+var logAggFacets = []string{"service", "status", "host"}
+
+// showLogAgg opens the logs aggregation panel: counts for the current logs
+// query grouped by a facet over the current window — one aggregate call, the
+// triage alternative to counting raw rows by eye.
+func (a *App) showLogAgg() {
+	if a.logAggFacet == "" {
+		a.logAggFacet = logAggFacets[0]
+	}
+	a.pushNav()
+	a.showPage("logagg")
+	a.renderLogAgg()
+}
+
+// cycleLogAggFacet rotates the group-by facet and re-aggregates.
+func (a *App) cycleLogAggFacet() {
+	next := logAggFacets[0]
+	for i, f := range logAggFacets {
+		if f == a.logAggFacet {
+			next = logAggFacets[(i+1)%len(logAggFacets)]
+			break
+		}
+	}
+	a.logAggFacet = next
+	a.renderLogAgg()
+}
+
+// renderLogAgg fetches and draws the aggregation for the current query,
+// window and facet.
+func (a *App) renderLogAgg() {
+	query := strings.TrimSpace(a.queries["logs"])
+	if query == "" {
+		query = "*"
+	}
+	win := logRanges[a.rangeIx()]
+	facet := a.logAggFacet
+	a.logAgg.SetTitle(fmt.Sprintf(" Logs by %s ", facet))
+	a.logAgg.SetText(a.theme.recolor("\n  [gray]aggregating…")).ScrollToBeginning()
+	prov := a.provider
+	go func() {
+		items, err := prov.LogCounts(context.Background(), query, win.from, facet)
+		a.QueueUpdateDraw(func() {
+			if a.page != "logagg" {
+				return // navigated away
+			}
+			if err != nil {
+				a.logAgg.SetText(a.theme.recolor("\n  [red]✗ " + tview.Escape(err.Error())))
+				return
+			}
+			a.logAgg.SetText(a.theme.recolor(renderLogAggBody(query, win.label, facet, items))).ScrollToBeginning()
+		})
+	}()
+}
+
+// renderLogAggBody renders the aggregation panel: header, ranked bars, total.
+func renderLogAggBody(query, window, facet string, items []data.WidgetItem) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n [orange::b]log counts by %s[-:-:-]  [gray]last %s[-]\n", facet, window)
+	fmt.Fprintf(&b, " [darkcyan]%s[-]\n\n", tview.Escape(query))
+	if len(items) == 0 {
+		b.WriteString(" [gray]no logs matched in this window[-]\n")
+	} else {
+		total := 0.0
+		for _, it := range items {
+			total += it.Value
+		}
+		b.WriteString(topListBars(items, 0))
+		fmt.Fprintf(&b, "\n [gray]total[-] [white::b]%s[-:-:-]\n", data.FormatValue(total))
+	}
+	b.WriteString("\n [gray]<f> facet (service/status/host) · <ctrl-r> refresh · <esc> back[-]\n")
+	return b.String()
+}

@@ -195,8 +195,75 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.errorIssues(query), nil
 	case "containers":
 		return d.containers(query), nil
+	case "processes":
+		return d.processes(query), nil
+	case "audit":
+		return d.audit(query), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
+}
+
+// processes backs the :processes view offline.
+func (d *Demo) processes(query string) []Row {
+	procs := []struct {
+		cmd, user, host, pid, ppid, started, tags string
+	}{
+		{"kong -c /usr/local/kong/kong.conf", "kong", "kong-dp-1.prod", "3812", "1", "6d", "team:sre,env:prod"},
+		{"postgres: payments payments-db idle", "postgres", "rds-payments-prod", "912", "884", "12d", "team:payments,env:prod"},
+		{"java -Xmx4g -jar kafka.jar", "kafka", "kafka-3.platform", "2201", "1", "20d", "team:platform,env:prod"},
+		{"redis-server *:6379", "redis", "redis-1.prod", "1544", "1", "9d", "team:sre,env:prod"},
+		{"vault server -config=/etc/vault.hcl", "vault", "vault-2.prod", "1102", "1", "15d", "team:sre,env:prod"},
+		{"python3 tokenizer-worker.py --queue high", "app", "ip-10-0-2-31.eks-prod", "40331", "40100", "2h", "team:payments,env:prod"},
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(procs))
+	for i, p := range procs {
+		hay := strings.ToLower(p.cmd + " " + p.host + " " + p.tags)
+		if q != "" && !strings.Contains(hay, strings.TrimPrefix(q, "host:")) {
+			continue
+		}
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("proc-%d", i),
+			Cells: []string{p.cmd, p.user, p.host, p.pid, p.ppid, p.started, p.tags},
+			Raw:   map[string]any{"cmdline": p.cmd},
+			URL:   WebBase(d.site) + "/process",
+		})
+	}
+	return rows
+}
+
+// audit backs the :audit view offline.
+func (d *Demo) audit(query string) []Row {
+	events := []struct {
+		ts, service, action, user, msg string
+	}{
+		{"10:41", "monitor", "monitor.modified", "alice@example.com", "Monitor 'Kong 5xx rate' thresholds changed"},
+		{"10:12", "dashboard", "dashboard.created", "bob@example.com", "Dashboard 'Golden Signals' created"},
+		{"09:58", "authentication", "user.login", "alice@example.com", "User logged in via SAML"},
+		{"09:30", "api_key", "api_key.created", "carol@example.com", "API key 'ci-deploy' created"},
+		{"08:47", "monitor", "monitor.muted", "bob@example.com", "Monitor 'EKS node NotReady' muted for 1h"},
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(events))
+	for i, e := range events {
+		hay := strings.ToLower(e.service + " " + e.action + " " + e.user + " " + e.msg)
+		if q != "" && !strings.Contains(hay, q) {
+			continue
+		}
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("audit-%d", i),
+			Cells: []string{e.ts, e.service, e.action, e.user, e.msg},
+			Raw:   map[string]any{"action": e.action},
+			URL:   WebBase(d.site) + "/audit-trail",
+		})
+	}
+	return rows
 }
 
 // securitySignals synthesizes a few Cloud SIEM signals so the :security view
@@ -893,6 +960,67 @@ func (d *Demo) logs(query, timeRange string) []Row {
 // LogContext synthesizes a plausible ±window of log lines around the anchor,
 // same service, oldest first, with the anchor line itself in the middle so the
 // surrounding-context panel is demoable and e2e-testable offline.
+// MetricQuery synthesizes a deterministic series for the :metrics explorer,
+// shaped by the query text so different queries look different offline.
+func (d *Demo) MetricQuery(_ context.Context, query string, window time.Duration) (*MetricExplorer, error) {
+	if window <= 0 {
+		window = time.Hour
+	}
+	seed := 0
+	for _, c := range query {
+		seed += int(c)
+	}
+	out := &MetricExplorer{Query: query, Series: 1}
+	pts := make([]float64, 40)
+	base := float64(20 + seed%60)
+	for i := range pts {
+		pts[i] = base + 10*math.Sin(float64(i+seed)/5) + float64((i*seed)%7)
+	}
+	out.Spark = pts
+	out.Last = pts[len(pts)-1]
+	if strings.Contains(query, "by {") || strings.Contains(query, "by{") {
+		out.Series = 4
+		out.Items = []WidgetItem{
+			{Label: "host:ip-10-0-2-31", Value: out.Last + 12},
+			{Label: "host:ip-10-0-2-9", Value: out.Last + 4},
+			{Label: "host:kong-dp-1", Value: out.Last},
+			{Label: "host:redis-1", Value: out.Last - 9},
+		}
+	}
+	return out, nil
+}
+
+// LogCounts mirrors the live aggregation offline: counts demo log rows by
+// the facet's column.
+func (d *Demo) LogCounts(_ context.Context, query, timeRange, facet string) ([]WidgetItem, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	col := 2 // service
+	switch facet {
+	case "status":
+		col = 1
+	case "host":
+		col = 3
+	}
+	counts := map[string]float64{}
+	for _, r := range d.logs(query, timeRange) {
+		if len(r.Cells) > col {
+			counts[r.Cells[col]]++
+		}
+	}
+	items := make([]WidgetItem, 0, len(counts))
+	for label, n := range counts {
+		items = append(items, WidgetItem{Label: label, Value: n})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Value != items[j].Value {
+			return items[i].Value > items[j].Value
+		}
+		return items[i].Label < items[j].Label
+	})
+	return items, nil
+}
+
 func (d *Demo) LogContext(_ context.Context, anchor Row, windowSecs int) (*LogContextView, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

@@ -84,8 +84,8 @@ func (a *App) render() {
 	if a.res.ServerQuery {
 		flabel = a.queries[a.res.Key]
 	}
-	if a.res.Key == "logs" {
-		flabel = fmt.Sprintf("%s · %s", flabel, logRanges[a.logRangeIx].label)
+	if _, ok := windowedViews[a.res.Key]; ok {
+		flabel = fmt.Sprintf("%s · %s", flabel, logRanges[a.rangeIx()].label)
 	}
 	sortLabel := ""
 	if a.sortCol >= 0 && a.sortCol < len(a.res.Columns) {

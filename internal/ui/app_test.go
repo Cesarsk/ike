@@ -1343,6 +1343,109 @@ func TestErrorsView(t *testing.T) {
 	app.Stop()
 }
 
+// TestProcessesView: the live process inventory lists, filters server-side,
+// and stays read-only.
+func TestProcessesView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":processes")
+	waitFor(t, sim, "Processes(")
+	waitFor(t, sim, "kong -c /usr/local/kong/kong.conf")
+	waitFor(t, sim, "redis-server")
+
+	typeRunes(sim, "/host:kong-dp-1")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "kong -c /usr/local/kong/kong.conf")
+	if strings.Contains(screenText(sim), "redis-server") {
+		t.Fatal("filter should drop non-matching processes")
+	}
+	app.Stop()
+}
+
+// TestAuditView: the audit trail lists newest-first, searches server-side,
+// and digit keys move the time window.
+func TestAuditView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":audit")
+	waitFor(t, sim, "Audit(")
+	waitFor(t, sim, "monitor.modified")
+	waitFor(t, sim, "alice@example.com")
+
+	typeRunes(sim, "/api_key")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "api_key.created")
+	if strings.Contains(screenText(sim), "monitor.modified") {
+		t.Fatal("search should drop non-matching audit events")
+	}
+
+	typeRunes(sim, "5")
+	waitFor(t, sim, "· 7d") // window label joins the title
+	app.Stop()
+}
+
+// TestLogAggregation: 'a' on :logs opens the counts-by-facet panel; 'f'
+// rotates the facet; esc returns to the logs table.
+func TestLogAggregation(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":logs")
+	waitFor(t, sim, "Logs(")
+	pressRune(sim, 'a')
+	waitFor(t, sim, "log counts by service")
+	waitFor(t, sim, "kong-proxy")
+	waitFor(t, sim, "total")
+
+	pressRune(sim, 'f')
+	waitFor(t, sim, "log counts by status")
+	waitFor(t, sim, "info")
+
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Logs(")
+	app.Stop()
+}
+
+// TestMetricsExplorer: :metrics opens the free-form query page; '/' runs a
+// query; grouped queries list per-series values; digits change the window.
+func TestMetricsExplorer(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":metrics")
+	waitFor(t, sim, "metrics explorer") // intro until a query is typed
+
+	pressRune(sim, '/')
+	waitFor(t, sim, "metric query>")
+	typeRunes(sim, "max:kubernetes.memory.usage{*} by {kube_cluster_name}")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "max:kubernetes.memory.usage")
+	waitFor(t, sim, "max of 4 series")
+	waitFor(t, sim, "series (last value)")
+	waitFor(t, sim, "ip-10-0-2-31")
+
+	typeRunes(sim, "4")
+	waitFor(t, sim, "Metrics · last 1d")
+
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Monitors(")
+	app.Stop()
+}
+
 // TestPageMonitorOwner: P on a monitor walks its team: tag to the owning
 // on-call team, names who it wakes, and pages behind a confirm; the raised
 // page hands off to the :oncall panel where a/e/r manage it.

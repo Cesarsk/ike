@@ -153,9 +153,12 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Errors** | `:errors` `:issues` | Error Tracking issues over the last 24h, highest count first: last-seen, triage state, count, type, message, service. `/` is an ET search (`service:…`); `r` triages (open/acknowledged/resolved/ignored); `l` drills to the service's error logs. |
 | **Hosts** | `:hosts` `:infra` | Infrastructure host inventory, problems first (down, then muted, then up): status, cluster (derived from `kube_cluster_name:`/`cluster_name:` tags — Datadog hosts have no first-class cluster field), reporting integrations, CPU, last-report age, tags — plus `NAME` (the raw Datadog name; `HOST` prefers `host_name`), `AWS-NAME`, `ALIASES`, `SOURCES` and `PLATFORM` columns you enable with `C`. `m` mutes/unmutes a host; `o` opens it in Datadog. |
 | **Containers** | `:containers` `:pods` | Live container inventory, non-running first: name, state, image, host, **host health** (`HOST-ST`, joined live from `:hosts` — spot containers on a down/muted box), started-age, tags — plus `NAMESPACE` and `CLUSTER` columns you enable with `C`. `/` is a Datadog **tag filter** (`kube_namespace:payments`, `cluster:eks-prod`, `image_name:kong`). `l` drills to that container's logs (`container_name:…`); `enter` opens the full object; `o` opens it in Datadog. Read-only. |
+| **Processes** | `:processes` `:ps` | Live process inventory — the last drill of the infra family (hosts → containers → processes): command, user, host, PID, started-age, tags (`PPID` via `C`). `/` is a tag filter (`host:…`) or free command-line text. Read-only. |
+| **Audit** | `:audit` `:trail` | The Audit Trail: who changed what, org-wide — time, service, action, user, message. `/` is an audit search query (`@usr.email:…`, `@evt.name:…`); digits set the window (defaults to 1d — audit events are sparse). |
 | **Security** | `:security` `:signals` `:siem` | Cloud SIEM / CSM security signals over the last 24h: time, severity, title, tags. `/` is a signals search query. `enter` opens the signal. |
 | **Notebooks** | `:notebooks` `:nb` `:runbooks` | The org's notebooks (runbooks, postmortems): name, author, status, last modified. `enter` reads the notebook's text. |
 | **Overview** | `:overview` `:ov` | Cross-resource triage: open incidents + alerting monitors from every active org, worst first. `enter` opens the real detail. |
+| **Metrics** | `:metrics` `:mx` | The **metric explorer**: `/` takes a free-form query (`avg:system.cpu.user{*} by {host}` — the web UI's syntax), charted full-pane with last/min/avg/max; grouped queries rank every series by last value and chart the per-bucket max. Digits `1`–`6` / `w` set the window like a dashboard. |
 | **Cost** | `:cost` `:billing` | This org's Datadog spend: estimated + projected this month, up to 12 months of history with a trend, per-product or per-sub-org, filterable (read-only). Admin-scoped, see below. |
 | **Teams** | `:teams` `:team` | The org's Datadog teams: name, handle, member count, description. `enter` on a team shows its members and their roles (read-only). |
 | **On-Call** | `:oncall` `:oc` `:schedules` | Your teams. `enter` on a team shows who's on call right now and the escalation ladder (read-only). Needs Datadog On-Call, see below. |
@@ -178,9 +181,12 @@ Switch to any view with `:` + its name or a shorter alias.
   are read-only) above the object.
 - **SLOs** — `enter` shows live **attainment + error budget**; `t` cycles the
   type filter (metric / monitor / time_slice / all).
-- **Logs / Traces / Events** — `/` is a Datadog query; `1`–`5` set the time
-  window (15m / 1h / 4h / 1d / 7d). Logs also: `P` patterns, `t` → trace,
-  `x` → surrounding context.
+- **Logs / Traces / Events / RUM / Security / Audit** — `/` is a Datadog
+  query; `1`–`5` set the time window (15m / 1h / 4h / 1d / 7d, per view;
+  Security and Audit default to 1d). Logs also: `P` patterns, `t` → trace,
+  `x` → surrounding context, and **`a` → counts by facet**: one aggregate
+  call groups the current query by service/status/host (`f` rotates) into
+  ranked bars with a total — triage without counting rows by eye.
 - **Services** — lists your APM services for an environment; `/` sets the env
   (default `prod`), `enter` → that service's traces (`service:<name>`). Names
   only: Datadog's official API doesn't expose per-service request/error/latency
@@ -482,6 +488,7 @@ either way.
 | `t` | Logs, Traces | drill to trace waterfall |
 | `t` | SLOs | cycle type filter |
 | `x` | Logs | surrounding context — a ±5m window around the line (one query) |
+| `a` | Logs | counts by facet (service/status/host — `f` rotates) |
 | `P` | Logs | cluster into patterns |
 | `Q` | Logs/Traces/Events | saved-query picker (enter apply · `a` save · `d` delete) |
 | `F` | any table | fuzzy row finder: type a subsequence, `enter` jumps to the row |
@@ -589,6 +596,8 @@ contexts:
 | `downtimes` | STATUS, SCOPE, MESSAGE, CREATED |
 | `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED, DESCRIPTION |
 | `hosts` | HOST, STATUS, CLUSTER, NAME, AWS-NAME, ALIASES, SOURCES, PLATFORM, APPS, CPU, LAST, TAGS |
+| `processes` | COMMAND, USER, HOST, PID, PPID, STARTED, TAGS |
+| `audit` | TIME, SERVICE, ACTION, USER, MESSAGE |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |

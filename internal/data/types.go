@@ -173,6 +173,18 @@ type WidgetItem struct {
 	Value float64
 }
 
+// MetricExplorer is a free-form metric query result for the :metrics page:
+// the charted series (per-bucket max when grouped), per-series last values
+// and the series count. Note explains an empty result.
+type MetricExplorer struct {
+	Query  string
+	Spark  []float64 // NaN = bucket with no data (renders as a gap)
+	Last   float64
+	Series int
+	Items  []WidgetItem // per-series last values, largest first
+	Note   string
+}
+
 // DashboardView is a dashboard rendered for the terminal: metadata plus a
 // flat, in-order list of its widgets (group widgets are flattened).
 type DashboardView struct {
@@ -348,6 +360,13 @@ type Provider interface {
 	// anchor row, scoped to its service/host, oldest first. One search call,
 	// no polling. windowSecs<=0 uses a default.
 	LogContext(ctx context.Context, anchor Row, windowSecs int) (*LogContextView, error)
+	// LogCounts aggregates a logs query into counts grouped by a facet
+	// (service, status, host, …) over the window, largest first — one
+	// bounded call, the triage alternative to counting raw rows by eye.
+	LogCounts(ctx context.Context, query, timeRange, facet string) ([]WidgetItem, error)
+	// MetricQuery runs a free-form metric query (avg:system.cpu.user{*}
+	// by {host}) over the window — the :metrics explorer. One bounded call.
+	MetricQuery(ctx context.Context, query string, window time.Duration) (*MetricExplorer, error)
 	// Cost returns this org's Datadog spend (current month estimated +
 	// projected, plus closed-month history per CostOptions), broken down by
 	// product — or by sub-org and product. Read-only, heavily rate-limited
@@ -543,6 +562,29 @@ func Resources() []Resource {
 			ServerQuery:    true, // '/' is a Datadog tag query (kube_namespace:…, cluster:…)
 			EmptyHint: "No containers match. Container collection may be disabled in the " +
 				"Datadog agent, this org runs none, or the tag filter excluded them.",
+		},
+		{
+			// Live process inventory — hosts → containers → processes, the
+			// k9s-style drill of the infra family. Read-only.
+			Key: "processes", Title: "Processes",
+			Aliases: []string{"processes", "process", "proc", "ps"},
+			Columns: []string{"COMMAND", "USER", "HOST", "PID", "PPID", "STARTED", "TAGS"},
+			// PPID ships hidden — enable per taste with C.
+			DefaultColumns: []string{"COMMAND", "USER", "HOST", "PID", "STARTED", "TAGS"},
+			TTL:            30 * time.Second,
+			ServerQuery:    true, // '/' = tag filter (host:…) or command-line text
+			EmptyHint: "No processes match. Process collection may be disabled in the " +
+				"Datadog agent (process_config.enabled), or the filter excluded everything.",
+		},
+		{
+			// Audit Trail — who changed what, org-wide. '/' is an audit search
+			// query (@usr.email:…, @evt.name:…); digits set the time window.
+			Key: "audit", Title: "Audit",
+			Aliases: []string{"audit", "audit-trail", "audittrail", "trail"},
+			Columns: []string{"TIME", "SERVICE", "ACTION", "USER", "MESSAGE"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			EmptyHint: "No audit events in this window. Widen the time range (1-5), or " +
+				"check that your keys have audit_logs_read permission.",
 		},
 		{
 			Key: "notebooks", Title: "Notebooks",
