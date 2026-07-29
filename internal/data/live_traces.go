@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -77,15 +78,56 @@ func (l *Live) services(ctx context.Context, query, _ string) ([]Row, error) {
 	attrs := data.GetAttributes()
 	names := attrs.GetServices()
 	sort.Strings(names)
+	catalog := l.serviceCatalog(ctx)
 	rows := make([]Row, 0, len(names))
 	for _, n := range names {
+		meta := catalog[n]
 		rows = append(rows, Row{
 			ID:    n,
-			Cells: []string{n},
+			Cells: []string{n, meta[0], meta[1], meta[2]},
 			URL:   l.web + "/apm/services/" + n,
 		})
 	}
 	return rows, nil
+}
+
+// serviceCatalog fetches the service-catalog definitions and maps service
+// name → [team, tier, lifecycle]. Best-effort (an org without the catalog
+// gets blank columns, never an error); the schema union has many versions,
+// so a generic JSON walk beats the typed union.
+func (l *Live) serviceCatalog(ctx context.Context) map[string][3]string {
+	const maxDefs = 500
+	out := map[string][3]string{}
+	ch, cancel := datadogV2.NewServiceDefinitionApi(l.client).ListServiceDefinitionsWithPagination(ctx,
+		*datadogV2.NewListServiceDefinitionsOptionalParameters().WithPageSize(100))
+	defer cancel()
+	for item := range ch {
+		if item.Error != nil {
+			slog.Debug("service catalog unavailable", "err", item.Error)
+			break
+		}
+		itemAttrs := item.Item.GetAttributes()
+		raw, err := json.Marshal(itemAttrs.GetSchema())
+		if err != nil {
+			continue
+		}
+		var m map[string]any
+		if json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		name, _ := m["dd-service"].(string)
+		if name == "" {
+			continue
+		}
+		team, _ := m["team"].(string)
+		tier, _ := m["tier"].(string)
+		life, _ := m["lifecycle"].(string)
+		out[name] = [3]string{team, tier, life}
+		if len(out) >= maxDefs {
+			break
+		}
+	}
+	return out
 }
 
 // Trace fetches a distributed trace by id via the APM get-trace endpoint

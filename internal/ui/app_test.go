@@ -1446,6 +1446,28 @@ func TestMetricsExplorer(t *testing.T) {
 	app.Stop()
 }
 
+// TestDepsView: the service dependency map lists services most-connected
+// first with upstream/downstream counts.
+func TestDepsView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":deps")
+	waitFor(t, sim, "Dependencies(")
+	waitFor(t, sim, "payments-api") // most connected: 3 down + 2 up
+	waitFor(t, sim, "kong-proxy")
+
+	// enter shows both edge lists in the detail.
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "called_by")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Dependencies(")
+	app.Stop()
+}
+
 // TestPageMonitorOwner: P on a monitor walks its team: tag to the owning
 // on-call team, names who it wakes, and pages behind a confirm; the raised
 // page hands off to the :oncall panel where a/e/r manage it.

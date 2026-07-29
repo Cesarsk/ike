@@ -1411,15 +1411,23 @@ func (d *Demo) DeleteIncidentTodo(_ context.Context, incidentID, todoID string) 
 }
 
 func (d *Demo) services() []Row {
-	// Names only, sorted — mirrors the live service-list endpoint (no per-
-	// service stats; the official API doesn't expose them).
-	names := []string{"kong-proxy", "onboarding-web", "payments-api", "postgres", "trading-engine", "vault"}
-	rows := make([]Row, 0, len(names))
-	for _, n := range names {
+	// Sorted names + catalog metadata — mirrors the live service list joined
+	// with service-catalog definitions (no per-service stats; the official
+	// API doesn't expose them).
+	svcs := []struct{ name, team, tier, lifecycle string }{
+		{"kong-proxy", "sre", "tier1", "production"},
+		{"onboarding-web", "frontend", "tier2", "production"},
+		{"payments-api", "payments", "tier1", "production"},
+		{"postgres", "", "", ""},
+		{"trading-engine", "trading", "tier1", "production"},
+		{"vault", "sre", "tier2", "production"},
+	}
+	rows := make([]Row, 0, len(svcs))
+	for _, s := range svcs {
 		rows = append(rows, Row{
-			ID:    n,
-			Cells: []string{n},
-			URL:   WebBase(d.site) + "/apm/services/" + n,
+			ID:    s.name,
+			Cells: []string{s.name, s.team, s.tier, s.lifecycle},
+			URL:   WebBase(d.site) + "/apm/services/" + s.name,
 		})
 	}
 	return rows
