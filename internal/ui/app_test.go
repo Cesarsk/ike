@@ -199,7 +199,7 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "Request rate")
 	pressRune(sim, 'j') // select widget 2 (5xx rate)
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "widget 2/6")
+	waitFor(t, sim, "widget 2/7")
 	waitFor(t, sim, "sum:kong.http.5xx{*}.as_rate()") // full untruncated query
 	waitFor(t, sim, "avg")                            // zoom stats line
 	press(sim, tcell.KeyEscape)                       // zoom → grid

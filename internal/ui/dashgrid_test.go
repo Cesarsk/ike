@@ -119,4 +119,33 @@ func TestWidgetTypeRendering(t *testing.T) {
 	if kong <= redis {
 		t.Errorf("bars should scale with value (kong=%d redis=%d):\n%s", kong, redis, tl)
 	}
+
+	// slo: live attainment as a percentage plus the target/budget note.
+	slo := widgetLines(data.Widget{
+		Title: "Node readiness", Type: "slo", HasData: true,
+		Last: 99.97, Note: "target 99.90% · 30d · error budget left 70%",
+		Spark: []float64{100, 90, 70},
+	}, 0, 0)
+	if !strings.Contains(slo, "99.97%") || !strings.Contains(slo, "target 99.90%") {
+		t.Errorf("slo should render attainment + target note:\n%s", slo)
+	}
+
+	// multi-series chart: labelled as the max envelope, honestly.
+	ms := widgetLines(data.Widget{
+		Title: "CPU by node", Type: "timeseries", HasData: true,
+		Spark: []float64{10, 90}, Last: 90, Series: 54,
+	}, 0, 0)
+	if !strings.Contains(ms, "max of 54 series") {
+		t.Errorf("multi-series chart should carry the envelope label:\n%s", ms)
+	}
+
+	// slo zoom: attainment headline + budget-remaining chart caption.
+	zoom := renderWidgetZoom(data.Widget{
+		Title: "Node readiness", Type: "slo", HasData: true,
+		Last: 99.97, Note: "target 99.90% · 30d · error budget left 70%",
+		Spark: []float64{100, 90, 70},
+	}, 0, 1, 80)
+	if !strings.Contains(zoom, "attainment") || !strings.Contains(zoom, "error budget remaining") {
+		t.Errorf("slo zoom should show attainment + budget chart caption:\n%s", zoom)
+	}
 }
