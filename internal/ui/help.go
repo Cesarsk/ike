@@ -136,6 +136,14 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]</>filter (host:… or command text)  <C>columns (+ppid)  <enter>detail  <o>open")
 		case "audit":
 			lines = append(lines, "[gray]</>audit query (@usr.email:… @evt.name:…)  window: <1>15m..<5>7d  <enter>detail   (who changed what)")
+		case "deps":
+			lines = append(lines, "[gray]</>env (default prod)  <enter>upstream + downstream  <o>service map   (most connected first)")
+		case "cases":
+			lines = append(lines, "[gray]</>case search  <enter>detail  <o>open in Case Management  <s>sort")
+		case "cicd":
+			lines = append(lines, "[gray]</>CI query (@ci.pipeline.name:… @git.branch:…)  window: <1>15m..<5>7d  <o>open pipeline")
+		case "fleet":
+			lines = append(lines, "[gray]</>tag filter (env:… cluster_name:…)  <enter>agent detail   (oldest agents first)")
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:

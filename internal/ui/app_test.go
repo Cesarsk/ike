@@ -1468,6 +1468,74 @@ func TestDepsView(t *testing.T) {
 	app.Stop()
 }
 
+// TestCasesView: Case Management lists newest-first and searches server-side.
+func TestCasesView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":cases")
+	waitFor(t, sim, "Cases(")
+	waitFor(t, sim, "CASE-101")
+	typeRunes(sim, "/vault")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "CASE-100")
+	if strings.Contains(screenText(sim), "CASE-101") {
+		t.Fatal("search should drop non-matching cases")
+	}
+	app.Stop()
+}
+
+// TestCicdView: CI pipelines list newest-first with status/branch/duration;
+// digit keys move the window.
+func TestCicdView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":cicd")
+	waitFor(t, sim, "Pipelines(")
+	waitFor(t, sim, "trading-engine")
+	waitFor(t, sim, "feat/order-router")
+	typeRunes(sim, "5")
+	waitFor(t, sim, "· 7d")
+	app.Stop()
+}
+
+// TestFleetView: the agent inventory lists oldest agent versions first.
+func TestFleetView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":fleet")
+	waitFor(t, sim, "Fleet(")
+	waitFor(t, sim, "7.52.1") // the stale agent leads
+	waitFor(t, sim, "payments-prod")
+	app.Stop()
+}
+
+// TestServicesCatalogColumns: :services carries the catalog join columns.
+func TestServicesCatalogColumns(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":services")
+	waitFor(t, sim, "Services(")
+	waitFor(t, sim, "LIFECYCLE")
+	waitFor(t, sim, "tier1")
+	app.Stop()
+}
+
 // TestPageMonitorOwner: P on a monitor walks its team: tag to the owning
 // on-call team, names who it wakes, and pages behind a confirm; the raised
 // page hands off to the :oncall panel where a/e/r manage it.

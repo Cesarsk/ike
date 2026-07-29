@@ -1613,9 +1613,9 @@ var logRanges = []struct {
 // windowedViews are the server-query views whose fetch takes a time window
 // (digit keys 1-5). Each keeps its own selected window; audit defaults wider
 // because audit events are sparse.
-// security/audit default to 1d (index 3): their events are sparse and both
-// previously searched a day-scale window by default.
-var windowedViews = map[string]int{"logs": 0, "traces": 0, "events": 0, "rum": 0, "security": 3, "audit": 3}
+// security/audit/cicd default to 1d (index 3): their events are sparse and
+// day-scale is the useful first look.
+var windowedViews = map[string]int{"logs": 0, "traces": 0, "events": 0, "rum": 0, "security": 3, "audit": 3, "cicd": 3}
 
 // rangeIx is the current view's selected window index (its default when the
 // user hasn't picked one).
