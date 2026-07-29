@@ -62,6 +62,15 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<↑/↓ j/k>[white]move  [aqua]<enter>[white]expand  [aqua]<t>[white]trace  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",
 		}
+	case "logagg":
+		lines = []string{
+			"[aqua]<f>[white]facet (service/status/host)  [aqua]<ctrl-r>[white]refresh  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",
+		}
+	case "metrics":
+		lines = []string{
+			"[aqua]</>[white]metric query  [aqua]<1-6>[white]window 15m..1mo  [aqua]<w>[white]custom  [aqua]<ctrl-r>[white]refresh",
+			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	case "help":
 		lines = []string{
 			"[aqua]<esc>[white]back  [aqua]<q>[white]back",
@@ -102,7 +111,7 @@ func (a *App) setHints() {
 		case "downtimes":
 			lines = append(lines, "[gray]<x>cancel (<space>mark → cancel many)  <s>sort <S>reverse")
 		case "logs":
-			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <x>context  <P>patterns  <Q>saved  window: <1>15m..<5>7d")
+			lines = append(lines, "[gray]</>query (tab=complete, ↑ history)  <t>trace  <x>context  <a>counts by facet  <P>patterns  <Q>saved  window: <1>15m..<5>7d")
 		case "traces":
 			lines = append(lines, "[gray]</>query  <t>trace waterfall  <l>logs for trace  <Q>saved  window: <1>15m..<5>7d")
 		case "services":
@@ -123,6 +132,10 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]<m>mute/unmute host  <o>open  <s>sort <S>reverse   (down/muted first)")
 		case "containers":
 			lines = append(lines, "[gray]</>tag filter (kube_namespace:… cluster:…)  <l>logs  <C>columns (+ns/cluster)  <enter>detail  <o>open")
+		case "processes":
+			lines = append(lines, "[gray]</>filter (host:… or command text)  <C>columns (+ppid)  <enter>detail  <o>open")
+		case "audit":
+			lines = append(lines, "[gray]</>audit query (@usr.email:… @evt.name:…)  window: <1>15m..<5>7d  <enter>detail   (who changed what)")
 		case overviewResource.Key:
 			lines = append(lines, "[gray]<enter>detail  open incidents + alerting monitors across every active org")
 		case ctxResource.Key:

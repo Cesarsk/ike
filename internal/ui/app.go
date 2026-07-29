@@ -31,6 +31,8 @@ const (
 	promptCostFilter // client-side product/org filter on the :cost panel
 	promptPageTitle  // typing an On-Call page title ('p' on :oncall)
 	promptDashWindow // typing a custom dashboard window ('w' on a dashboard)
+	promptMxQuery    // typing a metric query ('/' on :metrics)
+	promptMxWindow   // typing a custom metrics window ('w' on :metrics)
 )
 
 // ContextInfo describes one selectable Datadog org context for the :ctx view.
@@ -201,6 +203,14 @@ type App struct {
 	healthView *tview.TextView
 	healthRow  data.Row
 	healthData *healthData
+	// logs aggregation panel (a on :logs): counts by facet for the query.
+	logAgg      *tview.TextView
+	logAggFacet string
+	// :metrics explorer: free-form metric query, charted full-pane.
+	mx       *tview.TextView
+	mxQuery  string
+	mxWindow time.Duration
+	mxLabel  string
 	// dashboard explorer: widgets in display order, the selected one, and
 	// whether the pane is zoomed into a single widget.
 	dashWidgets  []data.Widget
@@ -303,7 +313,7 @@ type App struct {
 	queries    map[string]string   // per-resource server-side query (logs)
 	history    map[string][]string // per-resource submitted-query history (↑/↓ recall)
 	histIdx    int                 // cursor into the current resource's history
-	logRangeIx int                 // index into logRanges for the Logs time window
+	logRangeIx map[string]int      // per-view index into logRanges (windowed views)
 	fetchedAt  time.Time
 	loading    bool
 	paused     bool // auto-refresh paused (toggled with 'p')
@@ -343,6 +353,7 @@ func New(o Options) (*App, error) {
 		refreshEvery: o.Refresh,
 		queries:      map[string]string{},
 		history:      map[string][]string{},
+		logRangeIx:   map[string]int{},
 		dashWindow:   time.Hour, // matching the web UI's default window
 		dashLabel:    "1h",
 	}
@@ -438,7 +449,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook, a.healthView} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook, a.healthView, a.logAgg, a.mx} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -614,6 +625,12 @@ func (a *App) build() {
 	a.healthView = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.healthView.SetBorder(true)
 
+	a.logAgg = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.logAgg.SetBorder(true)
+
+	a.mx = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.mx.SetBorder(true)
+
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
@@ -724,6 +741,8 @@ func (a *App) build() {
 		AddPage("teammembers", a.teamMembers, true, false).
 		AddPage("notebook", a.notebook, true, false).
 		AddPage("health", a.healthView, true, false).
+		AddPage("logagg", a.logAgg, true, false).
+		AddPage("metrics", a.mx, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -1193,6 +1212,47 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 		}
 		return ev
+	case "logagg":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == 'f':
+			a.cycleLogAggFacet()
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			a.renderLogAgg()
+			return nil
+		}
+		return ev
+	case "metrics":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == '/':
+			a.openPrompt(promptMxQuery)
+			return nil
+		case ev.Rune() >= '1' && ev.Rune() <= '6':
+			ix := int(ev.Rune() - '1')
+			a.setMxWindow(dashRanges[ix].label, dashRanges[ix].window)
+			return nil
+		case ev.Rune() == 'w':
+			a.openPrompt(promptMxWindow)
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			if a.mxQuery != "" {
+				a.loadMetrics()
+			}
+			return nil
+		case ev.Rune() == ':':
+			a.openPalette()
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		}
+		return ev
 	case "health":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
@@ -1284,6 +1344,10 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.openCtxForm()
 			return nil
 		}
+		if a.res.Key == "logs" {
+			a.showLogAgg()
+			return nil
+		}
 	case 'O':
 		if a.res.Key == ctxResource.Key {
 			a.beginRowLogin()
@@ -1320,7 +1384,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			a.quickFilter(ev.Rune())
 			return nil
 		}
-		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" || a.res.Key == "rum" {
+		if _, ok := windowedViews[a.res.Key]; ok {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -1329,7 +1393,7 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case '5':
-		if a.res.Key == "logs" || a.res.Key == "traces" || a.res.Key == "events" || a.res.Key == "rum" {
+		if _, ok := windowedViews[a.res.Key]; ok {
 			a.setLogRange(ev.Rune())
 			return nil
 		}
@@ -1546,24 +1610,41 @@ var logRanges = []struct {
 	{'5', "7d", "now-7d"},
 }
 
-// timeRange is the Datadog "from" for the current view — only Logs uses one.
-func (a *App) timeRange() string {
-	if a.res.Key != "logs" {
-		return ""
+// windowedViews are the server-query views whose fetch takes a time window
+// (digit keys 1-5). Each keeps its own selected window; audit defaults wider
+// because audit events are sparse.
+// security/audit default to 1d (index 3): their events are sparse and both
+// previously searched a day-scale window by default.
+var windowedViews = map[string]int{"logs": 0, "traces": 0, "events": 0, "rum": 0, "security": 3, "audit": 3}
+
+// rangeIx is the current view's selected window index (its default when the
+// user hasn't picked one).
+func (a *App) rangeIx() int {
+	if ix, ok := a.logRangeIx[a.res.Key]; ok {
+		return ix
 	}
-	return logRanges[a.logRangeIx].from
+	return windowedViews[a.res.Key]
 }
 
-// setLogRange picks a Logs time window by its digit key and refetches
-// (the window is part of the cache key, so this always hits the API).
+// timeRange is the Datadog "from" for the current view — empty for views
+// without a time window.
+func (a *App) timeRange() string {
+	if _, ok := windowedViews[a.res.Key]; !ok {
+		return ""
+	}
+	return logRanges[a.rangeIx()].from
+}
+
+// setLogRange picks the current view's time window by its digit key and
+// refetches (the window is part of the cache key, so this always hits the API).
 func (a *App) setLogRange(r rune) {
 	for i, lr := range logRanges {
 		if lr.key == r {
-			if a.logRangeIx == i {
+			if a.rangeIx() == i {
 				return
 			}
-			a.logRangeIx = i
-			a.flash("logs window: "+lr.label, false)
+			a.logRangeIx[a.res.Key] = i
+			a.flash(a.res.Key+" window: "+lr.label, false)
 			a.load(true)
 			return
 		}
@@ -1678,6 +1759,11 @@ func (a *App) openPrompt(m promptMode) {
 		a.prompt.SetLabel(" page title> ")
 	case m == promptDashWindow:
 		a.prompt.SetLabel(" window (30m, 4h, 2d, 1w, 1mo)> ")
+	case m == promptMxQuery:
+		a.prompt.SetLabel(" metric query> ")
+		prefill = a.mxQuery // edit the active query, don't retype
+	case m == promptMxWindow:
+		a.prompt.SetLabel(" window (30m, 4h, 2d, 1w, 1mo)> ")
 	case a.res.ServerQuery:
 		a.prompt.SetLabel(" query> ")
 		prefill = a.queries[a.res.Key] // edit the current query, don't retype
@@ -1699,6 +1785,8 @@ func (a *App) closePrompt() {
 	switch a.page {
 	case "detail":
 		a.SetFocus(a.detail)
+	case "metrics":
+		a.SetFocus(a.mx)
 	case "cost":
 		a.SetFocus(a.costTbl)
 	case "oncall":
@@ -1743,6 +1831,17 @@ func (a *App) promptDone(key tcell.Key) {
 			a.flash("✗ can't parse window "+text+" — try 30m, 4h, 2d, 1w, 1mo", true)
 		} else {
 			a.setDashWindow(text, d)
+		}
+	case promptMxQuery:
+		if text != "" {
+			a.mxQuery = text
+			a.loadMetrics()
+		}
+	case promptMxWindow:
+		if d, err := parseWindow(text); err != nil {
+			a.flash("✗ can't parse window "+text+" — try 30m, 4h, 2d, 1w, 1mo", true)
+		} else {
+			a.setMxWindow(text, d)
 		}
 	case promptFilter:
 		a.recordHistory(text)
@@ -1851,6 +1950,10 @@ func (a *App) execCommand(cmd string) {
 	}
 	if cmd == "overview" || cmd == "ov" {
 		a.switchResource(overviewResource)
+		return
+	}
+	if cmd == "metrics" || cmd == "metric" || cmd == "mx" {
+		a.openMetricsExplorer()
 		return
 	}
 	if cmd == "menu" || cmd == "commands" || cmd == "cmds" || cmd == "aliases" {
@@ -2070,6 +2173,10 @@ func (a *App) restore(e navEntry) {
 		a.showPage("notebook")
 	case "health":
 		a.showPage("health")
+	case "logagg":
+		a.showPage("logagg")
+	case "metrics":
+		a.showPage("metrics") // pane still holds the rendered chart
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -2102,6 +2209,10 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.notebook)
 	case "health":
 		a.SetFocus(a.healthView)
+	case "logagg":
+		a.SetFocus(a.logAgg)
+	case "metrics":
+		a.SetFocus(a.mx)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":
