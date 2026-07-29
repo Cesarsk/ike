@@ -81,6 +81,11 @@ maintainer's go-ahead.
     including README screen captures and the demo GIF regenerated from demo
     data.
 
+13. **Default-visible columns are provider-agnostic.** Cloud- or
+    vendor-specific fields (AWS-NAME and the like) may exist as columns, but
+    only hidden behind `DefaultColumns` — users opt in with the column picker
+    (C). The out-of-the-box table must read the same on any cloud.
+
 ## Go style
 
 House style, grafted from a review of a well-run Go project's conventions and
