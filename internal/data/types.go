@@ -522,8 +522,11 @@ func Resources() []Resource {
 			// hosts sort first (see hosts loader); m mutes/unmutes.
 			Key: "hosts", Title: "Hosts",
 			Aliases: []string{"hosts", "host", "infra"},
-			Columns: []string{"HOST", "STATUS", "CLUSTER", "APPS", "CPU", "LAST", "TAGS"},
-			TTL:     60 * time.Second,
+			Columns: []string{"HOST", "STATUS", "CLUSTER", "NAME", "AWS-NAME", "ALIASES", "SOURCES", "PLATFORM", "APPS", "CPU", "LAST", "TAGS"},
+			// HOST prefers host_name over name; the raw NAME and the other
+			// official Host fields ship hidden — enable per taste with C.
+			DefaultColumns: []string{"HOST", "STATUS", "CLUSTER", "APPS", "CPU", "LAST", "TAGS"},
+			TTL:            60 * time.Second,
 			EmptyHint: "No hosts reporting. The Datadog agent may not be installed, or " +
 				"this org has no infrastructure hosts.",
 		},

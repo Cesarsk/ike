@@ -333,11 +333,19 @@ func (d *Demo) hosts() []Row {
 		if h.status == "down" {
 			last = "6m"
 		}
+		awsName := ""
+		if strings.HasPrefix(h.name, "ip-") {
+			awsName = "i-0" + h.name[3:11]
+		}
 		rows = append(rows, Row{
-			ID:    h.name,
-			Cells: []string{h.name, status, hostCluster(strings.Split(h.tags, ",")), h.apps, h.cpu, last, h.tags},
-			Raw:   map[string]any{"muted": muted, "up": h.status != "down"},
-			URL:   WebBase(d.site) + "/infrastructure?host=" + h.name,
+			ID: h.name,
+			Cells: []string{
+				h.name, status, hostCluster(strings.Split(h.tags, ",")),
+				h.name, awsName, "", "agent,aws", "linux",
+				h.apps, h.cpu, last, h.tags,
+			},
+			Raw: map[string]any{"muted": muted, "up": h.status != "down"},
+			URL: WebBase(d.site) + "/infrastructure?host=" + h.name,
 		})
 	}
 	return rows

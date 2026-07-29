@@ -151,7 +151,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
 | **Errors** | `:errors` `:issues` | Error Tracking issues over the last 24h, highest count first: last-seen, triage state, count, type, message, service. `/` is an ET search (`service:…`); `r` triages (open/acknowledged/resolved/ignored); `l` drills to the service's error logs. |
-| **Hosts** | `:hosts` `:infra` | Infrastructure host inventory, problems first (down, then muted, then up): status, cluster (derived from `kube_cluster_name:`/`cluster_name:` tags — Datadog hosts have no first-class cluster field), reporting integrations, CPU, last-report age, tags. `m` mutes/unmutes a host; `o` opens it in Datadog. |
+| **Hosts** | `:hosts` `:infra` | Infrastructure host inventory, problems first (down, then muted, then up): status, cluster (derived from `kube_cluster_name:`/`cluster_name:` tags — Datadog hosts have no first-class cluster field), reporting integrations, CPU, last-report age, tags — plus `NAME` (the raw Datadog name; `HOST` prefers `host_name`), `AWS-NAME`, `ALIASES`, `SOURCES` and `PLATFORM` columns you enable with `C`. `m` mutes/unmutes a host; `o` opens it in Datadog. |
 | **Containers** | `:containers` `:pods` | Live container inventory, non-running first: name, state, image, host, **host health** (`HOST-ST`, joined live from `:hosts` — spot containers on a down/muted box), started-age, tags — plus `NAMESPACE` and `CLUSTER` columns you enable with `C`. `/` is a Datadog **tag filter** (`kube_namespace:payments`, `cluster:eks-prod`, `image_name:kong`). `l` drills to that container's logs (`container_name:…`); `enter` opens the full object; `o` opens it in Datadog. Read-only. |
 | **Security** | `:security` `:signals` `:siem` | Cloud SIEM / CSM security signals over the last 24h: time, severity, title, tags. `/` is a signals search query. `enter` opens the signal. |
 | **Notebooks** | `:notebooks` `:nb` `:runbooks` | The org's notebooks (runbooks, postmortems): name, author, status, last modified. `enter` reads the notebook's text. |
@@ -588,7 +588,7 @@ contexts:
 | `events` | TIME, TYPE, SOURCE, TITLE, TAGS |
 | `downtimes` | STATUS, SCOPE, MESSAGE, CREATED |
 | `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED, DESCRIPTION |
-| `hosts` | HOST, STATUS, CLUSTER, APPS, CPU, LAST, TAGS |
+| `hosts` | HOST, STATUS, CLUSTER, NAME, AWS-NAME, ALIASES, SOURCES, PLATFORM, APPS, CPU, LAST, TAGS |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |
