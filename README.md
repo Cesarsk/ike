@@ -28,9 +28,10 @@ Spotlight-style command palette — type to filter, enter to run), `/` to filter
 
 <sub>Named after a dog named Ike. The command is `ike`; the job is keeping an eye on things.</sub>
 
-> **Status: real-org validated.** Eighteen views (monitors, incidents, SLOs, logs,
-> traces, services, events, RUM, synthetics, downtimes, dashboards, security signals,
-> notebooks, hosts, containers, processes, error tracking, audit trail) plus `:overview`
+> **Status: real-org validated.** Twenty-two views (monitors, incidents, SLOs, logs,
+> traces, services with catalog metadata, service dependencies, events, RUM, synthetics,
+> downtimes, dashboards, security signals, notebooks, hosts, containers, processes,
+> error tracking, audit trail, cases, CI pipelines, agent fleet) plus `:overview`
 > (cross-org triage), `:metrics` (a free-form metric explorer, charted
 > full-pane), `:cost` (this org's Datadog spend: estimated + projected,
 > 12-month trend with anomaly flags, per-product or per-sub-org), `:oncall`

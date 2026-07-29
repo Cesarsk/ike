@@ -146,7 +146,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **SLOs** | `:slos` `:slo` `:s` | Name, type, target, timeframe, tags. |
 | **Logs** | `:logs` `:log` `:l` | Time, status, service, host, message — server-side search. |
 | **Traces** | `:traces` `:tr` `:apm` `:spans` | APM spans: time, service, resource, duration, error, trace id. |
-| **Services** | `:services` `:svc` | Your APM services for an env (`/` sets the env, default `prod`); `enter` → that service's traces; **`h` → the service-health rollup**: its monitors, SLOs, error-tracking issues, recent events, and the owning team's on-call on one screen (`P` pages them, `l`/`t` drill to error logs/traces). |
+| **Services** | `:services` `:svc` | Your APM services for an env (`/` sets the env, default `prod`), with **TEAM / TIER / LIFECYCLE joined from the service catalog** (blank when the org keeps no definitions); `enter` → that service's traces; **`h` → the service-health rollup**: its monitors, SLOs, error-tracking issues, recent events, and the owning team's on-call on one screen (`P` pages them, `l`/`t` drill to error logs/traces). |
 | **Events** | `:events` `:ev` | The change stream: deploys, alerts, config changes. |
 | **RUM** | `:rum` `:browser` | Browser/mobile events: views, actions, errors, sessions. `/` is a RUM search query (`@type:error`); digit keys set the window. |
 | **Synthetics** | `:synthetics` `:syn` | Synthetic tests: live/paused, name, type, locations, tags. `enter` shows the latest results with a pass rate. |
@@ -154,6 +154,10 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Hosts** | `:hosts` `:infra` | Infrastructure host inventory, problems first (down, then muted, then up): status, cluster (derived from `kube_cluster_name:`/`cluster_name:` tags — Datadog hosts have no first-class cluster field), reporting integrations, CPU, last-report age, tags — plus `NAME` (the raw Datadog name; `HOST` prefers `host_name`), `AWS-NAME`, `ALIASES`, `SOURCES` and `PLATFORM` columns you enable with `C`. `m` mutes/unmutes a host; `o` opens it in Datadog. |
 | **Containers** | `:containers` `:pods` | Live container inventory, non-running first: name, state, image, host, **host health** (`HOST-ST`, joined live from `:hosts` — spot containers on a down/muted box), started-age, tags — plus `NAMESPACE` and `CLUSTER` columns you enable with `C`. `/` is a Datadog **tag filter** (`kube_namespace:payments`, `cluster:eks-prod`, `image_name:kong`). `l` drills to that container's logs (`container_name:…`); `enter` opens the full object; `o` opens it in Datadog. Read-only. |
 | **Processes** | `:processes` `:ps` | Live process inventory — the last drill of the infra family (hosts → containers → processes): command, user, host, PID, started-age, tags (`PPID` via `C`). `/` is a tag filter (`host:…`) or free command-line text. Read-only. |
+| **Dependencies** | `:deps` `:map` | The **service dependency map**, most connected first: downstream/upstream counts and the downstream list per service. `/` sets the env (default `prod`); `enter` shows both edge lists; `o` opens the web service map. (Backed by the same endpoint as the web map — not in the official client, so treat it as best-effort.) |
+| **Cases** | `:cases` | Case Management — the triage queue between alerts and incidents: key, status, priority, title, created (newest first). `/` is a case search. |
+| **Pipelines** | `:cicd` `:ci` | CI Visibility pipeline executions, newest first: time, status, pipeline, branch, duration, provider. `/` is a CI query (`@ci.pipeline.name:…`, `@git.branch:…`); digits set the window (default 1d); `o` opens the pipeline run. |
+| **Fleet** | `:fleet` `:agents` | Fleet Automation agent inventory, **oldest agent versions first**: host, agent version, cluster, OS, envs, last restart. `/` is a tag filter (`env:…`, `cluster_name:…`). Requires Fleet Automation (recent agents). |
 | **Audit** | `:audit` `:trail` | The Audit Trail: who changed what, org-wide — time, service, action, user, message. `/` is an audit search query (`@usr.email:…`, `@evt.name:…`); digits set the window (defaults to 1d — audit events are sparse). |
 | **Security** | `:security` `:signals` `:siem` | Cloud SIEM / CSM security signals over the last 24h: time, severity, title, tags. `/` is a signals search query. `enter` opens the signal. |
 | **Notebooks** | `:notebooks` `:nb` `:runbooks` | The org's notebooks (runbooks, postmortems): name, author, status, last modified. `enter` reads the notebook's text. |
@@ -181,9 +185,9 @@ Switch to any view with `:` + its name or a shorter alias.
   are read-only) above the object.
 - **SLOs** — `enter` shows live **attainment + error budget**; `t` cycles the
   type filter (metric / monitor / time_slice / all).
-- **Logs / Traces / Events / RUM / Security / Audit** — `/` is a Datadog
-  query; `1`–`5` set the time window (15m / 1h / 4h / 1d / 7d, per view;
-  Security and Audit default to 1d). Logs also: `P` patterns, `t` → trace,
+- **Logs / Traces / Events / RUM / Security / Audit / Pipelines** — `/` is a
+  Datadog query; `1`–`5` set the time window (15m / 1h / 4h / 1d / 7d, per
+  view; Security, Audit and Pipelines default to 1d). Logs also: `P` patterns, `t` → trace,
   `x` → surrounding context, and **`a` → counts by facet**: one aggregate
   call groups the current query by service/status/host (`f` rotates) into
   ranked bars with a total — triage without counting rows by eye.
@@ -598,6 +602,11 @@ contexts:
 | `hosts` | HOST, STATUS, CLUSTER, NAME, AWS-NAME, ALIASES, SOURCES, PLATFORM, APPS, CPU, LAST, TAGS |
 | `processes` | COMMAND, USER, HOST, PID, PPID, STARTED, TAGS |
 | `audit` | TIME, SERVICE, ACTION, USER, MESSAGE |
+| `services` | SERVICE, TEAM, TIER, LIFECYCLE |
+| `deps` | SERVICE, CALLS, CALLED-BY, DOWNSTREAM |
+| `cases` | KEY, STATUS, PRIO, TITLE, CREATED |
+| `cicd` | TIME, STATUS, PIPELINE, BRANCH, DURATION, PROVIDER |
+| `fleet` | HOST, AGENT, CLUSTER, OS, ENVS, RESTARTED |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |

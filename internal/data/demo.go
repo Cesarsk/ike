@@ -201,8 +201,100 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.audit(query), nil
 	case "deps":
 		return d.deps(query), nil
+	case "cases":
+		return d.cases(query), nil
+	case "cicd":
+		return d.cicd(query), nil
+	case "fleet":
+		return d.fleet(query), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
+}
+
+// cases backs the :cases view offline.
+func (d *Demo) cases(query string) []Row {
+	list := []struct{ key, status, prio, title, created string }{
+		{"CASE-101", "IN PROGRESS", "P2", "Recurring 5xx spikes on kong-proxy during deploys", "2026-07-28 14:02"},
+		{"CASE-100", "OPEN", "P3", "Vault lease renewals occasionally time out", "2026-07-27 09:41"},
+		{"CASE-97", "OPEN", "P4", "Review noisy disk-space monitors on kafka brokers", "2026-07-24 16:20"},
+		{"CASE-92", "CLOSED", "P3", "Postgres connection pool exhaustion on payments-db", "2026-07-19 11:05"},
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(list))
+	for i, c := range list {
+		hay := strings.ToLower(c.key + " " + c.status + " " + c.title)
+		if q != "" && !strings.Contains(hay, q) {
+			continue
+		}
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("case-%d", i),
+			Cells: []string{c.key, c.status, c.prio, c.title, c.created},
+			Raw:   map[string]any{"key": c.key},
+			URL:   WebBase(d.site) + "/cases",
+		})
+	}
+	return rows
+}
+
+// cicd backs the :cicd view offline.
+func (d *Demo) cicd(query string) []Row {
+	list := []struct{ when, status, pipe, branch, dur, provider string }{
+		{"10:44", "success", "payments-api", "main", "6m20s", "gitlab"},
+		{"10:31", "error", "trading-engine", "feat/order-router", "4m02s", "gitlab"},
+		{"10:12", "success", "platform-workloads", "main", "2m45s", "gitlab"},
+		{"09:58", "success", "onboarding-web", "main", "8m11s", "gitlab"},
+		{"09:40", "canceled", "payments-api", "feat/retry-budget", "1m03s", "gitlab"},
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(list))
+	for i, p := range list {
+		hay := strings.ToLower(p.pipe + " " + p.branch + " " + p.status)
+		if q != "" && !strings.Contains(hay, strings.ToLower(q)) {
+			continue
+		}
+		rows = append(rows, Row{
+			ID:    fmt.Sprintf("pipe-%d", i),
+			Cells: []string{p.when, p.status, p.pipe, p.branch, p.dur, p.provider},
+			Raw:   map[string]any{"pipeline": p.pipe},
+			URL:   WebBase(d.site) + "/ci/pipelines",
+		})
+	}
+	return rows
+}
+
+// fleet backs the :fleet view offline (oldest agent versions first).
+func (d *Demo) fleet(query string) []Row {
+	list := []struct{ host, ver, cluster, os, envs, restarted string }{
+		{"bastion.mgmt", "7.52.1", "", "ubuntu-22.04", "mgmt", "90d"},
+		{"kafka-3.platform", "7.61.0", "", "ubuntu-22.04", "prod", "20d"},
+		{"ip-10-0-1-14.eks-prod", "7.66.1", "payments-prod", "amazon-linux-2023", "prod", "6d"},
+		{"ip-10-0-2-31.eks-prod", "7.66.1", "payments-prod", "amazon-linux-2023", "prod", "6d"},
+		{"ip-10-1-4-7.eks-stage", "7.66.1", "trading-stage", "amazon-linux-2023", "stage", "2d"},
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(list))
+	for _, a := range list {
+		hay := strings.ToLower(a.host + " " + a.cluster + " " + a.envs + " " + a.ver)
+		if q != "" && !strings.Contains(hay, strings.TrimPrefix(strings.TrimPrefix(q, "env:"), "cluster_name:")) {
+			continue
+		}
+		rows = append(rows, Row{
+			ID:    a.host,
+			Cells: []string{a.host, a.ver, a.cluster, a.os, a.envs, a.restarted},
+			Raw:   map[string]any{"agent_version": a.ver},
+			URL:   WebBase(d.site) + "/fleet",
+		})
+	}
+	return rows
 }
 
 // deps backs the :deps view offline: a small believable call graph.

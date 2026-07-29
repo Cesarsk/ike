@@ -607,6 +607,36 @@ func Resources() []Resource {
 				"e.g. env:dev), or check that APM traces are flowing.",
 		},
 		{
+			// Case Management — the triage queue between alerts and incidents.
+			Key: "cases", Title: "Cases",
+			Aliases: []string{"cases", "case"},
+			Columns: []string{"KEY", "STATUS", "PRIO", "TITLE", "CREATED"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			EmptyHint: "No cases. Case Management may not be in use in this org, or the " +
+				"filter matched nothing.",
+		},
+		{
+			// CI Visibility pipeline executions, newest first. '/' is a CI
+			// search query (@ci.pipeline.name:…, @git.branch:…); digits set
+			// the time window (default 1d).
+			Key: "cicd", Title: "Pipelines",
+			Aliases: []string{"cicd", "ci", "pipelines", "pipeline"},
+			Columns: []string{"TIME", "STATUS", "PIPELINE", "BRANCH", "DURATION", "PROVIDER"},
+			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			EmptyHint: "No pipeline executions in this window. CI Visibility may not be " +
+				"enabled, or widen the window (1-5).",
+		},
+		{
+			// Fleet Automation agent inventory — oldest agent versions first.
+			Key: "fleet", Title: "Fleet",
+			Aliases:     []string{"fleet", "agents"},
+			Columns:     []string{"HOST", "AGENT", "CLUSTER", "OS", "ENVS", "RESTARTED"},
+			TTL:         5 * time.Minute,
+			ServerQuery: true, // '/' = tag filter (env:…, cluster_name:…)
+			EmptyHint: "No agents reported by Fleet Automation. It may not be enabled " +
+				"for this org (requires recent agent versions).",
+		},
+		{
 			Key: "teams", Title: "Teams",
 			Aliases: []string{"teams", "team"},
 			Columns: []string{"TEAM", "HANDLE", "MEMBERS", "DESCRIPTION"},

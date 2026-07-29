@@ -187,6 +187,12 @@ func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, 
 		return l.audit(ctx, query, timeRange)
 	case "deps":
 		return l.deps(ctx, query)
+	case "cases":
+		return l.cases(ctx, query)
+	case "cicd":
+		return l.cicd(ctx, query, timeRange)
+	case "fleet":
+		return l.fleet(ctx, query)
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
