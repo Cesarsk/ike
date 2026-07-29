@@ -593,6 +593,18 @@ func Resources() []Resource {
 			TTL:     5 * time.Minute,
 		},
 		{
+			// Service dependency map — who calls whom, most connected first.
+			// Backed by the same endpoint as the web service map (not in the
+			// typed client; treated as unstable, degrades to an error row).
+			Key: "deps", Title: "Dependencies",
+			Aliases:     []string{"deps", "dependencies", "map", "servicemap"},
+			Columns:     []string{"SERVICE", "CALLS", "CALLED-BY", "DOWNSTREAM"},
+			TTL:         5 * time.Minute,
+			ServerQuery: true, DefaultQuery: "env:prod",
+			EmptyHint: "No service dependencies for this env. Try another env (/ sets it, " +
+				"e.g. env:dev), or check that APM traces are flowing.",
+		},
+		{
 			Key: "teams", Title: "Teams",
 			Aliases: []string{"teams", "team"},
 			Columns: []string{"TEAM", "HANDLE", "MEMBERS", "DESCRIPTION"},

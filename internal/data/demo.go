@@ -199,8 +199,56 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.processes(query), nil
 	case "audit":
 		return d.audit(query), nil
+	case "deps":
+		return d.deps(query), nil
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
+}
+
+// deps backs the :deps view offline: a small believable call graph.
+func (d *Demo) deps(query string) []Row {
+	env := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(query), "env:"))
+	if env == "" || env == "*" {
+		env = "prod"
+	}
+	graph := map[string][]string{
+		"kong-proxy":     {"payments-api", "trading-engine", "onboarding-api"},
+		"payments-api":   {"payments-db", "redis", "vault"},
+		"trading-engine": {"kafka", "payments-api"},
+		"onboarding-api": {"payments-db", "redis"},
+		"payments-db":    {},
+		"redis":          {},
+		"vault":          {},
+		"kafka":          {},
+	}
+	calledBy := map[string][]string{}
+	for svc, calls := range graph {
+		for _, c := range calls {
+			calledBy[c] = append(calledBy[c], svc)
+		}
+	}
+	rows := make([]Row, 0, len(graph))
+	for svc, calls := range graph {
+		up := calledBy[svc]
+		sort.Strings(up)
+		down := append([]string(nil), calls...)
+		sort.Strings(down)
+		rows = append(rows, Row{
+			ID:    svc,
+			Cells: []string{svc, fmt.Sprintf("%d", len(down)), fmt.Sprintf("%d", len(up)), strings.Join(down, " ")},
+			Raw:   map[string]any{"env": env, "calls": down, "called_by": up},
+			URL:   WebBase(d.site) + "/apm/map?env=" + env,
+		})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		ci := len(graph[rows[i].ID]) + len(calledBy[rows[i].ID])
+		cj := len(graph[rows[j].ID]) + len(calledBy[rows[j].ID])
+		if ci != cj {
+			return ci > cj
+		}
+		return rows[i].ID < rows[j].ID
+	})
+	return rows
 }
 
 // processes backs the :processes view offline.
