@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -163,4 +164,66 @@ func stringifyID(v any) string {
 		return strconv.FormatInt(t, 10)
 	}
 	return ""
+}
+
+// LogCounts aggregates a logs query into counts by facet (one bounded call).
+func (l *Live) LogCounts(ctx context.Context, query, timeRange, facet string) ([]WidgetItem, error) {
+	if strings.TrimSpace(query) == "" {
+		query = "*"
+	}
+	if timeRange == "" {
+		timeRange = "now-15m"
+	}
+	if facet == "" {
+		facet = "service"
+	}
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	api := datadogV2.NewLogsApi(l.client)
+	count := datadogV2.LOGSAGGREGATIONFUNCTION_COUNT
+	body := datadogV2.LogsAggregateRequest{
+		Compute: []datadogV2.LogsCompute{{Aggregation: count}},
+		Filter: &datadogV2.LogsQueryFilter{
+			Query: datadog.PtrString(query),
+			From:  datadog.PtrString(timeRange),
+			To:    datadog.PtrString("now"),
+		},
+		GroupBy: []datadogV2.LogsGroupBy{{
+			Facet: facet,
+			Limit: datadog.PtrInt64(10),
+			Sort: &datadogV2.LogsAggregateSort{
+				Aggregation: &count,
+				Order:       datadogV2.LOGSSORTORDER_DESCENDING.Ptr(),
+			},
+		}},
+	}
+	resp, httpresp, err := api.AggregateLogs(ctx, body)
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("logs aggregate", err)
+	}
+	respData := resp.GetData()
+	buckets := respData.GetBuckets()
+	items := make([]WidgetItem, 0, len(buckets))
+	for _, b := range buckets {
+		label := ""
+		for _, v := range b.GetBy() {
+			if s, ok := v.(string); ok {
+				label = s
+				break
+			}
+		}
+		if label == "" {
+			label = "(none)"
+		}
+		for _, cv := range b.GetComputes() {
+			if cv.LogsAggregateBucketValueSingleNumber != nil {
+				items = append(items, WidgetItem{Label: label, Value: *cv.LogsAggregateBucketValueSingleNumber})
+				break
+			}
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Value > items[j].Value })
+	return items, nil
 }

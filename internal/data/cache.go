@@ -65,6 +65,16 @@ func (c *Cached) LogContext(ctx context.Context, anchor Row, windowSecs int) (*L
 	return c.p.LogContext(ctx, anchor, windowSecs)
 }
 
+// LogCounts is an on-demand, single-call aggregation, uncached.
+func (c *Cached) LogCounts(ctx context.Context, query, timeRange, facet string) ([]WidgetItem, error) {
+	return c.p.LogCounts(ctx, query, timeRange, facet)
+}
+
+// MetricQuery is an on-demand, single-call query, uncached.
+func (c *Cached) MetricQuery(ctx context.Context, query string, window time.Duration) (*MetricExplorer, error) {
+	return c.p.MetricQuery(ctx, query, window)
+}
+
 // Cost passes through to the provider; the UI panel fetches it on demand and
 // the figures move at most daily, so caching lives in the UI's refresh cadence.
 func (c *Cached) Cost(ctx context.Context, o CostOptions) (*CostView, error) {

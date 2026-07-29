@@ -34,6 +34,12 @@ func (e *Errored) Trace(context.Context, string) (*TraceView, error) {
 func (e *Errored) LogContext(context.Context, Row, int) (*LogContextView, error) {
 	return nil, e.err
 }
+func (e *Errored) LogCounts(context.Context, string, string, string) ([]WidgetItem, error) {
+	return nil, e.err
+}
+func (e *Errored) MetricQuery(context.Context, string, time.Duration) (*MetricExplorer, error) {
+	return nil, e.err
+}
 func (e *Errored) Cost(context.Context, CostOptions) (*CostView, error) {
 	return nil, e.err
 }

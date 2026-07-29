@@ -181,6 +181,10 @@ func (l *Live) Fetch(ctx context.Context, key, query, timeRange string) ([]Row, 
 		return l.errorIssues(ctx, query)
 	case "containers":
 		return l.containers(ctx, query)
+	case "processes":
+		return l.processes(ctx, query)
+	case "audit":
+		return l.audit(ctx, query, timeRange)
 	}
 	return nil, fmt.Errorf("unknown resource %q", key)
 }
