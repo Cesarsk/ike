@@ -47,12 +47,18 @@ func (l *Live) hosts(ctx context.Context) ([]Row, error) {
 		}
 		up, muted := h.GetUp(), h.GetIsMuted()
 		tags := hostTags(h.GetTagsBySource())
+		meta := h.GetMeta()
 		rows = append(rows, Row{
 			ID: name,
 			Cells: []string{
 				name,
 				hostStatus(up, muted),
 				hostCluster(tags),
+				h.GetName(),
+				h.GetAwsName(),
+				strings.Join(h.GetAliases(), ","),
+				strings.Join(h.GetSources(), ","),
+				meta.GetPlatform(),
 				strings.Join(h.GetApps(), ","),
 				hostCPU(h.GetMetrics()),
 				hostLastReported(int64(h.GetLastReportedTime())),
