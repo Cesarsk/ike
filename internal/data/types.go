@@ -188,7 +188,11 @@ type MetricExplorer struct {
 // DashboardView is a dashboard rendered for the terminal: metadata plus a
 // flat, in-order list of its widgets (group widgets are flattened).
 type DashboardView struct {
-	Title     string
+	Title string
+	// Tags come free with this fetch: the dashboard list omits them, so
+	// opening a dashboard is a chance to fill its row's TAGS cell without
+	// spending another call against the tight dashboard limiter.
+	Tags      []string
 	Widgets   []Widget
 	Truncated bool // more metric widgets existed than the fetch budget allowed
 }

@@ -426,6 +426,7 @@ func (a *App) loadDashboard(r data.Row, force bool) {
 			a.dashViewData, a.dashWidgets, a.dashSel, a.dashZoom = view, order, 0, false
 			a.dash.SetText(text)
 			a.dashHighlight()
+			a.fillRowTags(r.ID, view.Tags) // free: this fetch carried them
 			if force {
 				a.flash("widgets refreshed", false)
 			}

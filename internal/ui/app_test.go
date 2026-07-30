@@ -1624,6 +1624,21 @@ func TestTagsEverywhere(t *testing.T) {
 	typeRunes(sim, "/team:finops")
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "Cost Overview") // the finops-authored dashboard
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Dashboards(all)")
+
+	// Opening a dashboard fills that row's tags for free — the widget fetch
+	// already carried them, so no extra call is spent.
+	typeRunes(sim, "/EKS")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "EKS Clusters")
+	press(sim, tcell.KeyEnter) // → the widget grid
+	waitFor(t, sim, "7 widgets")
+	press(sim, tcell.KeyEscape) // back to the table
+	waitFor(t, sim, "Dashboards(")
+	if !strings.Contains(screenText(sim), "team:sre") {
+		t.Errorf("opening a dashboard should fill its TAGS cell for free:\n%s", screenText(sim))
+	}
 	app.Stop()
 }
 

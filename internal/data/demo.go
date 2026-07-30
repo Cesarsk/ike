@@ -742,7 +742,7 @@ func (d *Demo) Dashboard(_ context.Context, id string, _ time.Duration) (*Dashbo
 		{"Deploy notes", "note", "", 0, 0, false, 6, 4, 6, 2},
 		{"Checkout availability (SLO)", "slo", "", 0, 0, false, 0, 6, 6, 2},
 	}
-	view := &DashboardView{Title: "SRE Overview (" + id + ")"}
+	view := &DashboardView{Title: "SRE Overview (" + id + ")", Tags: []string{"team:sre", "env:prod"}}
 	for _, w := range widgets {
 		wd := Widget{Title: w.title, Type: w.typ, Query: w.query, X: w.x, Y: w.y, W: w.w, H: w.h}
 		if w.typ == "slo" {
