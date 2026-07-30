@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -374,7 +375,7 @@ func (l *Live) incidents(ctx context.Context) ([]Row, error) {
 		publicID := fmt.Sprintf("%d", a.GetPublicId())
 		rows = append(rows, Row{
 			ID:    d.GetId(),
-			Cells: []string{"IR-" + publicID, sev, state, a.GetTitle(), impact, a.GetCreated().Local().Format("2006-01-02 15:04")},
+			Cells: []string{"IR-" + publicID, sev, state, a.GetTitle(), impact, a.GetCreated().Local().Format("2006-01-02 15:04"), incidentTags(a.GetFields())},
 			Raw:   d,
 			URL:   l.web + "/incidents/" + publicID,
 		})
@@ -399,4 +400,29 @@ func incidentField(fields map[string]datadogV2.IncidentFieldAttributes, key stri
 		return strings.Join(mv.GetValue(), ", ")
 	}
 	return ""
+}
+
+// incidentTags renders an incident's fields as "k:v" tags. Incidents carry no
+// tag list of their own — their routing metadata lives in fields (services,
+// teams, root cause, custom multiselects) — so flattening them gives the
+// TAGS column the same filter syntax as every other view.
+func incidentTags(fields map[string]datadogV2.IncidentFieldAttributes) string {
+	skip := map[string]bool{"state": true, "severity": true, "detection_method": true}
+	out := make([]string, 0, len(fields))
+	for k := range fields {
+		if skip[k] { // already their own columns
+			continue
+		}
+		v := incidentField(fields, k)
+		if v == "" {
+			continue
+		}
+		for _, part := range strings.Split(v, ", ") {
+			if part != "" {
+				out = append(out, k+":"+part)
+			}
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, " ")
 }

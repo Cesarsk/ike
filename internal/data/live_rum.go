@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -55,6 +56,7 @@ func (l *Live) rum(ctx context.Context, query, timeRange string) ([]Row, error) 
 			Ctx: "",
 			Cells: []string{
 				ts.Local().Format("15:04:05"), typ, app, attrs.GetService(), detail,
+				strings.Join(attrs.GetTags(), " "),
 			},
 			Raw: map[string]any{
 				"id": ev.GetId(), "timestamp": ts.Format(time.RFC3339),

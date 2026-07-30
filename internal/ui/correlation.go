@@ -493,3 +493,94 @@ func renderLogAggBody(query, window, facet string, items []data.WidgetItem) stri
 	b.WriteString("\n [gray]<f> facet (service/status/host) · <ctrl-r> refresh · <esc> back[-]\n")
 	return b.String()
 }
+
+// tagBackfillViews are the views whose list endpoint omits tags, so the TAGS
+// column stays empty until the user asks for it with 'T'. Dashboards are the
+// only one: DashboardSummary carries no tags, only the full object does.
+var tagBackfillViews = map[string]bool{"dashboards": true}
+
+// confirmTagBackfill states the API cost of filling the TAGS column for the
+// rows currently in view, then runs it on confirmation. One GET per row, so
+// it is never automatic.
+func (a *App) confirmTagBackfill() {
+	ids := a.visibleIDs()
+	if len(ids) == 0 {
+		a.flash("nothing to backfill", true)
+		return
+	}
+	capped := ""
+	if len(ids) > data.MaxTagBackfill {
+		ids = ids[:data.MaxTagBackfill]
+		capped = fmt.Sprintf("\n(capped at %d — narrow with / for the rest)", data.MaxTagBackfill)
+	}
+	a.showConfirm(
+		fmt.Sprintf("Fetch tags for %d %s?\n\nThe list API omits them, so this costs\n%d API calls against a tight limiter.%s",
+			len(ids), a.res.Title, len(ids), capped),
+		[]string{"Cancel", "Fetch"},
+		func(label string) {
+			if label == "Fetch" {
+				a.runTagBackfill(ids)
+			}
+		})
+}
+
+// visibleIDs collects the row ids currently passing the filter, in order.
+func (a *App) visibleIDs() []string {
+	ids := make([]string, 0, len(a.filtered))
+	for _, ix := range a.filtered {
+		if ix >= 0 && ix < len(a.rows) {
+			ids = append(ids, a.rows[ix].ID)
+		}
+	}
+	return ids
+}
+
+// runTagBackfill fetches the tags and writes them into the loaded rows' TAGS
+// cell, so filtering and sorting see them immediately. The enrichment lives
+// on the loaded rows only — a refresh re-fetches the bare list.
+func (a *App) runTagBackfill(ids []string) {
+	col := colIndex(a.res.Columns, "TAGS")
+	if col < 0 {
+		a.flash("this view has no TAGS column", true)
+		return
+	}
+	key := a.res.Key
+	prov := a.provider
+	a.flash(fmt.Sprintf("fetching tags for %d rows…", len(ids)), false)
+	go func() {
+		tags, err := prov.ResourceTags(context.Background(), key, ids)
+		a.QueueUpdateDraw(func() {
+			if a.res.Key != key {
+				return // navigated away
+			}
+			if err != nil {
+				a.flash("✗ tags: "+err.Error(), true)
+				return
+			}
+			filled := 0
+			for i := range a.rows {
+				t, ok := tags[a.rows[i].ID]
+				if !ok || t == "" {
+					continue
+				}
+				for len(a.rows[i].Cells) <= col {
+					a.rows[i].Cells = append(a.rows[i].Cells, "")
+				}
+				a.rows[i].Cells[col] = t
+				filled++
+			}
+			a.applyFilter()
+			a.flash(fmt.Sprintf("tags filled for %d rows — / to filter them", filled), false)
+		})
+	}()
+}
+
+// colIndex finds a column by name, -1 when absent.
+func colIndex(cols []string, name string) int {
+	for i, c := range cols {
+		if c == name {
+			return i
+		}
+	}
+	return -1
+}

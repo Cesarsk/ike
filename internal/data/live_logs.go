@@ -46,7 +46,7 @@ func (l *Live) logs(ctx context.Context, query, timeRange string) ([]Row, error)
 		}
 		rows = append(rows, Row{
 			ID:      lg.GetId(),
-			Cells:   []string{a.GetTimestamp().Local().Format("15:04:05"), a.GetStatus(), a.GetService(), a.GetHost(), msg},
+			Cells:   []string{a.GetTimestamp().Local().Format("15:04:05"), a.GetStatus(), a.GetService(), a.GetHost(), msg, strings.Join(a.GetTags(), " ")},
 			Raw:     lg,
 			URL:     l.web + "/logs?query=" + url.QueryEscape(query),
 			TraceID: traceIDFromAttrs(a.GetAttributes()),

@@ -75,6 +75,12 @@ func (c *Cached) MetricQuery(ctx context.Context, query string, window time.Dura
 	return c.p.MetricQuery(ctx, query, window)
 }
 
+// ResourceTags is an explicit, user-confirmed backfill — never cached, so a
+// re-press always reflects current tags.
+func (c *Cached) ResourceTags(ctx context.Context, key string, ids []string) (map[string]string, error) {
+	return c.p.ResourceTags(ctx, key, ids)
+}
+
 // Cost passes through to the provider; the UI panel fetches it on demand and
 // the figures move at most daily, so caching lives in the UI's refresh cadence.
 func (c *Cached) Cost(ctx context.Context, o CostOptions) (*CostView, error) {

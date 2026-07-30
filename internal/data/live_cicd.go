@@ -56,7 +56,7 @@ func (l *Live) cicd(ctx context.Context, query, timeRange string) ([]Row, error)
 		url := rumStr(rumMap(ci, "pipeline"), "url")
 		rows = append(rows, Row{
 			ID:    ev.GetId(),
-			Cells: []string{when, status, pipe, branch, dur, provider},
+			Cells: []string{when, status, pipe, branch, dur, provider, strings.Join(attrs.GetTags(), " ")},
 			Raw:   ev,
 			URL:   url,
 		})

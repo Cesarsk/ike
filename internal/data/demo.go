@@ -213,11 +213,11 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 
 // cases backs the :cases view offline.
 func (d *Demo) cases(query string) []Row {
-	list := []struct{ key, status, prio, title, created string }{
-		{"CASE-101", "IN PROGRESS", "P2", "Recurring 5xx spikes on kong-proxy during deploys", "2026-07-28 14:02"},
-		{"CASE-100", "OPEN", "P3", "Vault lease renewals occasionally time out", "2026-07-27 09:41"},
-		{"CASE-97", "OPEN", "P4", "Review noisy disk-space monitors on kafka brokers", "2026-07-24 16:20"},
-		{"CASE-92", "CLOSED", "P3", "Postgres connection pool exhaustion on payments-db", "2026-07-19 11:05"},
+	list := []struct{ key, status, prio, title, created, tags string }{
+		{"CASE-101", "IN PROGRESS", "P2", "Recurring 5xx spikes on kong-proxy during deploys", "2026-07-28 14:02", "service:kong-proxy team:sre"},
+		{"CASE-100", "OPEN", "P3", "Vault lease renewals occasionally time out", "2026-07-27 09:41", "service:vault team:sre"},
+		{"CASE-97", "OPEN", "P4", "Review noisy disk-space monitors on kafka brokers", "2026-07-24 16:20", "service:kafka team:platform"},
+		{"CASE-92", "CLOSED", "P3", "Postgres connection pool exhaustion on payments-db", "2026-07-19 11:05", "service:payments-api team:payments"},
 	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "*" {
@@ -231,7 +231,7 @@ func (d *Demo) cases(query string) []Row {
 		}
 		rows = append(rows, Row{
 			ID:    fmt.Sprintf("case-%d", i),
-			Cells: []string{c.key, c.status, c.prio, c.title, c.created},
+			Cells: []string{c.key, c.status, c.prio, c.title, c.created, c.tags},
 			Raw:   map[string]any{"key": c.key},
 			URL:   WebBase(d.site) + "/cases",
 		})
@@ -241,12 +241,12 @@ func (d *Demo) cases(query string) []Row {
 
 // cicd backs the :cicd view offline.
 func (d *Demo) cicd(query string) []Row {
-	list := []struct{ when, status, pipe, branch, dur, provider string }{
-		{"10:44", "success", "payments-api", "main", "6m20s", "gitlab"},
-		{"10:31", "error", "trading-engine", "feat/order-router", "4m02s", "gitlab"},
-		{"10:12", "success", "platform-workloads", "main", "2m45s", "gitlab"},
-		{"09:58", "success", "onboarding-web", "main", "8m11s", "gitlab"},
-		{"09:40", "canceled", "payments-api", "feat/retry-budget", "1m03s", "gitlab"},
+	list := []struct{ when, status, pipe, branch, dur, provider, tags string }{
+		{"10:44", "success", "payments-api", "main", "6m20s", "gitlab", "team:payments env:prod"},
+		{"10:31", "error", "trading-engine", "feat/order-router", "4m02s", "gitlab", "team:trading env:prod"},
+		{"10:12", "success", "platform-workloads", "main", "2m45s", "gitlab", "team:sre env:prod"},
+		{"09:58", "success", "onboarding-web", "main", "8m11s", "gitlab", "team:frontend env:prod"},
+		{"09:40", "canceled", "payments-api", "feat/retry-budget", "1m03s", "gitlab", "team:payments env:prod"},
 	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "*" {
@@ -260,7 +260,7 @@ func (d *Demo) cicd(query string) []Row {
 		}
 		rows = append(rows, Row{
 			ID:    fmt.Sprintf("pipe-%d", i),
-			Cells: []string{p.when, p.status, p.pipe, p.branch, p.dur, p.provider},
+			Cells: []string{p.when, p.status, p.pipe, p.branch, p.dur, p.provider, p.tags},
 			Raw:   map[string]any{"pipeline": p.pipe},
 			URL:   WebBase(d.site) + "/ci/pipelines",
 		})
@@ -270,12 +270,12 @@ func (d *Demo) cicd(query string) []Row {
 
 // fleet backs the :fleet view offline (oldest agent versions first).
 func (d *Demo) fleet(query string) []Row {
-	list := []struct{ host, ver, cluster, os, envs, restarted string }{
-		{"bastion.mgmt", "7.52.1", "", "ubuntu-22.04", "mgmt", "90d"},
-		{"kafka-3.platform", "7.61.0", "", "ubuntu-22.04", "prod", "20d"},
-		{"ip-10-0-1-14.eks-prod", "7.66.1", "payments-prod", "amazon-linux-2023", "prod", "6d"},
-		{"ip-10-0-2-31.eks-prod", "7.66.1", "payments-prod", "amazon-linux-2023", "prod", "6d"},
-		{"ip-10-1-4-7.eks-stage", "7.66.1", "trading-stage", "amazon-linux-2023", "stage", "2d"},
+	list := []struct{ host, ver, cluster, os, envs, restarted, tags string }{
+		{"bastion.mgmt", "7.52.1", "", "ubuntu-22.04", "mgmt", "90d", "env:mgmt role:bastion"},
+		{"kafka-3.platform", "7.61.0", "", "ubuntu-22.04", "prod", "20d", "env:prod team:platform"},
+		{"ip-10-0-1-14.eks-prod", "7.66.1", "payments-prod", "amazon-linux-2023", "prod", "6d", "env:prod team:sre"},
+		{"ip-10-0-2-31.eks-prod", "7.66.1", "payments-prod", "amazon-linux-2023", "prod", "6d", "env:prod team:sre"},
+		{"ip-10-1-4-7.eks-stage", "7.66.1", "trading-stage", "amazon-linux-2023", "stage", "2d", "env:stage team:sre"},
 	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "*" {
@@ -289,7 +289,7 @@ func (d *Demo) fleet(query string) []Row {
 		}
 		rows = append(rows, Row{
 			ID:    a.host,
-			Cells: []string{a.host, a.ver, a.cluster, a.os, a.envs, a.restarted},
+			Cells: []string{a.host, a.ver, a.cluster, a.os, a.envs, a.restarted, a.tags},
 			Raw:   map[string]any{"agent_version": a.ver},
 			URL:   WebBase(d.site) + "/fleet",
 		})
@@ -398,7 +398,7 @@ func (d *Demo) audit(query string) []Row {
 		}
 		rows = append(rows, Row{
 			ID:    fmt.Sprintf("audit-%d", i),
-			Cells: []string{e.ts, e.service, e.action, e.user, e.msg},
+			Cells: []string{e.ts, e.service, e.action, e.user, e.msg, "env:prod team:" + e.service},
 			Raw:   map[string]any{"action": e.action},
 			URL:   WebBase(d.site) + "/audit-trail",
 		})
@@ -922,12 +922,13 @@ func (d *Demo) incidents() []Row {
 		id, sev, state, title string
 		impact                bool
 		age                   time.Duration
+		tags                  string
 	}{
-		{"IR-142", "SEV-1", "active", "Kong data plane returning 5xx in prod", true, 42 * time.Minute},
-		{"IR-141", "SEV-2", "stable", "Elevated latency on payments API", true, 3 * time.Hour},
-		{"IR-139", "SEV-3", "resolved", "ArgoCD sync storm after chart bump", false, 26 * time.Hour},
-		{"IR-138", "SEV-2", "resolved", "RDS failover in stage", false, 2 * 24 * time.Hour},
-		{"IR-135", "SEV-4", "resolved", "Flaky synthetic on login journey", false, 4 * 24 * time.Hour},
+		{"IR-142", "SEV-1", "active", "Kong data plane returning 5xx in prod", true, 42 * time.Minute, "services:kong-proxy teams:sre"},
+		{"IR-141", "SEV-2", "stable", "Elevated latency on payments API", true, 3 * time.Hour, "services:payments-api teams:payments"},
+		{"IR-139", "SEV-3", "resolved", "ArgoCD sync storm after chart bump", false, 26 * time.Hour, "services:argocd teams:sre"},
+		{"IR-138", "SEV-2", "resolved", "RDS failover in stage", false, 2 * 24 * time.Hour, "services:payments-api teams:payments"},
+		{"IR-135", "SEV-4", "resolved", "Flaky synthetic on login journey", false, 4 * 24 * time.Hour, "services:onboarding-web teams:frontend"},
 	}
 	rows := make([]Row, 0, len(incs))
 	for _, in := range incs {
@@ -946,7 +947,7 @@ func (d *Demo) incidents() []Row {
 		}
 		rows = append(rows, Row{
 			ID:    in.id,
-			Cells: []string{in.id, sev, state, in.title, impact, created.Format("2006-01-02 15:04")},
+			Cells: []string{in.id, sev, state, in.title, impact, created.Format("2006-01-02 15:04"), in.tags},
 			Raw: map[string]any{
 				"public_id": in.id, "severity": sev, "state": state,
 				"title": in.title, "customer_impacted": in.impact, "created": created.Format(time.RFC3339),
@@ -1084,7 +1085,7 @@ func (d *Demo) logs(query, timeRange string) []Row {
 		rows = append(rows, Row{
 			ID:      fmt.Sprintf("log-%d", i),
 			TraceID: traceID,
-			Cells:   []string{stamp, m.status, s.svc, s.host, m.msg},
+			Cells:   []string{stamp, m.status, s.svc, s.host, m.msg, "env:prod team:sre service:" + s.svc},
 			Raw: map[string]any{
 				"timestamp": ts.Format(time.RFC3339), "status": m.status,
 				"service": s.svc, "host": s.host, "message": m.msg,
@@ -1102,6 +1103,31 @@ func (d *Demo) logs(query, timeRange string) []Row {
 // surrounding-context panel is demoable and e2e-testable offline.
 // MetricQuery synthesizes a deterministic series for the :metrics explorer,
 // shaped by the query text so different queries look different offline.
+// ResourceTags mirrors the live backfill offline: dashboards only, tags
+// derived from the row's author and title.
+func (d *Demo) ResourceTags(_ context.Context, key string, ids []string) (map[string]string, error) {
+	if key != "dashboards" {
+		return nil, fmt.Errorf("no tag backfill for %s (its list already carries tags)", key)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	byID := map[string]Row{}
+	for _, r := range d.dashboards() {
+		byID[r.ID] = r
+	}
+	out := make(map[string]string, len(ids))
+	for _, id := range ids {
+		r, ok := byID[id]
+		if !ok || len(r.Cells) < 3 {
+			continue
+		}
+		team := r.Cells[2]
+		kind := "service:" + strings.ToLower(strings.ReplaceAll(r.Cells[0], " ", "-"))
+		out[id] = "team:" + team + " " + kind + " env:prod"
+	}
+	return out, nil
+}
+
 func (d *Demo) MetricQuery(_ context.Context, query string, window time.Duration) (*MetricExplorer, error) {
 	if window <= 0 {
 		window = time.Hour
@@ -1289,7 +1315,7 @@ func (d *Demo) spans(query string) []Row {
 			ID:       fmt.Sprintf("span-%d", i),
 			TraceID:  tid,
 			LogQuery: "trace_id:" + tid,
-			Cells:    []string{ts.Format("15:04:05"), hop.svc, hop.res, FormatDuration(durUs), errMark, tid},
+			Cells:    []string{ts.Format("15:04:05"), hop.svc, hop.res, FormatDuration(durUs), errMark, tid, "env:prod service:" + hop.svc},
 			Raw: map[string]any{
 				"service": hop.svc, "resource_name": hop.res,
 				"trace_id": tid, "duration_us": durUs, "error": isErr,
@@ -1506,19 +1532,19 @@ func (d *Demo) services() []Row {
 	// Sorted names + catalog metadata — mirrors the live service list joined
 	// with service-catalog definitions (no per-service stats; the official
 	// API doesn't expose them).
-	svcs := []struct{ name, team, tier, lifecycle string }{
-		{"kong-proxy", "sre", "tier1", "production"},
-		{"onboarding-web", "frontend", "tier2", "production"},
-		{"payments-api", "payments", "tier1", "production"},
-		{"postgres", "", "", ""},
-		{"trading-engine", "trading", "tier1", "production"},
-		{"vault", "sre", "tier2", "production"},
+	svcs := []struct{ name, team, tier, lifecycle, tags string }{
+		{"kong-proxy", "sre", "tier1", "production", "kind:gateway pii:no"},
+		{"onboarding-web", "frontend", "tier2", "production", "kind:web pii:yes"},
+		{"payments-api", "payments", "tier1", "production", "kind:api pii:yes"},
+		{"postgres", "", "", "", ""},
+		{"trading-engine", "trading", "tier1", "production", "kind:engine pii:no"},
+		{"vault", "sre", "tier2", "production", "kind:secrets pii:no"},
 	}
 	rows := make([]Row, 0, len(svcs))
 	for _, s := range svcs {
 		rows = append(rows, Row{
 			ID:    s.name,
-			Cells: []string{s.name, s.team, s.tier, s.lifecycle},
+			Cells: []string{s.name, s.team, s.tier, s.lifecycle, s.tags},
 			URL:   WebBase(d.site) + "/apm/services/" + s.name,
 		})
 	}
@@ -1571,8 +1597,10 @@ func (d *Demo) dashboards() []Row {
 		mod := time.Now().Add(-time.Duration(i*7) * time.Hour)
 		id := fmt.Sprintf("abc-%03d", i)
 		rows = append(rows, Row{
-			ID:    id,
-			Cells: []string{ds.title, ds.layout, ds.author, mod.Format("2006-01-02 15:04"), "team:" + ds.author + " golden-signals for " + ds.title},
+			ID: id,
+			// TAGS ships empty, exactly like live: only the per-dashboard GET
+			// carries tags, so the row's tags arrive via the T backfill.
+			Cells: []string{ds.title, ds.layout, ds.author, mod.Format("2006-01-02 15:04"), "golden-signals for " + ds.title, ""},
 			Raw:   map[string]any{"id": id, "title": ds.title, "layout_type": ds.layout, "author": ds.author},
 			URL:   WebBase(d.site) + "/dashboard/" + id,
 		})
@@ -1640,7 +1668,7 @@ func (d *Demo) rum(query string) []Row {
 		ts := time.Now().Add(-time.Duration(90*i) * time.Second)
 		rows = append(rows, Row{
 			ID:    fmt.Sprintf("rum-%d", i),
-			Cells: []string{ts.Format("15:04:05"), e.typ, e.app, e.svc, e.detail},
+			Cells: []string{ts.Format("15:04:05"), e.typ, e.app, e.svc, e.detail, "env:prod service:" + e.svc},
 			Raw: map[string]any{
 				"type": e.typ, "application": e.app, "service": e.svc, "detail": e.detail,
 			},

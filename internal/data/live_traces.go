@@ -48,6 +48,7 @@ func (l *Live) spans(ctx context.Context, query, timeRange string) ([]Row, error
 				a.GetStartTimestamp().Local().Format("15:04:05"),
 				a.GetService(), a.GetResourceName(),
 				FormatDuration(spanDurationUs(a)), errMark, a.GetTraceId(),
+				strings.Join(a.GetTags(), " "),
 			},
 			Raw: s,
 			URL: l.web + "/apm/trace/" + a.GetTraceId(),
@@ -84,7 +85,7 @@ func (l *Live) services(ctx context.Context, query, _ string) ([]Row, error) {
 		meta := catalog[n]
 		rows = append(rows, Row{
 			ID:    n,
-			Cells: []string{n, meta[0], meta[1], meta[2]},
+			Cells: []string{n, meta[0], meta[1], meta[2], meta[3]},
 			URL:   l.web + "/apm/services/" + n,
 		})
 	}
@@ -92,12 +93,12 @@ func (l *Live) services(ctx context.Context, query, _ string) ([]Row, error) {
 }
 
 // serviceCatalog fetches the service-catalog definitions and maps service
-// name → [team, tier, lifecycle]. Best-effort (an org without the catalog
-// gets blank columns, never an error); the schema union has many versions,
-// so a generic JSON walk beats the typed union.
-func (l *Live) serviceCatalog(ctx context.Context) map[string][3]string {
+// name → [team, tier, lifecycle, tags]. Best-effort (an org without the
+// catalog gets blank columns, never an error); the schema union has many
+// versions, so a generic JSON walk beats the typed union.
+func (l *Live) serviceCatalog(ctx context.Context) map[string][4]string {
 	const maxDefs = 500
-	out := map[string][3]string{}
+	out := map[string][4]string{}
 	ch, cancel := datadogV2.NewServiceDefinitionApi(l.client).ListServiceDefinitionsWithPagination(ctx,
 		*datadogV2.NewListServiceDefinitionsOptionalParameters().WithPageSize(100))
 	defer cancel()
@@ -122,7 +123,15 @@ func (l *Live) serviceCatalog(ctx context.Context) map[string][3]string {
 		team, _ := m["team"].(string)
 		tier, _ := m["tier"].(string)
 		life, _ := m["lifecycle"].(string)
-		out[name] = [3]string{team, tier, life}
+		var tags []string
+		if raw, ok := m["tags"].([]any); ok {
+			for _, t := range raw {
+				if s, ok := t.(string); ok {
+					tags = append(tags, s)
+				}
+			}
+		}
+		out[name] = [4]string{team, tier, life, strings.Join(tags, " ")}
 		if len(out) >= maxDefs {
 			break
 		}

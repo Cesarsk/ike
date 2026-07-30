@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -42,10 +43,28 @@ func (l *Live) cases(ctx context.Context, query string) ([]Row, error) {
 				string(attrs.GetPriority()),
 				attrs.GetTitle(),
 				created,
+				caseTags(attrs.GetAttributes()),
 			},
 			Raw: c,
 			URL: l.web + "/cases/" + attrs.GetKey(),
 		})
 	}
 	return rows, nil
+}
+
+// caseTags flattens a case's free-form attribute map (Case Management's
+// labels) into "k:v" tags, so the shared filter syntax applies.
+func caseTags(attrs map[string][]string) string {
+	out := make([]string, 0, len(attrs))
+	for k, vals := range attrs {
+		if len(vals) == 0 {
+			out = append(out, k)
+			continue
+		}
+		for _, v := range vals {
+			out = append(out, k+":"+v)
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, " ")
 }

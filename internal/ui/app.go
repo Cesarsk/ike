@@ -1522,6 +1522,10 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			}
 			return nil
 		}
+		if tagBackfillViews[a.res.Key] {
+			a.confirmTagBackfill()
+			return nil
+		}
 	case 'x':
 		if a.res.Key == "downtimes" {
 			if len(a.marks) > 0 {
