@@ -1620,7 +1620,7 @@ func TestTagsEverywhere(t *testing.T) {
 	waitFor(t, sim, "Fetch tags for")
 	press(sim, tcell.KeyRight) // Cancel → Fetch
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "tags filled for")
+	waitFor(t, sim, "carry tags")
 	typeRunes(sim, "/team:finops")
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "Cost Overview") // the finops-authored dashboard

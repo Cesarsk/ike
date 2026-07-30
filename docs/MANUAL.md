@@ -596,7 +596,10 @@ in the API: `errors`, `notebooks`, `teams`/`oncall` (no tag field at all) and
 `downtimes` (whose `SCOPE` *is* the tag expression). `dashboards` is a special
 case: its list endpoint omits tags entirely, so press **`T`** to backfill them
 for the rows in view — one API call per dashboard, stated and confirmed first,
-against a tight limiter.
+against a tight limiter. Dashboard tags are a real but *optional* Datadog field
+(set them in a dashboard's settings), so plenty of orgs have none. `T` says
+which it is: `12 of 80 dashboards carry tags` versus `fetched 80 dashboards —
+none carry tags in Datadog`.
 
 **Available column names per view** (for `columns:`):
 
