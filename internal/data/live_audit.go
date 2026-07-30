@@ -54,6 +54,7 @@ func (l *Live) audit(ctx context.Context, query, timeRange string) ([]Row, error
 				action,
 				user,
 				msg,
+				strings.Join(attrs.GetTags(), " "),
 			},
 			Raw: ev,
 			URL: l.web + "/audit-trail?query=" + url.QueryEscape(query),

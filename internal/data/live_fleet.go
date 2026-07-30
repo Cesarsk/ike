@@ -40,6 +40,7 @@ func (l *Live) fleet(ctx context.Context, query string) ([]Row, error) {
 				a.GetOs(),
 				strings.Join(a.GetEnvs(), ","),
 				restarted,
+				fleetTags(a.GetTags()),
 			},
 			Raw: a,
 			URL: l.web + "/fleet",
@@ -53,4 +54,17 @@ func (l *Live) fleet(ctx context.Context, query string) ([]Row, error) {
 		return rows[i].Cells[0] < rows[j].Cells[0]
 	})
 	return rows, nil
+}
+
+// fleetTags flattens the fleet agent's key/value tag pairs into the "k:v"
+// form every other view uses, so one filter syntax works everywhere.
+func fleetTags(items []datadogV2.FleetAgentAttributesTagsItems) string {
+	out := make([]string, 0, len(items))
+	for _, t := range items {
+		if k := t.GetKey(); k != "" {
+			out = append(out, k+":"+t.GetValue())
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, " ")
 }

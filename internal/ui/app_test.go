@@ -1578,6 +1578,55 @@ func TestServicesCatalogColumns(t *testing.T) {
 	app.Stop()
 }
 
+// TestTagsEverywhere: every view that can carry tags has a TAGS column, and
+// '/' filters on it even where the column ships hidden.
+func TestTagsEverywhere(t *testing.T) {
+	// Views whose list payload carries tags must expose a TAGS column, so the
+	// shared '/' filter reaches them (matchRow scans hidden cells too).
+	want := []string{
+		"monitors", "slos", "synthetics", "events", "security", "hosts",
+		"containers", "processes", "logs", "traces", "rum", "audit",
+		"cicd", "fleet", "services", "cases", "incidents", "dashboards",
+	}
+	for _, key := range want {
+		res, ok := data.ResourceByAlias(key)
+		if !ok {
+			t.Fatalf("unknown resource %q", key)
+		}
+		if colIndex(res.Columns, "TAGS") < 0 {
+			t.Errorf("%s has no TAGS column: %v", key, res.Columns)
+		}
+	}
+
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+
+	// Traces ship TAGS hidden — filtering still finds rows by tag.
+	typeCmd(sim, ":traces")
+	waitFor(t, sim, "Traces(")
+	typeRunes(sim, "/service:kong-proxy")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "kong-proxy")
+	press(sim, tcell.KeyEscape)
+
+	// Dashboards: the list API has no tags, so T backfills them on demand.
+	typeCmd(sim, ":dashboards")
+	waitFor(t, sim, "Dashboards(")
+	pressRune(sim, 'T')
+	waitFor(t, sim, "Fetch tags for")
+	press(sim, tcell.KeyRight) // Cancel → Fetch
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "tags filled for")
+	typeRunes(sim, "/team:finops")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Cost Overview") // the finops-authored dashboard
+	app.Stop()
+}
+
 // TestPageMonitorOwner: P on a monitor walks its team: tag to the owning
 // on-call team, names who it wakes, and pages behind a confirm; the raised
 // page hands off to the :oncall panel where a/e/r manage it.

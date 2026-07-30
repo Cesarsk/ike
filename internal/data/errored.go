@@ -40,6 +40,9 @@ func (e *Errored) LogCounts(context.Context, string, string, string) ([]WidgetIt
 func (e *Errored) MetricQuery(context.Context, string, time.Duration) (*MetricExplorer, error) {
 	return nil, e.err
 }
+func (e *Errored) ResourceTags(context.Context, string, []string) (map[string]string, error) {
+	return nil, e.err
+}
 func (e *Errored) Cost(context.Context, CostOptions) (*CostView, error) {
 	return nil, e.err
 }

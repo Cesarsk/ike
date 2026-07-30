@@ -367,6 +367,11 @@ type Provider interface {
 	// MetricQuery runs a free-form metric query (avg:system.cpu.user{*}
 	// by {host}) over the window — the :metrics explorer. One bounded call.
 	MetricQuery(ctx context.Context, query string, window time.Duration) (*MetricExplorer, error)
+	// ResourceTags backfills tags for rows whose list endpoint omits them
+	// (dashboards: only the per-dashboard GET carries tags). It costs one
+	// API call per id, so callers gate it behind a confirmation. The result
+	// maps row id → space-joined tags; ids that fail are simply absent.
+	ResourceTags(ctx context.Context, key string, ids []string) (map[string]string, error)
 	// Cost returns this org's Datadog spend (current month estimated +
 	// projected, plus closed-month history per CostOptions), broken down by
 	// product — or by sub-org and product. Read-only, heavily rate-limited
@@ -454,8 +459,11 @@ func Resources() []Resource {
 		{
 			Key: "incidents", Title: "Incidents",
 			Aliases: []string{"incidents", "incident", "inc", "i"},
-			Columns: []string{"ID", "SEV", "STATE", "TITLE", "IMPACT", "CREATED"},
-			TTL:     60 * time.Second, AutoRefresh: true,
+			Columns: []string{"ID", "SEV", "STATE", "TITLE", "IMPACT", "CREATED", "TAGS"},
+			// TAGS is flattened from the incident's fields (services, teams,
+			// custom multiselects); hidden by default, still filterable with /.
+			DefaultColumns: []string{"ID", "SEV", "STATE", "TITLE", "IMPACT", "CREATED"},
+			TTL:            60 * time.Second, AutoRefresh: true,
 		},
 		{
 			Key: "slos", Title: "SLOs",
@@ -465,21 +473,26 @@ func Resources() []Resource {
 		},
 		{
 			Key: "logs", Title: "Logs",
-			Aliases: []string{"logs", "log", "l"},
-			Columns: []string{"TIME", "STATUS", "SERVICE", "HOST", "MESSAGE"},
-			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			Aliases:        []string{"logs", "log", "l"},
+			Columns:        []string{"TIME", "STATUS", "SERVICE", "HOST", "MESSAGE", "TAGS"},
+			DefaultColumns: []string{"TIME", "STATUS", "SERVICE", "HOST", "MESSAGE"},
+			TTL:            60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 		},
 		{
 			Key: "dashboards", Title: "Dashboards",
 			Aliases: []string{"dashboards", "dashboard", "dash", "d"},
-			Columns: []string{"TITLE", "LAYOUT", "AUTHOR", "MODIFIED", "DESCRIPTION"},
-			TTL:     10 * time.Minute,
+			Columns: []string{"TITLE", "LAYOUT", "AUTHOR", "MODIFIED", "DESCRIPTION", "TAGS"},
+			// The dashboard list API carries no tags — press T to backfill them
+			// (one GET per dashboard, confirm-gated).
+			DefaultColumns: []string{"TITLE", "LAYOUT", "AUTHOR", "MODIFIED", "TAGS"},
+			TTL:            10 * time.Minute,
 		},
 		{
 			Key: "traces", Title: "Traces",
-			Aliases: []string{"traces", "trace", "tr", "apm", "spans"},
-			Columns: []string{"TIME", "SERVICE", "RESOURCE", "DURATION", "ERR", "TRACE_ID"},
-			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			Aliases:        []string{"traces", "trace", "tr", "apm", "spans"},
+			Columns:        []string{"TIME", "SERVICE", "RESOURCE", "DURATION", "ERR", "TRACE_ID", "TAGS"},
+			DefaultColumns: []string{"TIME", "SERVICE", "RESOURCE", "DURATION", "ERR", "TRACE_ID"},
+			TTL:            60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 		},
 		{
 			// The '/' query is the APM env filter (the service-list endpoint is
@@ -488,7 +501,7 @@ func Resources() []Resource {
 			Aliases: []string{"services", "service", "svc"},
 			// TEAM/TIER/LIFECYCLE join in from the service catalog (blank
 			// when the org doesn't maintain definitions).
-			Columns: []string{"SERVICE", "TEAM", "TIER", "LIFECYCLE"},
+			Columns: []string{"SERVICE", "TEAM", "TIER", "LIFECYCLE", "TAGS"},
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "prod",
 		},
 		{
@@ -501,9 +514,10 @@ func Resources() []Resource {
 			// RUM events (views, actions, errors, sessions) — '/' is a RUM
 			// search query, digits 1-5 set the time window like logs.
 			Key: "rum", Title: "RUM",
-			Aliases: []string{"rum", "browser"},
-			Columns: []string{"TIME", "TYPE", "APPLICATION", "SERVICE", "DETAIL"},
-			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			Aliases:        []string{"rum", "browser"},
+			Columns:        []string{"TIME", "TYPE", "APPLICATION", "SERVICE", "DETAIL", "TAGS"},
+			DefaultColumns: []string{"TIME", "TYPE", "APPLICATION", "SERVICE", "DETAIL"},
+			TTL:            60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 		},
 		{
 			Key: "events", Title: "Events",
@@ -582,9 +596,10 @@ func Resources() []Resource {
 			// Audit Trail — who changed what, org-wide. '/' is an audit search
 			// query (@usr.email:…, @evt.name:…); digits set the time window.
 			Key: "audit", Title: "Audit",
-			Aliases: []string{"audit", "audit-trail", "audittrail", "trail"},
-			Columns: []string{"TIME", "SERVICE", "ACTION", "USER", "MESSAGE"},
-			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			Aliases:        []string{"audit", "audit-trail", "audittrail", "trail"},
+			Columns:        []string{"TIME", "SERVICE", "ACTION", "USER", "MESSAGE", "TAGS"},
+			DefaultColumns: []string{"TIME", "SERVICE", "ACTION", "USER", "MESSAGE"},
+			TTL:            60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 			EmptyHint: "No audit events in this window. Widen the time range (1-5), or " +
 				"check that your keys have audit_logs_read permission.",
 		},
@@ -610,7 +625,7 @@ func Resources() []Resource {
 			// Case Management — the triage queue between alerts and incidents.
 			Key: "cases", Title: "Cases",
 			Aliases: []string{"cases", "case"},
-			Columns: []string{"KEY", "STATUS", "PRIO", "TITLE", "CREATED"},
+			Columns: []string{"KEY", "STATUS", "PRIO", "TITLE", "CREATED", "TAGS"},
 			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 			EmptyHint: "No cases. Case Management may not be in use in this org, or the " +
 				"filter matched nothing.",
@@ -620,9 +635,10 @@ func Resources() []Resource {
 			// search query (@ci.pipeline.name:…, @git.branch:…); digits set
 			// the time window (default 1d).
 			Key: "cicd", Title: "Pipelines",
-			Aliases: []string{"cicd", "ci", "pipelines", "pipeline"},
-			Columns: []string{"TIME", "STATUS", "PIPELINE", "BRANCH", "DURATION", "PROVIDER"},
-			TTL:     60 * time.Second, ServerQuery: true, DefaultQuery: "*",
+			Aliases:        []string{"cicd", "ci", "pipelines", "pipeline"},
+			Columns:        []string{"TIME", "STATUS", "PIPELINE", "BRANCH", "DURATION", "PROVIDER", "TAGS"},
+			DefaultColumns: []string{"TIME", "STATUS", "PIPELINE", "BRANCH", "DURATION", "PROVIDER"},
+			TTL:            60 * time.Second, ServerQuery: true, DefaultQuery: "*",
 			EmptyHint: "No pipeline executions in this window. CI Visibility may not be " +
 				"enabled, or widen the window (1-5).",
 		},
@@ -630,7 +646,7 @@ func Resources() []Resource {
 			// Fleet Automation agent inventory — oldest agent versions first.
 			Key: "fleet", Title: "Fleet",
 			Aliases:     []string{"fleet", "agents"},
-			Columns:     []string{"HOST", "AGENT", "CLUSTER", "OS", "ENVS", "RESTARTED"},
+			Columns:     []string{"HOST", "AGENT", "CLUSTER", "OS", "ENVS", "RESTARTED", "TAGS"},
 			TTL:         5 * time.Minute,
 			ServerQuery: true, // '/' = tag filter (env:…, cluster_name:…)
 			EmptyHint: "No agents reported by Fleet Automation. It may not be enabled " +

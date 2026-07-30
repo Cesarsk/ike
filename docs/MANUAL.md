@@ -587,26 +587,38 @@ contexts:
 | `theme` | TUI colour palette: `ike` (the default), `default` (the original look), `mono`, `nord`, or `solarized`. Recolours the chrome (borders, titles, selection, accents) — status colours (alert red, ok green) are never themed. |
 | `intro-seen` | Set automatically after the one-time getting-started page shows; delete it to see the page again on the next launch (`:manual` reopens it any time). |
 
+**Tags are filterable everywhere.** Every view whose Datadog payload carries
+tags has a `TAGS` column, so `/team:sre` works the same way in all of them. On
+the wider tables (logs, traces, RUM, audit, pipelines, incidents) the column
+ships **hidden** to keep the rows readable — the filter still searches it, and
+`C` shows it when you want to read the tags. Four views genuinely have no tags
+in the API: `errors`, `notebooks`, `teams`/`oncall` (no tag field at all) and
+`downtimes` (whose `SCOPE` *is* the tag expression). `dashboards` is a special
+case: its list endpoint omits tags entirely, so press **`T`** to backfill them
+for the rows in view — one API call per dashboard, stated and confirmed first,
+against a tight limiter.
+
 **Available column names per view** (for `columns:`):
 
 | View | Columns |
 |------|---------|
 | `monitors` | STATE, MUTED, NAME, TYPE, PRIO, TAGS |
-| `incidents` | ID, SEV, STATE, TITLE, IMPACT, CREATED |
+| `incidents` | ID, SEV, STATE, TITLE, IMPACT, CREATED, TAGS |
 | `slos` | NAME, TYPE, TARGET, TIMEFRAME, TAGS |
-| `logs` | TIME, STATUS, SERVICE, HOST, MESSAGE |
-| `traces` | TIME, SERVICE, RESOURCE, DURATION, ERR, TRACE_ID |
+| `logs` | TIME, STATUS, SERVICE, HOST, MESSAGE, TAGS |
+| `traces` | TIME, SERVICE, RESOURCE, DURATION, ERR, TRACE_ID, TAGS |
 | `events` | TIME, TYPE, SOURCE, TITLE, TAGS |
 | `downtimes` | STATUS, SCOPE, MESSAGE, CREATED |
-| `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED, DESCRIPTION |
+| `dashboards` | TITLE, LAYOUT, AUTHOR, MODIFIED, DESCRIPTION, TAGS |
 | `hosts` | HOST, STATUS, CLUSTER, NAME, AWS-NAME, ALIASES, SOURCES, PLATFORM, APPS, CPU, LAST, TAGS |
 | `processes` | COMMAND, USER, HOST, PID, PPID, STARTED, TAGS |
-| `audit` | TIME, SERVICE, ACTION, USER, MESSAGE |
-| `services` | SERVICE, TEAM, TIER, LIFECYCLE |
+| `audit` | TIME, SERVICE, ACTION, USER, MESSAGE, TAGS |
+| `rum` | TIME, TYPE, APPLICATION, SERVICE, DETAIL, TAGS |
+| `services` | SERVICE, TEAM, TIER, LIFECYCLE, TAGS |
 | `deps` | SERVICE, CALLS, CALLED-BY, DOWNSTREAM |
-| `cases` | KEY, STATUS, PRIO, TITLE, CREATED |
-| `cicd` | TIME, STATUS, PIPELINE, BRANCH, DURATION, PROVIDER |
-| `fleet` | HOST, AGENT, CLUSTER, OS, ENVS, RESTARTED |
+| `cases` | KEY, STATUS, PRIO, TITLE, CREATED, TAGS |
+| `cicd` | TIME, STATUS, PIPELINE, BRANCH, DURATION, PROVIDER, TAGS |
+| `fleet` | HOST, AGENT, CLUSTER, OS, ENVS, RESTARTED, TAGS |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |
