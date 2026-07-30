@@ -52,7 +52,7 @@ func (l *Live) Dashboard(ctx context.Context, id string, window time.Duration) (
 	var m map[string]any
 	_ = json.Unmarshal(raw, &m)
 
-	view := &DashboardView{Title: d.GetTitle()}
+	view := &DashboardView{Title: d.GetTitle(), Tags: d.GetTags()}
 	var specs []widgetSpec
 	collectWidgets(m["widgets"], &specs)
 

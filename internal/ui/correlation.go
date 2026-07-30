@@ -631,3 +631,27 @@ func colIndex(cols []string, name string) int {
 	}
 	return -1
 }
+
+// fillRowTags writes tags into a loaded row's TAGS cell. Used where a fetch
+// already carried them (opening a dashboard), so the column fills in as you
+// browse without spending a call of its own.
+func (a *App) fillRowTags(id string, tags []string) {
+	if len(tags) == 0 {
+		return
+	}
+	col := colIndex(a.res.Columns, "TAGS")
+	if col < 0 {
+		return
+	}
+	for i := range a.rows {
+		if a.rows[i].ID != id {
+			continue
+		}
+		for len(a.rows[i].Cells) <= col {
+			a.rows[i].Cells = append(a.rows[i].Cells, "")
+		}
+		a.rows[i].Cells[col] = strings.Join(tags, " ")
+		a.applyFilter()
+		return
+	}
+}
