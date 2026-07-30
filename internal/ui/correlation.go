@@ -570,7 +570,14 @@ func (a *App) runTagBackfill(ids []string) {
 				filled++
 			}
 			a.applyFilter()
-			a.flash(fmt.Sprintf("tags filled for %d rows — / to filter them", filled), false)
+			// Report fetched and tagged separately: "none are tagged" is a
+			// real answer about the org, not a failed fetch.
+			switch {
+			case filled == 0:
+				a.flash(fmt.Sprintf("fetched %d %s — none carry tags in Datadog", len(tags), key), false)
+			default:
+				a.flash(fmt.Sprintf("%d of %d %s carry tags — / to filter them", filled, len(tags), key), false)
+			}
 		})
 	}()
 }
