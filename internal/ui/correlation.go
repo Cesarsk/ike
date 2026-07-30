@@ -535,6 +535,23 @@ func (a *App) visibleIDs() []string {
 	return ids
 }
 
+// idsByOrg groups ids by the org their row came from. Dashboards is a spanning
+// view, so a backfill that assumed the current context would fetch other orgs'
+// ids against the wrong org and 404 on every one of them.
+func (a *App) idsByOrg(ids []string) map[string][]string {
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	out := map[string][]string{}
+	for _, r := range a.rows {
+		if want[r.ID] {
+			out[r.Ctx] = append(out[r.Ctx], r.ID)
+		}
+	}
+	return out
+}
+
 // runTagBackfill fetches the tags and writes them into the loaded rows' TAGS
 // cell, so filtering and sorting see them immediately. The enrichment lives
 // on the loaded rows only — a refresh re-fetches the bare list.
@@ -545,16 +562,35 @@ func (a *App) runTagBackfill(ids []string) {
 		return
 	}
 	key := a.res.Key
-	prov := a.provider
+	// Route per origin org: this view spans contexts, and an id fetched
+	// against the wrong org is a guaranteed 404.
+	type job struct {
+		prov *data.Cached
+		ids  []string
+	}
+	var jobs []job
+	for ctxName, orgIDs := range a.idsByOrg(ids) {
+		jobs = append(jobs, job{a.providerFor(data.Row{Ctx: ctxName}), orgIDs})
+	}
 	a.flash(fmt.Sprintf("fetching tags for %d rows…", len(ids)), false)
 	go func() {
-		tags, err := prov.ResourceTags(context.Background(), key, ids)
+		tags := map[string]string{}
+		var firstErr error
+		for _, j := range jobs {
+			got, err := j.prov.ResourceTags(context.Background(), key, j.ids)
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			for id, t := range got {
+				tags[id] = t
+			}
+		}
 		a.QueueUpdateDraw(func() {
 			if a.res.Key != key {
 				return // navigated away
 			}
-			if err != nil {
-				a.flash("✗ tags: "+err.Error(), true)
+			if len(tags) == 0 && firstErr != nil {
+				a.flash("✗ tags: "+firstErr.Error(), true)
 				return
 			}
 			filled := 0
@@ -570,14 +606,18 @@ func (a *App) runTagBackfill(ids []string) {
 				filled++
 			}
 			a.applyFilter()
-			// Report fetched and tagged separately: "none are tagged" is a
-			// real answer about the org, not a failed fetch.
-			switch {
-			case filled == 0:
-				a.flash(fmt.Sprintf("fetched %d %s — none carry tags in Datadog", len(tags), key), false)
-			default:
-				a.flash(fmt.Sprintf("%d of %d %s carry tags — / to filter them", filled, len(tags), key), false)
+			// Three outcomes worth telling apart: some rows are tagged, the
+			// org tags none of them, or the limiter ate part of the fan-out.
+			missed := len(ids) - len(tags)
+			note := ""
+			if missed > 0 {
+				note = fmt.Sprintf(" · %d not fetched (rate limit — narrow with / and retry)", missed)
 			}
+			if filled == 0 {
+				a.flash(fmt.Sprintf("fetched %d %s — none carry tags in Datadog%s", len(tags), key, note), missed > 0)
+				return
+			}
+			a.flash(fmt.Sprintf("%d of %d %s carry tags — / to filter them%s", filled, len(tags), key, note), missed > 0)
 		})
 	}()
 }
