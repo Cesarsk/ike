@@ -66,6 +66,10 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<f>[white]facet (service/status/host)  [aqua]<ctrl-r>[white]refresh  [aqua]<esc>[white]back to logs  [aqua]<?>[white]help",
 		}
+	case "depgraph":
+		lines = []string{
+			"[aqua]<g>[white]whole-env graph  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	case "metrics":
 		lines = []string{
 			"[aqua]</>[white]metric query  [aqua]<1-6>[white]window 15m..1mo  [aqua]<w>[white]custom  [aqua]<ctrl-r>[white]refresh",
@@ -132,12 +136,12 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]<m>mute/unmute host  <o>open  <s>sort <S>reverse   (down/muted first)")
 		case "containers":
 			lines = append(lines, "[gray]</>tag filter (kube_namespace:… cluster:…)  <l>logs  <C>columns (+ns/cluster)  <enter>detail  <o>open")
+		case "deps":
+			lines = append(lines, "[gray]<enter>this service's call graph  <g>whole-env graph  </>env (default prod)  <o>web map")
 		case "processes":
 			lines = append(lines, "[gray]</>filter (host:… or command text)  <C>columns (+ppid)  <enter>detail  <o>open")
 		case "audit":
 			lines = append(lines, "[gray]</>audit query (@usr.email:… @evt.name:…)  window: <1>15m..<5>7d  <enter>detail   (who changed what)")
-		case "deps":
-			lines = append(lines, "[gray]</>env (default prod)  <enter>upstream + downstream  <o>service map   (most connected first)")
 		case "cases":
 			lines = append(lines, "[gray]</>case search  <enter>detail  <o>open in Case Management  <s>sort")
 		case "cicd":

@@ -211,6 +211,8 @@ type App struct {
 	mxQuery  string
 	mxWindow time.Duration
 	mxLabel  string
+	// :deps graph page (enter = focused service, g = whole forest).
+	depGraph *tview.TextView
 	// dashboard explorer: widgets in display order, the selected one, and
 	// whether the pane is zoomed into a single widget.
 	dashWidgets  []data.Widget
@@ -449,7 +451,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook, a.healthView, a.logAgg, a.mx} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook, a.healthView, a.logAgg, a.mx, a.depGraph} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -631,6 +633,9 @@ func (a *App) build() {
 	a.mx = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.mx.SetBorder(true)
 
+	a.depGraph = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.depGraph.SetBorder(true)
+
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
@@ -743,6 +748,7 @@ func (a *App) build() {
 		AddPage("health", a.healthView, true, false).
 		AddPage("logagg", a.logAgg, true, false).
 		AddPage("metrics", a.mx, true, false).
+		AddPage("depgraph", a.depGraph, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -1225,6 +1231,16 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		return ev
+	case "depgraph":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == 'g':
+			a.renderDepGraphPage("") // swap to the forest in place
+			return nil
+		}
+		return ev
 	case "metrics":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
@@ -1346,6 +1362,11 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		}
 		if a.res.Key == "logs" {
 			a.showLogAgg()
+			return nil
+		}
+	case 'g':
+		if a.res.Key == "deps" {
+			a.showDepGraph("")
 			return nil
 		}
 	case 'O':
@@ -2177,6 +2198,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("logagg")
 	case "metrics":
 		a.showPage("metrics") // pane still holds the rendered chart
+	case "depgraph":
+		a.showPage("depgraph") // pane still holds the rendered graph
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -2213,6 +2236,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.logAgg)
 	case "metrics":
 		a.SetFocus(a.mx)
+	case "depgraph":
+		a.SetFocus(a.depGraph)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":

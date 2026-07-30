@@ -1460,12 +1460,54 @@ func TestDepsView(t *testing.T) {
 	waitFor(t, sim, "payments-api") // most connected: 3 down + 2 up
 	waitFor(t, sim, "kong-proxy")
 
-	// enter shows both edge lists in the detail.
+	// enter opens the focused graph: upstream edges + the downstream tree.
 	press(sim, tcell.KeyEnter)
-	waitFor(t, sim, "called_by")
+	waitFor(t, sim, "called by")
+	waitFor(t, sim, "└─▶")
+
+	// g swaps to the whole-env forest, rooted at the entry points.
+	pressRune(sim, 'g')
+	waitFor(t, sim, "dependency graph")
+	waitFor(t, sim, "kong-proxy") // the demo graph's root
+
 	press(sim, tcell.KeyEscape)
 	waitFor(t, sim, "Dependencies(")
 	app.Stop()
+}
+
+// TestDepGraphRendering pins the tree shapes: transitive expansion, cycle
+// marks and the shown-above dedupe.
+func TestDepGraphRendering(t *testing.T) {
+	calls := map[string][]string{
+		"a": {"b", "c"},
+		"b": {"c"},
+		"c": {"a"}, // cycle back to the root
+	}
+	calledBy := map[string][]string{"b": {"a"}, "c": {"a", "b"}, "a": {"c"}}
+
+	focus := renderDepFocus("a", calls, calledBy)
+	if !strings.Contains(focus, "├─▶") || !strings.Contains(focus, "└─▶") {
+		t.Errorf("focused graph should draw tree branches:\n%s", focus)
+	}
+	if !strings.Contains(focus, "↺") {
+		t.Errorf("cycle back to the focused service should be marked:\n%s", focus)
+	}
+
+	forest := renderDepForest(map[string][]string{
+		"root": {"shared", "leaf"},
+		"mid":  {"shared"},
+		// both root and mid are roots only if nothing calls them
+		"shared": {"deep"},
+		"deep":   {}, "leaf": {},
+	}, map[string][]string{
+		"shared": {"root", "mid"}, "deep": {"shared"}, "leaf": {"root"},
+	})
+	if !strings.Contains(forest, "…") {
+		t.Errorf("second expansion of a shared service should dedupe to …:\n%s", forest)
+	}
+	if strings.Index(forest, "root") > strings.Index(forest, "shared") {
+		t.Errorf("roots should lead the forest:\n%s", forest)
+	}
 }
 
 // TestCasesView: Case Management lists newest-first and searches server-side.
