@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.26.5
 
 require (
-	github.com/DataDog/datadog-api-client-go/v2 v2.62.0
+	github.com/DataDog/datadog-api-client-go/v2 v2.63.0
 	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/google/uuid v1.5.0
 	github.com/rivo/tview v0.42.0
