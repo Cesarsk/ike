@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ike — a k9s-style terminal UI for Datadog</title>
+<meta name="description" content="Triage alerts, read logs, chase traces and watch spend from your keyboard, across every one of your Datadog orgs at once.">
+<meta property="og:title" content="ike — a k9s-style terminal UI for Datadog">
+<meta property="og:description" content="Triage alerts, read logs, chase traces and watch spend from your keyboard, across every one of your Datadog orgs at once.">
+<meta property="og:image" content="https://cesarsk.github.io/ike/social-preview.png">
+<meta property="og:url" content="https://cesarsk.github.io/ike/">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root{
+    --bg:#14161a; --chrome:#1e2128; --panel:#1a1c1e; --line:#2a2f38;
+    --fg:#e6e6e6; --dim:#8b93a0; --aqua:#3fd0c9; --coral:#ff7b72; --amber:#e3b341; --green:#7ee787;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0d0f12;color:var(--fg);font-family:var(--mono);font-size:15px;line-height:1.65;
+       -webkit-font-smoothing:antialiased}
+  .win{max-width:1000px;margin:32px auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+       overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  .bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--chrome);border-bottom:1px solid var(--line)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .bar .t{margin-left:10px;color:var(--dim);font-size:13px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  main{padding:38px 34px 30px}
+  h1{margin:0;font-size:64px;letter-spacing:-2px;color:var(--aqua);font-weight:700;line-height:1}
+  h1 .cur{display:inline-block;width:26px;height:52px;background:var(--aqua);vertical-align:-6px;margin-left:8px;
+          animation:blink 1.15s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  .tag{margin:18px 0 6px;font-size:19px;max-width:64ch}
+  .sub{color:var(--dim);font-size:14px;margin:0 0 26px}
+  h2{margin:44px 0 16px;font-size:15px;font-weight:400;color:var(--dim)}
+  h2 b{color:var(--aqua);font-weight:700}
+  h2::after{content:"█";color:var(--aqua);margin-left:6px;animation:blink 1.15s step-end infinite}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:14px 16px;overflow-x:auto;margin:0 0 14px}
+  code{color:var(--aqua)}
+  pre .c{color:var(--dim)}
+  img.demo{width:100%;border:1px solid var(--line);border-radius:7px;display:block}
+  .why{display:grid;gap:20px}
+  .why div{border-left:2px solid var(--line);padding-left:16px}
+  .why b{color:var(--fg)}
+  .why p{margin:4px 0 0;color:var(--dim);font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px}
+  .grid span{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font-size:13px;color:var(--aqua)}
+  .grid span i{color:var(--dim);font-style:normal;display:block;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td{padding:6px 10px 6px 0;border-bottom:1px solid var(--line);color:var(--dim);vertical-align:top}
+  td:first-child{color:var(--aqua);white-space:nowrap;width:110px}
+  footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--line);color:var(--dim);font-size:13px;
+         display:flex;flex-wrap:wrap;gap:8px 22px}
+  a{color:var(--aqua)}
+  @media(max-width:620px){main{padding:26px 20px}h1{font-size:44px}h1 .cur{height:36px;width:18px}.tag{font-size:17px}}
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="bar">
+    <span class="dot" style="background:#ff5f57"></span>
+    <span class="dot" style="background:#febc2e"></span>
+    <span class="dot" style="background:#28c840"></span>
+    <span class="t">~/ike :: keep an eye on your Datadog</span>
+  </div>
+  <main>
+    <h1>ike<span class="cur"></span></h1>
+    <p class="tag"><b>A k9s-style terminal UI for Datadog.</b> Triage alerts, read logs, chase
+      traces and watch spend from your keyboard, across every one of your orgs at once.</p>
+    <p class="sub">Named after a dog named Ike. The command is <code>ike</code>; the job is keeping an eye on things.</p>
+
+    <pre><code>brew install cesarsk/tap/ike</code>   <span class="c"># macOS and Linux</span>
+<code>ike --demo</code>                     <span class="c"># try the whole thing offline, no credentials</span></pre>
+
+    <h2><b>ike</b> ❯ in motion</h2>
+    <img class="demo" src="demo.gif" alt="ike walking through monitors, incidents, logs and dashboards in the terminal">
+
+    <h2><b>ike</b> ❯ why not the browser</h2>
+    <div class="why">
+      <div><b>Every org in one table.</b>
+        <p>Datadog puts each org behind its own URL, so comparing dev, stage and prod means
+        three tabs and three logins. Activate several contexts and a single monitors view
+        spans all of them, with a CTX column saying where each row came from. The browser
+        cannot do this.</p></div>
+      <div><b>Two keystrokes from an alert to its cause.</b>
+        <p>Press l on a firing monitor for that service's logs. Press t on a log line for the
+        distributed trace it belongs to. Press P to page the owning team, after it tells you
+        who that wakes up.</p></div>
+      <div><b>It stays where you already are.</b>
+        <p>The same muscle memory as k9s: : for views through a Spotlight-style palette,
+        / to filter, enter to drill in, esc to go back.</p></div>
+      <div><b>It shows you the bill.</b>
+        <p>The cost view is your Datadog spend: this month estimated and projected, twelve
+        months of history with anomaly flags, per product or per sub-org.</p></div>
+    </div>
+
+    <h2><b>ike</b> ❯ 22 views</h2>
+    <div class="grid">
+      <span>:monitors<i>alert state, mute</i></span>
+      <span>:incidents<i>war room</i></span>
+      <span>:slos<i>error budget</i></span>
+      <span>:logs<i>search, patterns</i></span>
+      <span>:traces<i>waterfall</i></span>
+      <span>:metrics<i>query explorer</i></span>
+      <span>:dashboards<i>widgets, charted</i></span>
+      <span>:deps<i>dependency graph</i></span>
+      <span>:services<i>health rollup</i></span>
+      <span>:hosts<i>infra inventory</i></span>
+      <span>:containers<i>pods parallel</i></span>
+      <span>:processes<i>per host</i></span>
+      <span>:cost<i>the bill</i></span>
+      <span>:oncall<i>who to wake</i></span>
+      <span>:errors<i>issue triage</i></span>
+      <span>:audit<i>who changed what</i></span>
+      <span>:cicd<i>pipelines</i></span>
+      <span>:fleet<i>agent versions</i></span>
+      <span>:security<i>SIEM signals</i></span>
+      <span>:synthetics<i>uptime checks</i></span>
+      <span>:rum<i>browser events</i></span>
+      <span>:cases<i>case management</i></span>
+    </div>
+
+    <h2><b>ike</b> ❯ keys</h2>
+    <table>
+      <tr><td>:</td><td>command palette, type to filter every view</td></tr>
+      <tr><td>/</td><td>filter rows, with autocomplete in every view</td></tr>
+      <tr><td>enter</td><td>drill in: detail, widget grid, error budget, call graph</td></tr>
+      <tr><td>l · t · x</td><td>logs for this row · its trace · surrounding log context</td></tr>
+      <tr><td>space</td><td>mark rows, then act on all of them at once</td></tr>
+      <tr><td>esc</td><td>back, k9s style: clears the filter first, then pops the stack</td></tr>
+    </table>
+
+    <h2><b>ike</b> ❯ honest limits</h2>
+    <p class="sub" style="max-width:70ch">Read-mostly on purpose. Every write is confirm-gated and there is
+      no config editing, so ike cannot silently change your monitors or dashboards. Rate limits are a
+      design constraint, not an afterthought: the header shows your remaining API budget per endpoint
+      family, live.</p>
+
+    <footer>
+      <span><a href="https://github.com/Cesarsk/ike">github.com/Cesarsk/ike</a></span>
+      <span><a href="https://github.com/Cesarsk/ike/blob/main/docs/MANUAL.md">user manual</a></span>
+      <span><a href="https://github.com/Cesarsk/ike/releases/latest">releases</a></span>
+      <span>Apache-2.0</span>
+      <span>Not affiliated with Datadog.</span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

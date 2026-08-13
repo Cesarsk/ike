@@ -1,15 +1,39 @@
 # ike 🐶
 
-A k9s-style terminal UI for Datadog. Browse monitors, incidents, SLOs, logs,
-traces and dashboards from your keyboard, with the same muscle memory you
-already have from [k9s](https://k9scli.io): `:` to switch views (ike opens a
-Spotlight-style command palette — type to filter, enter to run), `/` to filter,
-`enter` to drill in, `esc` to go back.
+**A k9s-style terminal UI for Datadog.** Triage alerts, read logs, chase traces and
+watch spend from your keyboard, across every one of your orgs at once.
+
+<sub>Named after a dog named Ike. The command is `ike`; the job is keeping an eye on things.</sub>
 
 [![CI](https://github.com/Cesarsk/ike/actions/workflows/ci.yaml/badge.svg)](https://github.com/Cesarsk/ike/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/Cesarsk/ike?sort=semver)](https://github.com/Cesarsk/ike/releases/latest)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Cesarsk/ike)](https://goreportcard.com/report/github.com/Cesarsk/ike)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+![ike demo](docs/demo.gif)
+
+```sh
+brew install cesarsk/tap/ike   # macOS and Linux
+ike --demo                     # try the whole thing offline, no credentials
+```
+
+## Why not just use the Datadog web UI?
+
+**Every org in one table.** Datadog puts each org behind its own URL, so comparing
+dev, stage and prod means three tabs and three logins. Activate several contexts in
+`:ctx` and a single `:monitors` view spans all of them, with a `CTX` column saying
+where each row came from. The browser cannot do this.
+
+**Two keystrokes from an alert to its cause.** `l` on a firing monitor opens the logs
+for that service. `t` on a log line opens the distributed trace it belongs to. `P`
+pages the team that owns the monitor, after telling you who that wakes up.
+
+**It stays where you already are.** Same muscle memory as [k9s](https://k9scli.io):
+`:` for views (a Spotlight-style palette, type to filter), `/` to filter, `enter` to
+drill in, `esc` to go back. No tab switch, no dashboard load.
+
+**It shows you the bill.** `:cost` is your Datadog spend: this month estimated and
+projected, twelve months of history with anomaly flags, per product or per sub-org.
 
 ```
  Mode:   demo [demo-dev]            <:>cmd  </>filter  <enter>details  <o>open
@@ -26,7 +50,8 @@ Spotlight-style command palette — type to filter, enter to run), `/` to filter
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-<sub>Named after a dog named Ike. The command is `ike`; the job is keeping an eye on things.</sub>
+<details>
+<summary><b>Everything it does</b> (22 views, click to expand)</summary>
 
 > **Status: real-org validated.** Twenty-two views (monitors, incidents, SLOs, logs,
 > traces, services with catalog metadata, service dependencies, events, RUM, synthetics,
@@ -48,15 +73,9 @@ Spotlight-style command palette — type to filter, enter to run), `/` to filter
 > a fuzzy row finder, session restore, and an offline demo mode. New here?
 > The **[User Manual](docs/MANUAL.md)** is a full walkthrough.
 
-## Demo
+</details>
 
-![ike demo](docs/demo.gif)
-
-Or run it yourself with no credentials:
-
-```sh
-ike --demo
-```
+New here? The **[User Manual](docs/MANUAL.md)** walks through the whole thing.
 
 ## Install
 
