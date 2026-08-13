@@ -1,7 +1,20 @@
-# ike demo cast. Regenerate from the repo root with:
+# ike hero cast (~22s) — the one that sits at the top of the README.
+# Regenerate from the repo root with:
 #   go build -ldflags "-X main.version=<version>" -o ./ike . && vhs docs/demo.tape
 # Requires vhs (brew install vhs). Runs ./ike explicitly so a stale `ike` on
 # PATH can never sneak into the recording.
+#
+# Two deliberate choices, both learned the hard way:
+#
+#  1. Everything before the first visible frame happens inside Hide/Show. A
+#     viewer watches roughly five seconds, and the old cast spent three of
+#     them on the startup splash: a logo, not the product.
+#  2. The setup activates the second demo org, so the very first frame is
+#     monitors spanning two Datadog orgs with a CTX column. That is the one
+#     thing the web UI structurally cannot do, so it leads.
+#
+# It also fills the frame. 18 monitors per org over two orgs is ~36 rows,
+# which is what 800px at FontSize 14 holds, so there is no dead space.
 
 Output docs/demo.gif
 
@@ -10,129 +23,69 @@ Set FontSize 14
 Set Width 1280
 Set Height 800
 Set Padding 16
-Set TypingSpeed 90ms
+Set TypingSpeed 60ms
 
-# Launch demo mode: shows the splash, then the monitors view.
+Hide
 Type "./ike --demo"
 Enter
 Sleep 3s
 
-# The command palette — ike's ':': a centered overlay, every command listed.
-# Pause on the open catalog, then type to fuzzy-filter and run.
+# Activate the second org: space on its row in :ctx makes every view span it.
 Type ":"
-Sleep 2s
-Type "overview"
-Sleep 800ms
-Enter
-Sleep 2500ms
-
-# Contexts: activate a second org with space — active rows highlight and
-# views start merging (CTX column + per-org budgets).
-Type ":"
-Sleep 600ms
+Sleep 400ms
 Type "ctx"
-Sleep 400ms
 Enter
 Sleep 1500ms
 Down
-Sleep 400ms
+Sleep 200ms
 Space
-Sleep 1800ms
-
-# Bulk actions: mark monitors with space, mute them all behind one confirm.
-Type ":"
-Sleep 600ms
-Type "monitors"
-Sleep 400ms
-Enter
-Sleep 1500ms
-Space
-Sleep 400ms
-Down
-Space
-Sleep 600ms
-Type "m"
-Sleep 1500ms
-Right
-Enter
-Sleep 2s
-
-# Error Tracking triage: grouped issues, highest count first.
-Type ":"
-Sleep 600ms
-Type "errors"
-Sleep 400ms
-Enter
-Sleep 2500ms
-
-# Infrastructure: hosts (problems first), then containers with the
-# host-health join (a running container on a down box shows HOST-ST=down).
-Type ":"
-Sleep 600ms
-Type "hosts"
-Sleep 400ms
-Enter
-Sleep 2s
-Type ":"
-Sleep 600ms
-Type "containers"
-Sleep 400ms
-Enter
-Sleep 2500ms
-
-# Datadog spend: estimated + projected, trend, anomalies.
-Type ":"
-Sleep 600ms
-Type "cost"
-Sleep 400ms
-Enter
-Sleep 2500ms
-
-# On-call: who's paged now + the escalation ladder.
-Type ":"
-Sleep 600ms
-Type "oncall"
-Sleep 400ms
-Enter
-Sleep 1500ms
-Enter
-Sleep 2500ms
-Escape
-Sleep 600ms
-
-# The debugging loop: logs, narrowed by a Datadog search query.
-Type ":"
-Sleep 600ms
-Type "logs"
-Sleep 400ms
-Enter
-Sleep 1500ms
-Type "/"
-Sleep 300ms
-Ctrl+U
-Type "status:error"
-Enter
-Sleep 2s
-
-# Watch mode: leave a view refreshing hands-off for a wall display.
-Type ":"
-Sleep 600ms
-Type "overview"
-Sleep 400ms
-Enter
 Sleep 1200ms
-Type ":"
-Sleep 600ms
-Type "watch"
-Sleep 400ms
-Enter
+Escape
+Sleep 1500ms
+Show
+
+# ── Frame one: monitors across two orgs, worst first, CTX says which org.
 Sleep 2500ms
 
-# Out.
-Type ":"
+# ── The claim: two keystrokes from an alert to its cause.
+# 'l' on the firing monitor opens the logs for that service.
+Type "l"
+Sleep 2500ms
+
+# Narrow to errors. The prompt is prefilled with the query the drill-down
+# built, so this appends to it and shows how queries compose.
+Type "/"
 Sleep 400ms
-Type "watch"
+Type " status:error"
+Sleep 300ms
 Enter
-Sleep 500ms
-Type "q"
-Sleep 1s
+Sleep 2000ms
+
+# 't' on an error line opens the distributed trace it belongs to.
+# (Only error logs carry a trace id in demo data, hence the filter above.)
+Type "t"
+Sleep 3000ms
+
+# esc walks back out the way k9s does: the nav stack remembers each view.
+Escape
+Sleep 700ms
+Escape
+Sleep 700ms
+
+# ── Cross-org triage: open incidents and alerting monitors, every org at once.
+Type ":"
+Sleep 300ms
+Type "ov"
+Enter
+Sleep 3000ms
+
+# ── The service dependency map, then 'g' for the whole call graph.
+Type ":"
+Sleep 300ms
+Type "deps"
+Enter
+Sleep 1800ms
+Type "g"
+Sleep 3000ms
+
+Sleep 800ms
