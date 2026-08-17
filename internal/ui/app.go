@@ -321,6 +321,7 @@ type App struct {
 	paused     bool // auto-refresh paused (toggled with 'p')
 	promptM    promptMode
 	acNav      bool   // user arrowed through the autocomplete dropdown
+	acOpen     bool   // the dropdown is showing (arrows navigate it, not history)
 	page       string // current content page: "table", "help", "detail"
 	detailRow  data.Row
 	stack      []navEntry // navigation history, k9s-style: esc pops
@@ -541,16 +542,20 @@ func (a *App) build() {
 		}
 	})
 	a.prompt.SetAutocompleteFunc(func(current string) []string {
+		var entries []string
 		switch {
 		case a.promptM == promptCmd && current != "":
-			return commandCompletions(current)
+			entries = commandCompletions(current)
 		case a.promptM == promptFilter && a.res.Key == "logs":
-			return a.logQueryCompletions(current)
+			entries = a.logQueryCompletions(current)
 		case a.promptM == promptFilter && !a.res.ServerQuery && current != "":
 			// Every client-filtered view completes from what's on screen.
-			return a.rowTokenCompletions(current)
+			entries = a.rowTokenCompletions(current)
 		}
-		return nil
+		// The dropdown owns ↑/↓ while it is showing; history gets them back
+		// once it closes (empty prompt, or no matches).
+		a.acOpen = len(entries) > 0
+		return entries
 	})
 	// Command mode: Enter on an entry executes immediately (without this the
 	// dropdown swallows the first Enter). Logs query mode: Enter/Tab accepts
@@ -796,8 +801,16 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	if a.GetFocus() == a.prompt {
-		// ↑/↓ recall previously submitted queries/filters for this resource.
 		if a.promptM == promptFilter && (ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown) {
+			if a.acOpen {
+				// The dropdown owns the arrows (shell-style). Mark the intent
+				// here too: tview skips its navigate callback when the arrow
+				// lands on the same item (a single-entry list), and enter must
+				// still commit the highlighted suggestion in that case.
+				a.acNav = true
+				return ev
+			}
+			// Dropdown closed: ↑/↓ recall previously submitted queries.
 			a.recallHistory(ev.Key() == tcell.KeyUp)
 			return nil
 		}
@@ -1806,6 +1819,7 @@ func (a *App) openPrompt(m promptMode) {
 
 func (a *App) closePrompt() {
 	a.promptM = promptNone
+	a.acOpen = false
 	a.footer.SwitchToPage("status")
 	switch a.page {
 	case "detail":

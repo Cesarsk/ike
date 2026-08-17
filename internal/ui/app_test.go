@@ -221,7 +221,7 @@ func TestAppSmoke(t *testing.T) {
 	waitFor(t, sim, "Dashboards(all)")
 
 	// '/' on a client-filtered view autocompletes from the loaded rows.
-	typeRunes(sim, "/gol")
+	typeRunes(sim, "/golden-s")
 	waitFor(t, sim, "golden-signals") // suggestion harvested from DESCRIPTION
 	press(sim, tcell.KeyEscape)       // first esc closes the dropdown
 	press(sim, tcell.KeyEscape)       // second cancels the prompt + clears the filter
@@ -1639,6 +1639,35 @@ func TestTagsEverywhere(t *testing.T) {
 	if !strings.Contains(screenText(sim), "team:sre") {
 		t.Errorf("opening a dashboard should fill its TAGS cell for free:\n%s", screenText(sim))
 	}
+	app.Stop()
+}
+
+// TestFilterAutocompleteArrows: while the dropdown shows, ↑/↓ must navigate
+// it (not query history) and Enter must commit the highlighted suggestion.
+// Regression: history recall used to swallow the arrows, leaving the dropdown
+// visually highlighted but unreachable — Enter then kept the typed text.
+func TestFilterAutocompleteArrows(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":dashboards")
+	waitFor(t, sim, "Dashboards(")
+	typeRunes(sim, "/golden-s")
+	waitFor(t, sim, "golden-signals") // the dropdown is showing
+	press(sim, tcell.KeyDown)         // navigate it — must NOT recall history
+	press(sim, tcell.KeyEnter)        // commit the highlighted suggestion
+	waitFor(t, sim, "Dashboards(/golden-signals")
+
+	// With the dropdown closed (empty prompt), the arrows still do history.
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Dashboards(all)")
+	typeRunes(sim, "/")
+	press(sim, tcell.KeyUp) // recalls "golden-signals"
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Dashboards(/golden-signals")
 	app.Stop()
 }
 
