@@ -124,7 +124,7 @@ view; the row count is in the table title (`[18]`).
 | Key | Action |
 |-----|--------|
 | `:` | **command palette** — a centered overlay listing every command; type to fuzzy-filter (name, alias, description), `↑`/`↓` to pick, `enter` to run, `esc` to cancel. Typing a full command (`:mon` + `enter`) works exactly like a classic prompt. |
-| `/` | **filter** the rows, with autocomplete: Logs/Traces/Events complete Datadog query facets (a real query sent to the API); every other view completes from the tokens on screen and filters the loaded rows live. |
+| `/` | **filter** the rows, with autocomplete: Logs/Traces/Events complete Datadog query facets (a real query sent to the API); every other view completes from the tokens on screen and filters the loaded rows live. In the dropdown: `↓`/`↑` move the highlight, `enter` applies the highlighted suggestion (once you've arrowed), `tab` accepts it into the prompt to keep typing. Plain `enter` without arrowing applies exactly what you typed. With the dropdown closed, `↑`/`↓` recall query history. |
 | `enter` | **drill in** — the detail view, or a view-specific action (an SLO's error budget, a dashboard's widget grid). |
 | `esc` | **back** — first press clears an active filter; next press pops the navigation history (k9s-style: view, filter and selection are restored). |
 | `j`/`k` or `↑`/`↓` | move the selection / scroll the detail view. |
