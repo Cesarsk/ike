@@ -1684,9 +1684,9 @@ func (d *Demo) SQLQuery(_ context.Context, query string, _ time.Duration) (*SQLR
 	// Mirrors the live catalog: DDSQL tables are cloud resource inventory.
 	res := &SQLResult{Query: query, Columns: []string{"instance_id", "instance_type", "state", "account_id"}}
 	instances := []struct{ id, typ, state, account string }{
-		{"i-006bf256ce9233c4e", "c5d.2xlarge", "running", "111111111111"},
-		{"i-00dec13417f2d2274", "m7i.xlarge", "terminated", "111111111111"},
-		{"i-011887e8071d128d0", "t3.2xlarge", "running", "222222222222"},
+		{"i-0a1b2c3d4e5f60001", "c5d.2xlarge", "running", "111111111111"},
+		{"i-0a1b2c3d4e5f60002", "m7i.xlarge", "terminated", "111111111111"},
+		{"i-0a1b2c3d4e5f60003", "t3.2xlarge", "running", "222222222222"},
 		{"i-0a4f31c2e9d7b8a10", "m6i.large", "running", "222222222222"},
 		{"i-0c9e2b7d41f3a5e62", "r6g.xlarge", "stopped", "333333333333"},
 	}
