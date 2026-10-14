@@ -1713,7 +1713,7 @@ func TestSQLExplorer(t *testing.T) {
 	press(sim, tcell.KeyEnter)
 	waitFor(t, sim, "5 rows")
 	waitFor(t, sim, "instance_type")
-	waitFor(t, sim, "i-006bf256ce9233c4e")
+	waitFor(t, sim, "i-0a1b2c3d4e5f60001")
 	typeRunes(sim, "4")
 	waitFor(t, sim, "SQL · last 1d")
 	press(sim, tcell.KeyEscape)
