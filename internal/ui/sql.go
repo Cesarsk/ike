@@ -36,11 +36,12 @@ func (a *App) openSQLExplorer() {
 const sqlIntro = `
  [orange::b]DDSQL explorer[-:-:-]
 
- Press [aqua]/[-] and type a DDSQL query against your Datadog data:
+ Press [aqua]/[-] and type a DDSQL query. The datasets are your cloud resource
+ inventory (aws.*, gcp.*, azure.*, alibabacloud.*), one table per resource type:
 
-   [darkcyan]SELECT host, avg(system.cpu.user) AS cpu FROM metrics GROUP BY host ORDER BY cpu DESC LIMIT 20[-]
-   [darkcyan]SELECT service, count(*) FROM logs WHERE status = 'error' GROUP BY service[-]
-   [darkcyan]SELECT * FROM aws.ec2_instance WHERE state = 'running' LIMIT 50[-]
+   [darkcyan]SELECT instance_id, instance_type, state FROM aws.ec2_instance LIMIT 50[-]
+   [darkcyan]SELECT account_id, count(*) AS n FROM aws.ec2_instance GROUP BY account_id ORDER BY n DESC[-]
+   [darkcyan]SELECT db_instance_identifier, engine, engine_version FROM aws.rds_db_instance[-]
 
  Results are capped at 200 rows and say so when cut.
 
