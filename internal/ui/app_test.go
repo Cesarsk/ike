@@ -1671,6 +1671,85 @@ func TestFilterAutocompleteArrows(t *testing.T) {
 	app.Stop()
 }
 
+// TestSchedulesView: every On-Call schedule with who is on shift; uncovered
+// schedules sort first; '/' searches server-side.
+func TestSchedulesView(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":schedules")
+	waitFor(t, sim, "Schedules(")
+	waitFor(t, sim, "Alice Rivera")
+	screen := screenText(sim)
+	if strings.Index(screen, "Trading desk support") > strings.Index(screen, "SRE primary") {
+		t.Fatalf("the uncovered schedule should sort first:\n%s", screen)
+	}
+	typeRunes(sim, "/payments")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "Payments on-call")
+	if strings.Contains(screenText(sim), "SRE primary") {
+		t.Fatal("search should drop non-matching schedules")
+	}
+	app.Stop()
+}
+
+// TestSQLExplorer: :sql runs a DDSQL query and renders the answer as an
+// aligned table; digits change the window; esc returns.
+func TestSQLExplorer(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":sql")
+	waitFor(t, sim, "DDSQL explorer")
+	pressRune(sim, '/')
+	waitFor(t, sim, "sql>")
+	typeRunes(sim, "SELECT host, service, cpu_pct, status FROM hosts")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "5 rows")
+	waitFor(t, sim, "cpu_pct")
+	waitFor(t, sim, "ip-10-0-2-31.eks-prod")
+	typeRunes(sim, "4")
+	waitFor(t, sim, "SQL · last 1d")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Monitors(")
+	app.Stop()
+}
+
+// TestIncidentPageAndResponders: the war room lists responders, and P on an
+// incident pages its team behind a confirm with the page linked to the
+// incident (then handed to :oncall).
+func TestIncidentPageAndResponders(t *testing.T) {
+	app := newDemoApp(t)
+	sim := newSim(t)
+	app.SetScreen(sim)
+	go func() { _ = app.Run() }()
+
+	waitFor(t, sim, "Monitors(all)")
+	typeCmd(sim, ":incidents")
+	waitFor(t, sim, "Incidents(all)")
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "responders:")
+	waitFor(t, sim, "Alice Rivera, Bob Chen")
+	press(sim, tcell.KeyEscape)
+	waitFor(t, sim, "Incidents(all)")
+
+	pressRune(sim, 'P') // IR-142 carries teams:sre
+	// The narrow confirm modal word-wraps across border glyphs (known sim
+	// gotcha), so match across the break.
+	waitForMatch(t, sim, `(?s)Page team "sre" from.*incident IR-142`)
+	waitForMatch(t, sim, `(?s)SRE On-.*Call`)
+	press(sim, tcell.KeyRight) // Cancel → Page
+	press(sim, tcell.KeyEnter)
+	waitFor(t, sim, "paged sre from IR-142")
+	app.Stop()
+}
+
 // TestPageMonitorOwner: P on a monitor walks its team: tag to the owning
 // on-call team, names who it wakes, and pages behind a confirm; the raised
 // page hands off to the :oncall panel where a/e/r manage it.

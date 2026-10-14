@@ -51,14 +51,16 @@ projected, twelve months of history with anomaly flags, per product or per sub-o
 ```
 
 <details>
-<summary><b>Everything it does</b> (22 views, click to expand)</summary>
+<summary><b>Everything it does</b> (24 views, click to expand)</summary>
 
-> **Status: real-org validated.** Twenty-two views (monitors, incidents, SLOs, logs,
+> **Status: real-org validated.** Twenty-four views (monitors, incidents, SLOs, logs,
 > traces, services with catalog metadata, service dependencies, events, RUM, synthetics,
 > downtimes, dashboards, security signals, notebooks, hosts, containers, processes,
-> error tracking, audit trail, cases, CI pipelines, agent fleet) plus `:overview`
+> error tracking, audit trail, cases, CI pipelines, agent fleet, on-call
+> schedules with who is on shift) plus `:overview`
 > (cross-org triage), `:metrics` (a free-form metric explorer, charted
-> full-pane), `:cost` (this org's Datadog spend: estimated + projected,
+> full-pane), `:sql` (a DDSQL explorer rendering query results as a table),
+> `:cost` (this org's Datadog spend: estimated + projected,
 > 12-month trend with anomaly flags, per-product or per-sub-org), `:oncall`
 > (who's on call now, the escalation ladder, and confirm-gated paging, per team) and `:teams`
 > (the org's teams, drill into members and roles). Views can span several Datadog orgs at once

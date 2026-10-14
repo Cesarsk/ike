@@ -9,24 +9,29 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
-// fleet lists the Datadog agents across the estate (Fleet Automation) —
-// the hygiene view: which hosts run which agent version.
+// fleet lists the Datadog agents across the estate (Fleet Automation v2) —
+// the hygiene view: which hosts run which agent version, who owns them, and
+// whether remote configuration is healthy.
 func (l *Live) fleet(ctx context.Context, query string) ([]Row, error) {
-	opts := datadogV2.NewListFleetAgentsOptionalParameters().WithPageSize(200)
+	opts := datadogV2.NewListFleetAgentsV2OptionalParameters().WithPageSize(200)
 	q := strings.TrimSpace(query)
 	if q != "" && q != "*" {
-		opts = opts.WithTags(q)
+		// Tag filters (key:value) go to tags; free text to the hostname filter.
+		if strings.ContainsRune(q, ':') {
+			opts = opts.WithTags(q)
+		} else {
+			opts = opts.WithFilter(q)
+		}
 	}
-	resp, httpresp, err := datadogV2.NewFleetAutomationApi(l.client).ListFleetAgents(ctx, *opts)
+	resp, httpresp, err := datadogV2.NewFleetAutomationApi(l.client).ListFleetAgentsV2(ctx, *opts)
 	l.track(httpresp)
 	if err != nil {
 		return nil, apiErr("fleet agents", err)
 	}
-	respData := resp.GetData()
-	respAttrs := respData.GetAttributes()
-	agents := respAttrs.GetAgents()
+	agents := resp.GetData()
 	rows := make([]Row, 0, len(agents))
-	for _, a := range agents {
+	for _, ag := range agents {
+		a := ag.GetAttributes()
 		restarted := ""
 		if ts := a.GetLastRestartAt(); ts > 0 {
 			restarted = HumanWindow(time.Since(msToTime(float64(ts))).Truncate(time.Minute))
@@ -38,11 +43,15 @@ func (l *Live) fleet(ctx context.Context, query string) ([]Row, error) {
 				a.GetAgentVersion(),
 				a.GetClusterName(),
 				a.GetOs(),
-				strings.Join(a.GetEnvs(), ","),
+				strings.Join(a.GetEnv(), ","),
 				restarted,
+				a.GetTeam(),
+				a.GetRemoteConfigStatus(),
+				strings.Join(a.GetEnabledProducts(), ","),
+				strings.Join(a.GetIntegrations(), ","),
 				fleetTags(a.GetTags()),
 			},
-			Raw: a,
+			Raw: ag,
 			URL: l.web + "/fleet",
 		})
 	}

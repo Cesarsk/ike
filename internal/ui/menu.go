@@ -30,6 +30,7 @@ type menuCommand struct {
 var pseudoCommands = []menuCommand{
 	{name: ":overview", aliases: "ov", opens: "Cross-org triage: firing monitors + open incidents", run: "overview"},
 	{name: ":metrics", aliases: "metric, mx", opens: "Metric explorer: free-form query, charted full-pane", run: "metrics"},
+	{name: ":sql", aliases: "ddsql, query", opens: "DDSQL explorer: SQL over your Datadog data, as a table", run: "sql"},
 	{name: ":cost", aliases: "costs, billing", opens: "This org's Datadog spend: trend, anomalies, drill-down", run: "cost"},
 	{name: ":ctx", aliases: "context, contexts", opens: "Your orgs: switch, span, add, edit, delete", run: "ctx"},
 	{name: ":menu", aliases: "commands, cmds, aliases", opens: "This command list", run: "menu"},

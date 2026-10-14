@@ -107,13 +107,17 @@ func (a *App) openDetail(tableRow int) {
 				prov := a.providerFor(r)
 				todos, tErr := prov.IncidentTodos(context.Background(), r.ID)
 				impacts, iErr := prov.IncidentImpacts(context.Background(), r.ID)
+				responders, rErr := prov.IncidentResponders(context.Background(), r.ID)
 				if tErr != nil {
 					slog.Warn("war room: to-dos unavailable", "id", r.ID, "err", tErr)
 				}
 				if iErr != nil {
 					slog.Warn("war room: impacts unavailable", "id", r.ID, "err", iErr)
 				}
-				body = warRoomBody(r.ID, d, impacts, todos) + jsonIndent(d.Incident)
+				if rErr != nil {
+					slog.Warn("war room: responders unavailable", "id", r.ID, "err", rErr)
+				}
+				body = warRoomBody(r.ID, d, impacts, todos, responders) + jsonIndent(d.Incident)
 			} else {
 				body = jsonIndent(full)
 			}
@@ -174,7 +178,7 @@ func jsonIndent(v any) string {
 // warRoomBody renders the incident war room: identity line, summary, people,
 // impacts, to-dos and non-empty fields — plain text (the detail view has
 // dynamic colours off), sections in triage order.
-func warRoomBody(id string, d *data.IncidentDetail, impacts []string, todos []data.Todo) string {
+func warRoomBody(id string, d *data.IncidentDetail, impacts []string, todos []data.Todo, responders []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "━━ %s · %s · %s ━━\n", id, d.Severity, d.State)
 	if d.Title != "" {
@@ -189,7 +193,11 @@ func warRoomBody(id string, d *data.IncidentDetail, impacts []string, todos []da
 			impact += " · " + d.ImpactScope
 		}
 	}
-	fmt.Fprintf(&b, "  %-13s%s\n\n", "customer:", impact)
+	fmt.Fprintf(&b, "  %-13s%s\n", "customer:", impact)
+	if len(responders) > 0 {
+		fmt.Fprintf(&b, "  %-13s%s\n", "responders:", strings.Join(responders, ", "))
+	}
+	b.WriteString("\n")
 
 	b.WriteString(incidentPeopleHeader(d.People))
 

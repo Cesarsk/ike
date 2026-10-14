@@ -655,3 +655,95 @@ func (a *App) fillRowTags(id string, tags []string) {
 		return
 	}
 }
+
+// incidentTeam returns the first team handle from an incident row's TAGS
+// cell (the flattened "teams:<handle>" field), "" when the incident has none.
+func incidentTeam(r data.Row) string {
+	if len(r.Cells) < 7 {
+		return ""
+	}
+	for _, t := range strings.Fields(r.Cells[6]) {
+		if v, ok := strings.CutPrefix(t, "teams:"); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// pageIncidentTeam is P on an incident: resolve the incident's team, say who
+// it wakes, and raise an On-Call page linked to the incident behind a
+// confirm. The page lands in :oncall like a monitor-owner page does.
+func (a *App) pageIncidentTeam(r data.Row) {
+	team := incidentTeam(r)
+	if team == "" {
+		a.flash("this incident has no team field — page from :oncall instead", true)
+		return
+	}
+	title := r.ID
+	if len(r.Cells) > 3 {
+		title = r.Cells[3] // TITLE column
+	}
+	oncallRes, ok := data.ResourceByAlias("oncall")
+	if !ok {
+		return
+	}
+	prov := a.providerFor(r)
+	a.flash("resolving team "+team+" …", false)
+	go func() {
+		rows, _, _, err := prov.Fetch(context.Background(), oncallRes, "", "", false)
+		if err != nil {
+			a.QueueUpdateDraw(func() { a.flash("✗ on-call teams: "+err.Error(), true) })
+			return
+		}
+		var teamRow data.Row
+		for _, t := range rows {
+			if (len(t.Cells) > 1 && strings.EqualFold(t.Cells[1], team)) ||
+				(len(t.Cells) > 0 && strings.EqualFold(t.Cells[0], team)) {
+				teamRow = t
+				break
+			}
+		}
+		if teamRow.ID == "" {
+			a.QueueUpdateDraw(func() {
+				a.flash(fmt.Sprintf("no on-call team matches %s — see :oncall", team), true)
+			})
+			return
+		}
+		teamRow.Ctx = r.Ctx
+		onCall := ""
+		if det, derr := prov.TeamOnCall(context.Background(), teamRow.ID); derr == nil {
+			var names []string
+			for _, resp := range det.OnCall {
+				names = append(names, resp.Name)
+			}
+			onCall = strings.Join(names, ", ")
+		}
+		a.QueueUpdateDraw(func() {
+			who := "(nobody on call right now)"
+			if onCall != "" {
+				who = onCall
+			}
+			a.showConfirm(
+				fmt.Sprintf("Page team %q from incident %s?\n\n  incident:     %s\n  on call now:  %s\n\nThe page links back to the incident. This alerts a human.", team, r.ID, title, who),
+				[]string{"Cancel", "Page"},
+				func(label string) {
+					if label != "Page" {
+						return
+					}
+					go func() {
+						id, perr := prov.PageIncident(context.Background(), r.ID, team, "[ike] "+title)
+						a.QueueUpdateDraw(func() {
+							if perr != nil {
+								a.flash("✗ page: "+perr.Error(), true)
+								return
+							}
+							slog.Info("paged from incident", "incident", r.ID, "team", team, "page", id)
+							a.onCallTeam = teamRow
+							a.onCallPageID = id
+							a.flash("paged "+team+" from "+r.ID+" — manage it in :oncall (enter the team, then a/e/r)", false)
+						})
+					}()
+				})
+		})
+	}()
+}

@@ -426,3 +426,66 @@ func incidentTags(fields map[string]datadogV2.IncidentFieldAttributes) string {
 	sort.Strings(out)
 	return strings.Join(out, " ")
 }
+
+// IncidentResponders names who is on an incident, from the responders list
+// and its included user objects. Best-effort labels: name, else handle, else
+// email — never an empty entry.
+func (l *Live) IncidentResponders(ctx context.Context, incidentID string) ([]string, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, httpresp, err := datadogV2.NewIncidentsApi(l.client).ListIncidentResponders(ctx, incidentID)
+	l.track(httpresp)
+	if err != nil {
+		return nil, apiErr("incident responders", err)
+	}
+	users := map[string]string{}
+	for _, u := range resp.GetIncluded() {
+		a := u.GetAttributes()
+		label := a.GetName()
+		if label == "" {
+			label = a.GetHandle()
+		}
+		if label == "" {
+			label = a.GetEmail()
+		}
+		users[u.GetId()] = label
+	}
+	var out []string
+	for _, r := range resp.GetData() {
+		rels := r.GetRelationships()
+		if !rels.User.IsSet() || rels.User.Get() == nil {
+			continue
+		}
+		ud := rels.User.Get().GetData()
+		if label := users[ud.GetId()]; label != "" {
+			out = append(out, label)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// PageIncident raises an On-Call page from the incident against a team
+// handle, so the page is linked to the incident in Datadog (unlike PageTeam).
+func (l *Live) PageIncident(ctx context.Context, incidentID, teamHandle, title string) (string, error) {
+	ctx = l.authCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	attrs := datadogV2.NewIncidentCreateOnCallPageDataAttributesRequest()
+	attrs.SetTitle(title)
+	attrs.SetTarget(*datadogV2.NewIncidentPageTarget(teamHandle, datadogV2.INCIDENTPAGETARGETTYPE_TEAM_HANDLE))
+	body := datadogV2.NewIncidentCreateOnCallPageRequest(
+		*datadogV2.NewIncidentCreateOnCallPageDataRequest(*attrs, datadogV2.INCIDENTCREATEPAGEFROMINCIDENTTYPE_PAGE))
+	resp, httpresp, err := datadogV2.NewIncidentsApi(l.client).CreateOnCallPageFromIncident(ctx, incidentID, *body)
+	l.track(httpresp)
+	if err != nil {
+		return "", apiErr("page from incident", err)
+	}
+	data := resp.GetData()
+	id := data.GetId().String()
+	slog.Info("paged from incident", "incident", incidentID, "team", teamHandle, "page", id)
+	return id, nil
+}
