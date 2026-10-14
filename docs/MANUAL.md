@@ -167,7 +167,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Cost** | `:cost` `:billing` | This org's Datadog spend: estimated + projected this month, up to 12 months of history with a trend, per-product or per-sub-org, filterable (read-only). Admin-scoped, see below. |
 | **Teams** | `:teams` `:team` | The org's Datadog teams: name, handle, member count, description. `enter` on a team shows its members and their roles (read-only). |
 | **On-Call** | `:oncall` `:oc` | Your teams. `enter` on a team shows who's on call right now and the escalation ladder (read-only). Needs Datadog On-Call, see below. For the schedule-centric view, see `:schedules`. |
-| **SQL** | `:sql` `:ddsql` | The **DDSQL explorer**: `/` takes a SQL query over your Datadog data (`SELECT host, avg(system.cpu.user) FROM metrics GROUP BY host`), rendered as an aligned table, capped at 200 rows and saying so when cut. Digits `1`–`6` / `w` set the window like a dashboard. |
+| **SQL** | `:sql` `:ddsql` | The **DDSQL explorer**: `/` takes a SQL query over your cloud resource inventory, one table per resource type (`SELECT instance_id, instance_type, state FROM aws.ec2_instance`; also `gcp.*`, `azure.*`), rendered as an aligned table, capped at 200 rows and saying so when cut. Digits `1`–`6` / `w` set the window like a dashboard. |
 | **Downtimes** | `:downtimes` `:dt` `:mutes` | Scheduled/active monitor mutes: status, scope, message, created. |
 | **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified, description. |
 | **Menu** | `:menu` `:commands` `:aliases` | Every command with its aliases and what it opens. `enter` on a row runs it, so it doubles as a command palette. Start here if you're not sure what exists. |

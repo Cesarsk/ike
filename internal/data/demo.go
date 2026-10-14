@@ -1681,19 +1681,17 @@ func (d *Demo) PageIncident(_ context.Context, incidentID, teamHandle, _ string)
 
 // SQLQuery synthesizes a small believable table for the :sql explorer.
 func (d *Demo) SQLQuery(_ context.Context, query string, _ time.Duration) (*SQLResult, error) {
-	res := &SQLResult{Query: query, Columns: []string{"host", "service", "cpu_pct", "status"}}
-	hosts := []struct {
-		host, svc, status string
-		cpu               float64
-	}{
-		{"ip-10-0-2-31.eks-prod", "payments-api", "up", 78},
-		{"kong-dp-1.prod", "kong-proxy", "up", 52},
-		{"kafka-3.platform", "kafka", "up", 83},
-		{"ip-10-0-1-14.eks-prod", "payments-api", "down", 0},
-		{"redis-1.prod", "redis", "up", 39},
+	// Mirrors the live catalog: DDSQL tables are cloud resource inventory.
+	res := &SQLResult{Query: query, Columns: []string{"instance_id", "instance_type", "state", "account_id"}}
+	instances := []struct{ id, typ, state, account string }{
+		{"i-006bf256ce9233c4e", "c5d.2xlarge", "running", "111111111111"},
+		{"i-00dec13417f2d2274", "m7i.xlarge", "terminated", "111111111111"},
+		{"i-011887e8071d128d0", "t3.2xlarge", "running", "222222222222"},
+		{"i-0a4f31c2e9d7b8a10", "m6i.large", "running", "222222222222"},
+		{"i-0c9e2b7d41f3a5e62", "r6g.xlarge", "stopped", "333333333333"},
 	}
-	for _, h := range hosts {
-		res.Rows = append(res.Rows, []string{h.host, h.svc, FormatValue(h.cpu), h.status})
+	for _, in := range instances {
+		res.Rows = append(res.Rows, []string{in.id, in.typ, in.state, in.account})
 	}
 	if strings.Contains(strings.ToLower(query), "limit 1") {
 		res.Rows = res.Rows[:1]
