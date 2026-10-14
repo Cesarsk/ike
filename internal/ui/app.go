@@ -33,6 +33,8 @@ const (
 	promptDashWindow // typing a custom dashboard window ('w' on a dashboard)
 	promptMxQuery    // typing a metric query ('/' on :metrics)
 	promptMxWindow   // typing a custom metrics window ('w' on :metrics)
+	promptSQLQuery   // typing a DDSQL query ('/' on :sql)
+	promptSQLWindow  // typing a custom window ('w' on :sql)
 )
 
 // ContextInfo describes one selectable Datadog org context for the :ctx view.
@@ -213,6 +215,11 @@ type App struct {
 	mxLabel  string
 	// :deps graph page (enter = focused service, g = whole forest).
 	depGraph *tview.TextView
+	// :sql explorer: a DDSQL query rendered as a table.
+	sqlTV     *tview.TextView
+	sqlQuery  string
+	sqlWindow time.Duration
+	sqlLabel  string
 	// dashboard explorer: widgets in display order, the selected one, and
 	// whether the pane is zoomed into a single widget.
 	dashWidgets  []data.Widget
@@ -452,7 +459,7 @@ func (a *App) applyTheme() {
 	a.prompt.SetLabelColor(a.theme.Label)
 	a.prompt.SetFieldBackgroundColor(a.theme.FieldBg)
 	a.prompt.SetFieldTextColor(a.theme.FieldFg)
-	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook, a.healthView, a.logAgg, a.mx, a.depGraph} {
+	for _, tv := range []*tview.TextView{a.detail, a.dash, a.trace, a.patterns, a.costProd, a.onCall, a.teamMembers, a.notebook, a.healthView, a.logAgg, a.mx, a.depGraph, a.sqlTV} {
 		tv.SetBorderColor(a.theme.Border)
 		tv.SetTitleColor(a.theme.Title)
 	}
@@ -641,6 +648,9 @@ func (a *App) build() {
 	a.depGraph = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.depGraph.SetBorder(true)
 
+	a.sqlTV = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.sqlTV.SetBorder(true)
+
 	a.logCtxCap = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	a.logCtxTbl = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	a.logCtxTbl.SetSelectedFunc(func(int, int) { a.expandLogCtx() })
@@ -754,6 +764,7 @@ func (a *App) build() {
 		AddPage("logagg", a.logAgg, true, false).
 		AddPage("metrics", a.mx, true, false).
 		AddPage("depgraph", a.depGraph, true, false).
+		AddPage("sql", a.sqlTV, true, false).
 		AddPage("patterns", a.patterns, true, false).
 		AddPage("logcontext", a.logCtxFlex, true, false).
 		AddPage("savedq", a.savedQL, true, false).
@@ -1254,6 +1265,34 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		return ev
+	case "sql":
+		switch {
+		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
+			a.back()
+			return nil
+		case ev.Rune() == '/':
+			a.openPrompt(promptSQLQuery)
+			return nil
+		case ev.Rune() >= '1' && ev.Rune() <= '6':
+			ix := int(ev.Rune() - '1')
+			a.setSQLWindow(dashRanges[ix].label, dashRanges[ix].window)
+			return nil
+		case ev.Rune() == 'w':
+			a.openPrompt(promptSQLWindow)
+			return nil
+		case ev.Key() == tcell.KeyCtrlR:
+			if a.sqlQuery != "" {
+				a.loadSQL()
+			}
+			return nil
+		case ev.Rune() == ':':
+			a.openPalette()
+			return nil
+		case ev.Rune() == '?':
+			a.showHelp()
+			return nil
+		}
+		return ev
 	case "metrics":
 		switch {
 		case ev.Key() == tcell.KeyEscape || ev.Rune() == 'q':
@@ -1496,6 +1535,12 @@ func (a *App) keys(ev *tcell.EventKey) *tcell.EventKey {
 		if a.res.Key == "monitors" {
 			if row, ok := a.selectedRow(); ok {
 				a.pageMonitorOwner(row) // alert → owner → page
+			}
+			return nil
+		}
+		if a.res.Key == "incidents" {
+			if row, ok := a.selectedRow(); ok {
+				a.pageIncidentTeam(row) // incident → its team → page, linked to the incident
 			}
 			return nil
 		}
@@ -1802,6 +1847,11 @@ func (a *App) openPrompt(m promptMode) {
 		prefill = a.mxQuery // edit the active query, don't retype
 	case m == promptMxWindow:
 		a.prompt.SetLabel(" window (30m, 4h, 2d, 1w, 1mo)> ")
+	case m == promptSQLQuery:
+		a.prompt.SetLabel(" sql> ")
+		prefill = a.sqlQuery // edit the active query, don't retype
+	case m == promptSQLWindow:
+		a.prompt.SetLabel(" window (30m, 4h, 2d, 1w, 1mo)> ")
 	case a.res.ServerQuery:
 		a.prompt.SetLabel(" query> ")
 		prefill = a.queries[a.res.Key] // edit the current query, don't retype
@@ -1826,6 +1876,8 @@ func (a *App) closePrompt() {
 		a.SetFocus(a.detail)
 	case "metrics":
 		a.SetFocus(a.mx)
+	case "sql":
+		a.SetFocus(a.sqlTV)
 	case "cost":
 		a.SetFocus(a.costTbl)
 	case "oncall":
@@ -1875,6 +1927,17 @@ func (a *App) promptDone(key tcell.Key) {
 		if text != "" {
 			a.mxQuery = text
 			a.loadMetrics()
+		}
+	case promptSQLQuery:
+		if text != "" {
+			a.sqlQuery = text
+			a.loadSQL()
+		}
+	case promptSQLWindow:
+		if d, err := parseWindow(text); err != nil {
+			a.flash("✗ can't parse window "+text+" — try 30m, 4h, 2d, 1w, 1mo", true)
+		} else {
+			a.setSQLWindow(text, d)
 		}
 	case promptMxWindow:
 		if d, err := parseWindow(text); err != nil {
@@ -1993,6 +2056,10 @@ func (a *App) execCommand(cmd string) {
 	}
 	if cmd == "metrics" || cmd == "metric" || cmd == "mx" {
 		a.openMetricsExplorer()
+		return
+	}
+	if cmd == "sql" || cmd == "ddsql" || cmd == "query" {
+		a.openSQLExplorer()
 		return
 	}
 	if cmd == "menu" || cmd == "commands" || cmd == "cmds" || cmd == "aliases" {
@@ -2218,6 +2285,8 @@ func (a *App) restore(e navEntry) {
 		a.showPage("metrics") // pane still holds the rendered chart
 	case "depgraph":
 		a.showPage("depgraph") // pane still holds the rendered graph
+	case "sql":
+		a.showPage("sql") // pane still holds the rendered table
 	default:
 		a.rows = nil
 		a.filtered = nil
@@ -2256,6 +2325,8 @@ func (a *App) showPage(page string) {
 		a.SetFocus(a.mx)
 	case "depgraph":
 		a.SetFocus(a.depGraph)
+	case "sql":
+		a.SetFocus(a.sqlTV)
 	case "patterns":
 		a.SetFocus(a.patterns)
 	case "logcontext":

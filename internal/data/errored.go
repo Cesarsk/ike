@@ -81,8 +81,15 @@ func (e *Errored) IncidentTodos(context.Context, string) ([]Todo, error)        
 func (e *Errored) SetIncidentTodoCompleted(context.Context, string, Todo, bool) error {
 	return e.err
 }
-func (e *Errored) DeleteIncidentTodo(context.Context, string, string) error  { return e.err }
-func (e *Errored) IncidentImpacts(context.Context, string) ([]string, error) { return nil, e.err }
-func (e *Errored) Budget() []string                                          { return nil }
-func (e *Errored) Mode() string                                              { return "live" }
-func (e *Errored) Site() string                                              { return e.site }
+func (e *Errored) DeleteIncidentTodo(context.Context, string, string) error     { return e.err }
+func (e *Errored) IncidentImpacts(context.Context, string) ([]string, error)    { return nil, e.err }
+func (e *Errored) Budget() []string                                             { return nil }
+func (e *Errored) Mode() string                                                 { return "live" }
+func (e *Errored) Site() string                                                 { return e.site }
+func (e *Errored) IncidentResponders(context.Context, string) ([]string, error) { return nil, e.err }
+func (e *Errored) PageIncident(context.Context, string, string, string) (string, error) {
+	return "", e.err
+}
+func (e *Errored) SQLQuery(context.Context, string, time.Duration) (*SQLResult, error) {
+	return nil, e.err
+}

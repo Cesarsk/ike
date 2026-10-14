@@ -70,6 +70,11 @@ func (a *App) setHints() {
 		lines = []string{
 			"[aqua]<g>[white]whole-env graph  [aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
 		}
+	case "sql":
+		lines = []string{
+			"[aqua]</>[white]DDSQL query  [aqua]<1-6>[white]window 15m..1mo  [aqua]<w>[white]custom  [aqua]<ctrl-r>[white]refresh",
+			"[aqua]<↑/↓ j/k>[white]scroll  [aqua]<esc>[white]back  [aqua]<?>[white]help",
+		}
 	case "metrics":
 		lines = []string{
 			"[aqua]</>[white]metric query  [aqua]<1-6>[white]window 15m..1mo  [aqua]<w>[white]custom  [aqua]<ctrl-r>[white]refresh",
@@ -111,7 +116,7 @@ func (a *App) setHints() {
 		case "slos":
 			lines = append(lines, "[gray]<enter>error budget  <t>cycle type filter  <s>sort <S>reverse")
 		case "incidents":
-			lines = append(lines, "[gray]<r>state (<space>mark → resolve many)  <v>severity  <I>commander (pick)  <T>to-dos  quick: <1>active <2>stable <3>resolved <0>all")
+			lines = append(lines, "[gray]<r>state (<space>mark → resolve many)  <v>severity  <I>commander (pick)  <T>to-dos  <P>page team  quick: <1>active <2>stable <3>resolved <0>all")
 		case "downtimes":
 			lines = append(lines, "[gray]<x>cancel (<space>mark → cancel many)  <s>sort <S>reverse")
 		case "logs":
@@ -138,6 +143,8 @@ func (a *App) setHints() {
 			lines = append(lines, "[gray]</>tag filter (kube_namespace:… cluster:…)  <l>logs  <C>columns (+ns/cluster)  <enter>detail  <o>open")
 		case "deps":
 			lines = append(lines, "[gray]<enter>this service's call graph  <g>whole-env graph  </>env (default prod)  <o>web map")
+		case "schedules":
+			lines = append(lines, "[gray]</>schedule search  <enter>detail  <o>open   (uncovered schedules first — ON-CALL blank = nobody on shift)")
 		case "processes":
 			lines = append(lines, "[gray]</>filter (host:… or command text)  <C>columns (+ppid)  <enter>detail  <o>open")
 		case "audit":

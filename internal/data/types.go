@@ -173,6 +173,17 @@ type WidgetItem struct {
 	Value float64
 }
 
+// SQLResult is a DDSQL answer pivoted into rows for the :sql page. Truncated
+// is set when the row cap was hit, so a cut-off table is never mistaken for
+// the whole answer.
+type SQLResult struct {
+	Query     string
+	Columns   []string
+	Rows      [][]string
+	Warnings  []string
+	Truncated bool
+}
+
 // MetricExplorer is a free-form metric query result for the :metrics page:
 // the charted series (per-bucket max when grouped), per-series last values
 // and the series count. Note explains an empty result.
@@ -441,6 +452,16 @@ type Provider interface {
 	SetIncidentTodoCompleted(ctx context.Context, incidentID string, todo Todo, done bool) error
 	// DeleteIncidentTodo removes a to-do from an incident. A write; UI-gated.
 	DeleteIncidentTodo(ctx context.Context, incidentID, todoID string) error
+	// IncidentResponders lists who is on an incident (name or handle per
+	// responder) for the war room. On-demand, read-only.
+	IncidentResponders(ctx context.Context, incidentID string) ([]string, error)
+	// PageIncident raises an On-Call page from an incident against a team
+	// handle, so the page links back to the incident in Datadog. A write —
+	// confirm-gated in the UI, faked in demo mode. Returns the page id.
+	PageIncident(ctx context.Context, incidentID, teamHandle, title string) (string, error)
+	// SQLQuery runs a DDSQL query over the window — the :sql explorer. One
+	// bounded call (plus short fetch polling when the service answers async).
+	SQLQuery(ctx context.Context, query string, window time.Duration) (*SQLResult, error)
 	// IncidentImpacts lists an incident's declared impacts (description +
 	// type), for the war-room detail. On-demand.
 	IncidentImpacts(ctx context.Context, incidentID string) ([]string, error)
@@ -649,10 +670,13 @@ func Resources() []Resource {
 		{
 			// Fleet Automation agent inventory — oldest agent versions first.
 			Key: "fleet", Title: "Fleet",
-			Aliases:     []string{"fleet", "agents"},
-			Columns:     []string{"HOST", "AGENT", "CLUSTER", "OS", "ENVS", "RESTARTED", "TAGS"},
-			TTL:         5 * time.Minute,
-			ServerQuery: true, // '/' = tag filter (env:…, cluster_name:…)
+			Aliases: []string{"fleet", "agents"},
+			Columns: []string{"HOST", "AGENT", "CLUSTER", "OS", "ENVS", "RESTARTED", "TEAM", "RC", "PRODUCTS", "INTEGRATIONS", "TAGS"},
+			// Fleet v2 extras (owning team, remote-config status, enabled
+			// products, integrations) ship hidden — enable per taste with C.
+			DefaultColumns: []string{"HOST", "AGENT", "CLUSTER", "OS", "ENVS", "RESTARTED", "TAGS"},
+			TTL:            5 * time.Minute,
+			ServerQuery:    true, // '/' = tag filter (env:…) or hostname text
 			EmptyHint: "No agents reported by Fleet Automation. It may not be enabled " +
 				"for this org (requires recent agent versions).",
 		},
@@ -667,9 +691,20 @@ func Resources() []Resource {
 			// schedules" endpoint, so on-call is reached per team. enter on a
 			// team opens who is on call now plus the escalation ladder.
 			Key: "oncall", Title: "On-Call",
-			Aliases: []string{"oncall", "on-call", "oc", "schedules"},
+			Aliases: []string{"oncall", "on-call", "oc"},
 			Columns: []string{"TEAM", "HANDLE", "MEMBERS"},
 			TTL:     5 * time.Minute,
+		},
+		{
+			// Every On-Call schedule with who is on shift right now — schedules
+			// nobody covers sort first. Org-wide, not per team.
+			Key: "schedules", Title: "Schedules",
+			Aliases:     []string{"schedules", "schedule", "rota", "rotas"},
+			Columns:     []string{"NAME", "ON-CALL", "TEAMS", "TZ", "TAGS"},
+			TTL:         5 * time.Minute,
+			ServerQuery: true, // '/' = schedule search (name, team)
+			EmptyHint: "No On-Call schedules. On-Call is an add-on product; this org may " +
+				"not have it enabled, or no schedules match the query.",
 		},
 	}
 }

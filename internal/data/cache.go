@@ -313,3 +313,18 @@ func (c *Cached) Age(res Resource, query string) (time.Duration, bool) {
 	}
 	return 0, false
 }
+
+// IncidentResponders is an on-demand detail fetch, uncached.
+func (c *Cached) IncidentResponders(ctx context.Context, incidentID string) ([]string, error) {
+	return c.p.IncidentResponders(ctx, incidentID)
+}
+
+// PageIncident writes through; pages are not cached state.
+func (c *Cached) PageIncident(ctx context.Context, incidentID, teamHandle, title string) (string, error) {
+	return c.p.PageIncident(ctx, incidentID, teamHandle, title)
+}
+
+// SQLQuery is an on-demand query, uncached.
+func (c *Cached) SQLQuery(ctx context.Context, query string, window time.Duration) (*SQLResult, error) {
+	return c.p.SQLQuery(ctx, query, window)
+}

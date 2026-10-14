@@ -201,6 +201,8 @@ func (d *Demo) Fetch(_ context.Context, key, query, timeRange string) ([]Row, er
 		return d.audit(query), nil
 	case "deps":
 		return d.deps(query), nil
+	case "schedules":
+		return d.schedules(query), nil
 	case "cases":
 		return d.cases(query), nil
 	case "cicd":
@@ -289,7 +291,7 @@ func (d *Demo) fleet(query string) []Row {
 		}
 		rows = append(rows, Row{
 			ID:    a.host,
-			Cells: []string{a.host, a.ver, a.cluster, a.os, a.envs, a.restarted, a.tags},
+			Cells: []string{a.host, a.ver, a.cluster, a.os, a.envs, a.restarted, "sre", "healthy", "apm,logs,npm", "kubernetes,docker", a.tags},
 			Raw:   map[string]any{"agent_version": a.ver},
 			URL:   WebBase(d.site) + "/fleet",
 		})
@@ -1631,6 +1633,74 @@ func SortMonitors(rows []Row) {
 }
 
 // IncidentImpacts returns sample impacts so the war-room detail is demoable.
+// schedules backs the :schedules view offline: one uncovered rota sorts first.
+func (d *Demo) schedules(query string) []Row {
+	list := []struct{ id, name, oncall, teams, tz, tags string }{
+		{"sched-1", "SRE primary", "Alice Rivera", "sre", "Europe/Zurich", "team:sre tier:1"},
+		{"sched-2", "SRE secondary", "Bob Chen", "sre", "Europe/Zurich", "team:sre tier:2"},
+		{"sched-3", "Payments on-call", "Carol Diaz", "payments", "Europe/Zurich", "team:payments"},
+		{"sched-4", "Trading desk support", "", "trading", "Europe/Zurich", "team:trading"},
+		{"sched-5", "Platform data", "Dana Kim", "platform", "UTC", "team:platform"},
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "*" {
+		q = ""
+	}
+	rows := make([]Row, 0, len(list))
+	for _, s := range list {
+		hay := strings.ToLower(s.name + " " + s.teams + " " + s.tags)
+		if q != "" && !strings.Contains(hay, q) {
+			continue
+		}
+		rows = append(rows, Row{
+			ID:    s.id,
+			Cells: []string{s.name, s.oncall, s.teams, s.tz, s.tags},
+			Raw:   map[string]any{"name": s.name, "on_call": s.oncall, "time_zone": s.tz},
+			URL:   WebBase(d.site) + "/on-call/schedules/" + s.id,
+		})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		ei, ej := rows[i].Cells[1] == "", rows[j].Cells[1] == ""
+		if ei != ej {
+			return ei
+		}
+		return rows[i].Cells[0] < rows[j].Cells[0]
+	})
+	return rows
+}
+
+// IncidentResponders mirrors the live responders list offline.
+func (d *Demo) IncidentResponders(_ context.Context, _ string) ([]string, error) {
+	return []string{"Alice Rivera", "Bob Chen", "Carol Diaz"}, nil
+}
+
+// PageIncident fakes the incident page like PageTeam: a stable fake id.
+func (d *Demo) PageIncident(_ context.Context, incidentID, teamHandle, _ string) (string, error) {
+	return "page-" + incidentID + "-" + teamHandle, nil
+}
+
+// SQLQuery synthesizes a small believable table for the :sql explorer.
+func (d *Demo) SQLQuery(_ context.Context, query string, _ time.Duration) (*SQLResult, error) {
+	res := &SQLResult{Query: query, Columns: []string{"host", "service", "cpu_pct", "status"}}
+	hosts := []struct {
+		host, svc, status string
+		cpu               float64
+	}{
+		{"ip-10-0-2-31.eks-prod", "payments-api", "up", 78},
+		{"kong-dp-1.prod", "kong-proxy", "up", 52},
+		{"kafka-3.platform", "kafka", "up", 83},
+		{"ip-10-0-1-14.eks-prod", "payments-api", "down", 0},
+		{"redis-1.prod", "redis", "up", 39},
+	}
+	for _, h := range hosts {
+		res.Rows = append(res.Rows, []string{h.host, h.svc, FormatValue(h.cpu), h.status})
+	}
+	if strings.Contains(strings.ToLower(query), "limit 1") {
+		res.Rows = res.Rows[:1]
+	}
+	return res, nil
+}
+
 func (d *Demo) IncidentImpacts(_ context.Context, _ string) ([]string, error) {
 	return []string{
 		"customer: checkout latency > 5s for EU traffic",

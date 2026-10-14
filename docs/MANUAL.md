@@ -142,7 +142,7 @@ Switch to any view with `:` + its name or a shorter alias.
 | View | Command / aliases | Shows |
 |------|-------------------|-------|
 | **Monitors** | `:monitors` `:mon` `:m` | Alert state, mute status, name, type, priority, tags. Auto-refreshes. |
-| **Incidents** | `:incidents` `:inc` `:i` | ID, severity, state, title, customer impact, created. Auto-refreshes. |
+| **Incidents** | `:incidents` `:inc` `:i` | ID, severity, state, title, customer impact, created. Auto-refreshes. The war room (`enter`) lists the incident's **responders**; `P` pages the incident's team with a page **linked to the incident**, confirm-gated. |
 | **SLOs** | `:slos` `:slo` `:s` | Name, type, target, timeframe, tags. |
 | **Logs** | `:logs` `:log` `:l` | Time, status, service, host, message — server-side search. |
 | **Traces** | `:traces` `:tr` `:apm` `:spans` | APM spans: time, service, resource, duration, error, trace id. |
@@ -157,7 +157,8 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Dependencies** | `:deps` `:map` | The **service dependency map**, most connected first: downstream/upstream counts and the downstream list per service. `/` sets the env (default `prod`). **`enter` draws the service's graph** — who calls it, and its transitive downstream call tree; **`g` draws the whole env** as a forest rooted at the entry points (cycles marked `↺`, repeated subtrees dedupe to `…`). `o` opens the web service map. (Backed by the same endpoint as the web map — not in the official client, so treat it as best-effort.) |
 | **Cases** | `:cases` | Case Management — the triage queue between alerts and incidents: key, status, priority, title, created (newest first). `/` is a case search. |
 | **Pipelines** | `:cicd` `:ci` | CI Visibility pipeline executions, newest first: time, status, pipeline, branch, duration, provider. `/` is a CI query (`@ci.pipeline.name:…`, `@git.branch:…`); digits set the window (default 1d); `o` opens the pipeline run. |
-| **Fleet** | `:fleet` `:agents` | Fleet Automation agent inventory, **oldest agent versions first**: host, agent version, cluster, OS, envs, last restart. `/` is a tag filter (`env:…`, `cluster_name:…`). Requires Fleet Automation (recent agents). |
+| **Fleet** | `:fleet` `:agents` | Fleet Automation agent inventory, **oldest agent versions first**: host, agent version, cluster, OS, envs, last restart, plus `TEAM`, `RC` (remote-config status), `PRODUCTS` and `INTEGRATIONS` columns you enable with `C`. `/` is a tag filter (`env:…`, `cluster_name:…`) or hostname text. Requires Fleet Automation (recent agents). |
+| **Schedules** | `:schedules` `:rota` | Every On-Call schedule with **who is on shift right now**, its teams, time zone and tags. Schedules nobody covers sort first (blank `ON-CALL` = the finding). `/` searches schedules server-side. |
 | **Audit** | `:audit` `:trail` | The Audit Trail: who changed what, org-wide — time, service, action, user, message. `/` is an audit search query (`@usr.email:…`, `@evt.name:…`); digits set the window (defaults to 1d — audit events are sparse). |
 | **Security** | `:security` `:signals` `:siem` | Cloud SIEM / CSM security signals over the last 24h: time, severity, title, tags. `/` is a signals search query. `enter` opens the signal. |
 | **Notebooks** | `:notebooks` `:nb` `:runbooks` | The org's notebooks (runbooks, postmortems): name, author, status, last modified. `enter` reads the notebook's text. |
@@ -165,7 +166,8 @@ Switch to any view with `:` + its name or a shorter alias.
 | **Metrics** | `:metrics` `:mx` | The **metric explorer**: `/` takes a free-form query (`avg:system.cpu.user{*} by {host}` — the web UI's syntax), charted full-pane with last/min/avg/max; grouped queries rank every series by last value and chart the per-bucket max. Digits `1`–`6` / `w` set the window like a dashboard. |
 | **Cost** | `:cost` `:billing` | This org's Datadog spend: estimated + projected this month, up to 12 months of history with a trend, per-product or per-sub-org, filterable (read-only). Admin-scoped, see below. |
 | **Teams** | `:teams` `:team` | The org's Datadog teams: name, handle, member count, description. `enter` on a team shows its members and their roles (read-only). |
-| **On-Call** | `:oncall` `:oc` `:schedules` | Your teams. `enter` on a team shows who's on call right now and the escalation ladder (read-only). Needs Datadog On-Call, see below. |
+| **On-Call** | `:oncall` `:oc` | Your teams. `enter` on a team shows who's on call right now and the escalation ladder (read-only). Needs Datadog On-Call, see below. For the schedule-centric view, see `:schedules`. |
+| **SQL** | `:sql` `:ddsql` | The **DDSQL explorer**: `/` takes a SQL query over your Datadog data (`SELECT host, avg(system.cpu.user) FROM metrics GROUP BY host`), rendered as an aligned table, capped at 200 rows and saying so when cut. Digits `1`–`6` / `w` set the window like a dashboard. |
 | **Downtimes** | `:downtimes` `:dt` `:mutes` | Scheduled/active monitor mutes: status, scope, message, created. |
 | **Dashboards** | `:dashboards` `:dash` `:d` | Title, layout, author, modified, description. |
 | **Menu** | `:menu` `:commands` `:aliases` | Every command with its aliases and what it opens. `enter` on a row runs it, so it doubles as a command palette. Start here if you're not sure what exists. |
@@ -446,9 +448,11 @@ Paging goes through region-specific On-Call "cell" hosts, not the usual
 the primary cell; if your US org lives on a different cell the page call will
 report it, and cell selection there is a known rough edge.
 
-Why teams and not schedules? Datadog's API has no "list all schedules"
-endpoint, so teams are the way in. Each team's routing rules point at its
-schedule and escalation policy, and that is what the panel resolves.
+Teams or schedules? Both, now. `:oncall` is team-centric: each team's routing
+rules point at its schedule and escalation policy, and that is what the panel
+resolves. `:schedules` is the schedule-centric view that the API only
+recently made possible (a "list all schedules" endpoint): every rota with who
+is on shift right now, uncovered ones first.
 
 On-Call is an **add-on product**. If a team has no schedule set up, or your
 org does not have On-Call enabled, or your login cannot read it, the panel
@@ -503,6 +507,7 @@ either way.
 | `T` | Incidents | to-do panel (list · `a` add · `c` done · `d` delete) |
 | `m` | Monitors | mute / unmute (bulk when rows are marked) |
 | `P` | Monitors | page the owner: `team:` tag → on-call team → who it wakes → confirm-gated page (managed from `:oncall` with `a`/`e`/`r`) |
+| `P` | Incidents | page the incident's team (`teams` field) with a page linked to the incident; same confirm and `:oncall` hand-off |
 | `m` | Hosts | mute / unmute the selected host |
 | `x` | Downtimes | cancel downtime (bulk when rows are marked) |
 | `space` | Monitors/Incidents/Downtimes | mark row for a bulk action |
@@ -621,7 +626,8 @@ none carry tags in Datadog`.
 | `deps` | SERVICE, CALLS, CALLED-BY, DOWNSTREAM |
 | `cases` | KEY, STATUS, PRIO, TITLE, CREATED, TAGS |
 | `cicd` | TIME, STATUS, PIPELINE, BRANCH, DURATION, PROVIDER, TAGS |
-| `fleet` | HOST, AGENT, CLUSTER, OS, ENVS, RESTARTED, TAGS |
+| `fleet` | HOST, AGENT, CLUSTER, OS, ENVS, RESTARTED, TEAM, RC, PRODUCTS, INTEGRATIONS, TAGS |
+| `schedules` | NAME, ON-CALL, TEAMS, TZ, TAGS |
 | `contexts.<name>.site` | Datadog site (must be a known Datadog host — validated). |
 | `contexts.<name>.subdomain` | Custom web-UI subdomain, for deep links only. |
 | `contexts.<name>.api-key-env` / `app-key-env` | Env var **names** for the key pair. |
